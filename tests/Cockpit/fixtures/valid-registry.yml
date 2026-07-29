@@ -1,0 +1,7 @@
+modules:
+  entity_reference_tweaks:
+    project: project/entity_reference_tweaks
+    core_versions: ["10", "11"]
+  token_or:
+    project: project/token_or
+    core_versions: ["11"]
