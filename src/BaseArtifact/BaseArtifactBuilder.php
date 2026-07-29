@@ -67,6 +67,19 @@ final readonly class BaseArtifactBuilder
             throw new BuildException(sprintf('Could not create artifact directory "%s".', $versionDir));
         }
 
+        try {
+            return $this->doBuild($coreMajor, $versionDir);
+        } catch (\Throwable $e) {
+            // Never leave a partial artifact set behind: an existing version
+            // directory must always mean the last build completed.
+            ($this->log)(sprintf('Build failed — removing partial artifact set at %s', $versionDir));
+            $this->run(['rm', '-rf', $versionDir], null);
+            throw $e;
+        }
+    }
+
+    private function doBuild(string $coreMajor, string $versionDir): ArtifactMeta
+    {
         $treePath = $this->layout->treePath($coreMajor);
 
         // Full resolve riding the shared global Composer cache (see class
@@ -110,6 +123,11 @@ final readonly class BaseArtifactBuilder
      */
     private function cleanInstallAndDump(string $coreMajor, string $treePath, string $throwaway, string $projectName): array
     {
+        $scratchDir = \dirname($throwaway);
+        if (!is_dir($scratchDir) && !mkdir($scratchDir, 0755, true) && !is_dir($scratchDir)) {
+            throw new BuildException(sprintf('Could not create scratch directory "%s".', $scratchDir));
+        }
+
         // Seed the throwaway by tree copy — the task-3-verified-identical path.
         ($this->log)(sprintf('Copying base tree to throwaway ddev project %s ...', $throwaway));
         $this->run(['cp', '-a', $treePath, $throwaway], null);

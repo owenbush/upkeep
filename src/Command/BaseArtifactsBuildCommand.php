@@ -25,9 +25,22 @@ final class BaseArtifactsBuildCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Drupal core major version to build artifacts for (e.g. 11)')
+            // Named --core, not --version: Symfony Console reserves -V/--version
+            // at the application level (it prints the app version before any
+            // command runs), so a command-scoped --version can never be received.
+            ->addOption('core', null, InputOption::VALUE_REQUIRED, 'Drupal core major version to build artifacts for (e.g. 11)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Deliberately rebuild over an existing artifact set')
-            ->addOption('scratch-dir', null, InputOption::VALUE_REQUIRED, 'Directory for the throwaway ddev site-install project', sys_get_temp_dir())
+            // Defaults under $HOME, not the system temp dir: the throwaway ddev
+            // project is bind-mounted into the Docker VM, and macOS providers
+            // (colima, Docker Desktop) only share the home directory by default
+            // — /tmp and /private/tmp are not mounted and the install fails.
+            ->addOption(
+                'scratch-dir',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Directory for the throwaway ddev site-install project (must be a path your Docker provider mounts, e.g. under your home directory)',
+                self::defaultScratchDir(),
+            )
             ->addOption(
                 'cockpit',
                 null,
@@ -47,9 +60,9 @@ final class BaseArtifactsBuildCommand extends Command
             return Command::FAILURE;
         }
 
-        $version = (string) $input->getOption('version');
+        $version = (string) $input->getOption('core');
         if ($version === '') {
-            $io->error('The --version option is required (e.g. --version=11).');
+            $io->error('The --core option is required (e.g. --core=11).');
 
             return Command::FAILURE;
         }
@@ -80,5 +93,12 @@ final class BaseArtifactsBuildCommand extends Command
         ));
 
         return Command::SUCCESS;
+    }
+
+    private static function defaultScratchDir(): string
+    {
+        $home = getenv('HOME');
+
+        return $home !== false && $home !== '' ? $home . '/.upkeep/scratch' : sys_get_temp_dir();
     }
 }

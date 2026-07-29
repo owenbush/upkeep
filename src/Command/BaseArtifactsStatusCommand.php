@@ -45,7 +45,7 @@ final class BaseArtifactsStatusCommand extends Command
 
         if ($records === []) {
             $io->writeln(sprintf(
-                'No base artifacts built yet under %s. Run `upkeep base-artifacts:build --version=N`.',
+                'No base artifacts built yet under %s. Run `upkeep base-artifacts:build --core=N`.',
                 $cockpit->baseArtifactsPath(),
             ));
 

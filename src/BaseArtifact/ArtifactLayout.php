@@ -22,6 +22,8 @@ final readonly class ArtifactLayout
     public const string META_FILENAME = 'meta.yml';
     public const string CANONICAL_MARKER = 'canonical';
 
+    private const string VERSION_PATTERN = '/^\d+$/';
+
     public function __construct(public string $baseArtifactsDir)
     {
     }
@@ -66,7 +68,7 @@ final readonly class ArtifactLayout
 
         $versions = [];
         foreach (scandir($this->baseArtifactsDir) ?: [] as $entry) {
-            if (preg_match('/^\d+$/', $entry) === 1 && is_dir($this->baseArtifactsDir . '/' . $entry)) {
+            if (preg_match(self::VERSION_PATTERN, $entry) === 1 && is_dir($this->baseArtifactsDir . '/' . $entry)) {
                 $versions[] = $entry;
             }
         }
@@ -77,7 +79,7 @@ final readonly class ArtifactLayout
 
     private static function assertVersion(string $coreMajor): void
     {
-        if (preg_match('/^\d+$/', $coreMajor) !== 1) {
+        if (preg_match(self::VERSION_PATTERN, $coreMajor) !== 1) {
             throw new \InvalidArgumentException(sprintf(
                 'Core version must be a whole major version number, got "%s".',
                 $coreMajor,
