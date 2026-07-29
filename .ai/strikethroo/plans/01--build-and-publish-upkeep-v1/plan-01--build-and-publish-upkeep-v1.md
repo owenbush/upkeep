@@ -332,13 +332,13 @@ graph TD
     T18 --> T19
 ```
 
-### Phase 1: Verification Spikes and Scaffolds
+### ✅ Phase 1: Verification Spikes and Scaffolds
 **Parallel Tasks:**
-- Task 01: Verify package names and upstream issue overlap
-- Task 02: Verify git.drupalcode.org API access and bot-MR pattern
-- Task 03: Verify ddev reclamation and Composer seeding mechanics
-- Task 04: Scaffold the ddev-upkeep add-on repo from the official template
-- Task 07: Scaffold the upkeep CLI package with cockpit config and module registry
+- ✔️ Task 01: Verify package names and upstream issue overlap — `completed`
+- ✔️ Task 02: Verify git.drupalcode.org API access and bot-MR pattern — `completed`
+- ✔️ Task 03: Verify ddev reclamation and Composer seeding mechanics — `completed`
+- ✔️ Task 04: Scaffold the ddev-upkeep add-on repo from the official template — `completed`
+- ✔️ Task 07: Scaffold the upkeep CLI package with cockpit config and module registry — `completed`
 
 ### Phase 2: Add-on Commands and Orchestrator Foundations
 **Parallel Tasks:**

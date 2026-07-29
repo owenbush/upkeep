@@ -2,7 +2,7 @@
 id: 3
 group: "verification"
 dependencies: []
-status: "in-progress"
+status: "completed"
 created: 2026-07-29
 skills:
   - ddev

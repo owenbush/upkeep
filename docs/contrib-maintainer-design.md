@@ -404,10 +404,14 @@ dense with brands: `druid`, `steward`, and `forge` were each ruled out for
 colliding with existing Drupal agencies or projects, and `bench` was set aside
 for its proximity to the established Workbench module suite. "Upkeep" appears in
 the Drupal space only as the ordinary English word, with no module, project,
-suite, or agency collision. One verification remains before publishing: confirm
-`owenbush/upkeep` and the `upkeep` binary name are free on Packagist
-specifically (a clear web search does not guarantee the package registry is
-free).
+suite, or agency collision. *Verified (2026-07-29):* `owenbush/upkeep` and
+`owenbush/ddev-upkeep` both return HTTP 404 on Packagist (names free). A
+Packagist search for "upkeep" returned only two unrelated packages (`aguva/ussd`,
+`areia-lab/laravel-maintainer`), neither of which ships any vendor binary, so no
+existing package claims an `upkeep` bin. A GitHub repo search for `ddev-upkeep`
+returned zero results, and the official ddev add-on registry (`ddev add-on
+list`) contains no add-on named "upkeep". All three names — `owenbush/upkeep`,
+the `upkeep` binary, and `owenbush/ddev-upkeep` — are clear to use.
 
 ## 11a. Prior art and references
 
@@ -475,12 +479,19 @@ Smallest independent value first.
 
 ## 13. Open questions to verify before building
 
-- **Fixtures: upstream vs. companion.** Lean is companion-first, upstream later.
-  A scan of the `ddev-drupal-contrib` open issue queue (mid-2026) showed no
-  existing fixture or MR-orchestration feature, supporting the companion-first
-  read. Still worth reading the full text of the open enhancement issues
-  (#164, #163, #157, #172, #170) before building the fixture piece, to confirm
-  none overlaps.
+- **Fixtures: upstream vs. companion.** *Resolved (2026-07-29): companion-first
+  confirmed.* The five open enhancement issues were each read in full (body and
+  comments); none overlaps the planned fixture or MR-orchestration work. #164 is
+  a `ddev phpstan` bug (wrong `phpstan.neon` symlink path when run before
+  `symlink-project`). #163 asks for `-h`/`--help` support on `symlink-project`.
+  #157 asks to pin `gitlab_templates` script versions instead of always pulling
+  latest (toolchain churn — reinforces the next bullet, no fixture overlap).
+  #172 is `ddev poser` failing on Composer security advisories for older cores;
+  maintainers lean against disabling security blocking by default (relevant only
+  as environment-build friction the adapter may need to absorb). #170 asks for a
+  less opinionated multi-module variant; the maintainer explicitly advised
+  building such functionality "independent of this one, for now" with a possible
+  later merger — a direct endorsement of the companion-add-on-first approach.
 - **Toolchain churn underneath the engine.** The queue shows the engine and
   wider toolchain move (Composer 2.9 broke tests; a `gitlab_templates` upstream
   change broke `symlink-project` until the add-on was upgraded). This is the
@@ -490,28 +501,96 @@ Smallest independent value first.
 - **MR application mechanics.** Use the engine's `symlink-project`/`poser` (or a
   Composer path repository) — never `--prefer-source` — so Composer does not
   clobber the checked-out MR branch. See section 11a.
-- **ddev reclamation semantics.** Confirm exactly what `ddev delete`,
-  `ddev stop --remove-data`, and plain tree removal each reclaim, so the prune
-  commands target the right things.
-- **Shared Composer cache across the version matrix.** Verify behavior when D11
-  and D12 pull different versions of the same package into one global cache — no
-  correctness issue expected, but worth confirming.
-- **Base-vendor-copy seeding.** Confirm that copying a resolved base tree and
-  incrementally requiring a module on top behaves cleanly (autoloader,
-  installed-paths, scaffold) versus a from-scratch resolve.
-- **GitLab API specifics on git.drupalcode.org.** *Partly resolved.*
-  git.drupalcode.org is a stock GitLab instance; MR listing (`state=opened`,
-  `scope=all`), pipeline status, and merge are standard REST endpoints authed via
-  the `PRIVATE-TOKEN` header using the maintainer's existing Git-access PAT. The
-  binding constraint is the DA PAT/automation policy (see section 8): interactive
-  single-actions are permitted; unattended automation needs prior DA approval;
-  the API is block-by-default with endpoints opened on request via an
-  Infrastructure issue tagged `gitlab api`. Remaining to verify: exactly which
-  endpoints are currently open to PATs vs. blocked (test empirically against a
-  real project, expect 403s on closed paths), and whether the merge endpoint
-  specifically is open for interactive use without special approval.
-- **Bot-MR identification.** Pin down the exact author/branch pattern of the
-  automated compatibility MRs, since the fast-lane gate keys off it.
+- **ddev reclamation semantics.** *Verified empirically (2026-07-29, ddev
+  v1.25.1, Docker 29.5.2/colima, macOS arm64)* on three identical throwaway
+  projects, each with a 139.3MB mariadb volume, a 0B snapshots volume, a 123kB
+  mutagen volume, per-project `-built` webserver/dbserver images, and a 252K
+  codebase. Findings: `ddev delete --omit-snapshot` removes the project's
+  containers, all three named volumes (`<name>-mariadb`,
+  `ddev-<name>-snapshots`, `<name>_project_mutagen`), the per-project `-built`
+  images, and the `ddev list` registration — the codebase and `.ddev/` config
+  are untouched, and shared base images (`ddev/ddev-webserver`,
+  `ddev/ddev-dbserver-*`) remain (reclaim those separately via
+  `ddev delete images` / `docker rmi`). `ddev stop --remove-data
+  --omit-snapshot` is *identical* to `ddev delete` in v1.25.1 — it printed
+  "Project ... was deleted", removed the same volumes/images/containers, and
+  removed the registration too. Plain `rm -rf <tree>` reclaims only the 252K
+  codebase and leaves everything else orphaned: containers *kept running*,
+  all three volumes retained, `-built` images retained, and a stale `ddev list`
+  row ("project directory missing"). The orphan is fully recoverable:
+  `ddev delete --omit-snapshot --yes <name>` works after the tree is gone and
+  reclaimed all residue (docker `system df` returned exactly to baseline:
+  volumes 2.117GB → 1.699GB). Prune commands should therefore always
+  `ddev delete` before (or instead of) removing trees, and never rely on
+  `rm -rf` alone.
+- **Shared Composer cache across the version matrix.** *Verified empirically
+  (2026-07-29, Composer 2.8.12).* D12 is not yet released, so the two most
+  recent installable majors — D10 (`drupal/core` 10.6.14) and D11 (11.4.4) —
+  were used; the point (two majors with differing dependency trees sharing one
+  cache) holds. With a single shared cache dir, a cold D11
+  `create-project` made 68 downloads (69 packages); a second D11 resolve made
+  **0** downloads (every dist served from cache, confirmed at `-vvv`:
+  "Loading drupal/core (11.4.4) from cache"); a back-to-back D10 resolve
+  installed 60 packages with only 35 downloads — 25 dists at versions shared
+  with D11 were reused. Different versions of the same package coexist safely:
+  the cache keys dists by content hash
+  (`files/drupal/core/4f00ac92….zip` and `…a93d428….zip` side by side), 104
+  zips / 77M total, no corruption, all installs exit 0 and pass
+  `composer install --dry-run` clean. Note: on macOS the global cache is
+  `~/Library/Caches/composer` (not `~/.cache/composer`); use
+  `composer config -g cache-dir` / `COMPOSER_CACHE_DIR` rather than a
+  hard-coded path.
+- **Base-vendor-copy seeding.** *Verified empirically (2026-07-29): identical.*
+  A project built by `cp -a` of a pristine resolved
+  `drupal/recommended-project:^11` tree followed by
+  `composer require drupal/token` matches a from-scratch
+  `create-project` + same require control in every checked dimension:
+  `composer validate` passes; `composer install --dry-run` reports "Nothing to
+  install, update or remove"; sorted `composer show` package sets identical
+  (69 packages); `vendor/composer/installed.json` **byte-identical** between
+  the two trees; `composer.json` identical and `composer.lock` package sets
+  and `content-hash` equal; scaffold files (`web/index.php`, `web/.htaccess`,
+  `web/robots.txt`, `web/autoload.php`, `default.settings.php`) present in
+  both; module lands at `web/modules/contrib/token` in both; and
+  `require 'vendor/autoload.php'` resolves core classes in both. Task 8 can
+  seed environments by copying the base artifact — no full-resolve fallback
+  needed for this path.
+- **GitLab API specifics on git.drupalcode.org.** *Verified empirically
+  (2026-07-29)* with the maintainer's Git-access PAT (`PRIVATE-TOKEN` header)
+  against `project/conditions_helper` (id 181714), `project/field_visibility_conditions`
+  (id 176919), and `project/token`. Endpoint access matrix (all GET, REST v4):
+
+  | Endpoint | HTTP | Open? |
+  | --- | --- | --- |
+  | `GET /projects/project%2F<module>` | 200 | open |
+  | `GET /projects/<p>/merge_requests?state=opened&scope=all` (also `state=all`, `author_username=`) | 200 | open |
+  | `GET /projects/<p>/merge_requests/<iid>` (includes `head_pipeline`, `detailed_merge_status`) | 200 | open |
+  | `GET /projects/<p>/merge_requests/<iid>/pipelines` | 200 | open |
+  | `GET /projects/<p>/pipelines` | 200 | open |
+  | `GET /projects/<p>/repository/tags` | 200 | open |
+  | `PUT /projects/<p>/merge_requests/<iid>/merge` | — | **untested pending a safe target** |
+
+  No 403s were hit on any read path — the reads the orchestrator needs are all
+  open to a plain PAT. The merge endpoint was deliberately not exercised: no
+  sacrificial MR was designated, and a 2xx would merge something real. Fallback
+  per the plan: task 14 ships the degraded browser-link path as default until a
+  maintainer designates a safe ready-to-merge compat MR and the endpoint is
+  probed interactively (DA policy permits interactive single-actions).
+- **Bot-MR identification.** *Resolved (2026-07-29)* from three real bot MRs:
+  `conditions_helper` !1 (merged), `field_visibility_conditions` !2 (open,
+  draft), `token` !130 (open). The pattern is exact and consistent:
+  - Author username: `Project-Update-Bot` (user id `66574`, display name
+    "project update bot") — identical across all samples.
+  - Source branch: always literally `project-update-bot-only`.
+  - Title: `Automated Project Update Bot fixes`, optionally prefixed
+    `Draft: ` while the bot considers it unready.
+  - Description: `Relates to #<issue-nid>. This merge request was automatically
+    created by the Project Update Bot. It contains the changes from run
+    <run-id>.`
+
+  Gate classification should key on author username (or id 66574) AND source
+  branch `project-update-bot-only`; treat a `Draft: `-prefixed title (or
+  `detailed_merge_status: draft_status`) as not fast-lane eligible.
 
 ## 14. Summary
 

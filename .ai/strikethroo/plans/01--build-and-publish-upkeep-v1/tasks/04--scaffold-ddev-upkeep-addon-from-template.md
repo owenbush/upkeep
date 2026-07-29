@@ -2,7 +2,7 @@
 id: 4
 group: "ddev-addon"
 dependencies: []
-status: "in-progress"
+status: "completed"
 created: 2026-07-29
 skills:
   - ddev-addon
