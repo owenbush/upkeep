@@ -1,0 +1,531 @@
+# Upkeep — Design Document
+
+*A contrib maintainer's workbench for Drupal.*
+
+Package: `owenbush/upkeep` (Composer). Binary: `upkeep`.
+
+A tooling design for reducing the per-issue, per-module chore of maintaining
+multiple Drupal contrib projects: reviewing merge requests, testing them in
+isolation across Drupal core versions, merging the safe ones, and preparing
+releases.
+
+Status: design consensus. Nothing built yet. This document captures the
+architecture, the reasoning behind each decision, the command surface, the
+runtime lifecycles, a build sequence, and the open questions still worth
+verifying before writing code.
+
+---
+
+## 1. Problem
+
+A maintainer of ~10 contrib modules spends disproportionate effort on a
+repetitive loop, per issue, per module:
+
+fetch MR → spin up an environment → install the module and its dependencies →
+run tests / static analysis → eyeball the result → merge → tag → cut a release.
+
+Doing this once is fine. Doing it across 10 modules — and, during a core
+transition, across every module at once — is where it becomes a grind. The
+automated Drupal-version compatibility MRs are the clearest example: high
+volume, homogeneous, and individually low-stakes, but collectively a large
+manual burden.
+
+The tool must not be a single-core-version device. Future Drupal versions will
+bring the same wave of compatibility work, so "which core version" is a
+first-class dimension of the design, not a hard-coded assumption.
+
+## 2. Goals and non-goals
+
+**Goals**
+
+- One place to see the state of every open MR across all maintained modules.
+- Fast, isolated testing of any MR — any issue, any module, any core version.
+- Automatic handling up to *merge* for trusted, homogeneous compatibility MRs
+  that pass all checks.
+- A way to drop any MR onto a running site to click through manually.
+- Draft release notes to remove the busywork of assembling a changelog.
+- Distributable to the community, using each ecosystem's native mechanisms.
+
+**Non-goals**
+
+- No automatic release cutting. Releases stay manual — there may be further
+  changes to batch in before tagging. The tool drafts notes; the human tags.
+- Not a new test rig. The per-project testing environment already exists and is
+  good; this design reuses it rather than reinventing it.
+- Not a hosted service. This is local, maintainer-side tooling.
+
+## 3. Guiding principle: isolate each axis with the cheapest mechanism that works
+
+The core insight that shapes everything below: "isolation" is not one thing. A
+module check needs isolation on three independent axes, and each has a different
+cheapest-correct mechanism.
+
+- **Database / site state** → swap via snapshot (fixtures). Instant.
+- **Codebase + Composer dependency tree + PHP version** → separate on-disk
+  project per (module × core-version). Isolated by construction.
+- **Container services (DB, PHP, web)** → shared images and caches, disposable
+  and recreated per project. Cheap.
+
+Conflating these is what makes the two obvious approaches unsatisfying. A single
+shared site (many modules in one codebase) is cheap on containers but destroys
+Composer/PHP isolation — fatal for cross-version testing, where D11 and D12 pull
+different dependency trees and want different PHP versions. A full separate
+environment per module is perfectly isolated but feels heavyweight if you assume
+the whole container set is the unit of cost.
+
+The resolution: don't share the *codebase*, share the *expensive caches*. Keep
+per-(module × core-version) projects for true isolation, and lean on the fact
+that container images and the Composer package cache are already shared globally
+across projects. You get correctness on every axis and pay far less overhead
+than the naive "N full environments" framing implies.
+
+## 4. Architecture overview
+
+Four layers.
+
+**Engine — the per-project rig (reused).**
+Each (module × core-version) combination is a project using the existing
+`ddev-drupal-contrib` add-on. It provides the correct core/PHP setup, the
+module-as-center-of-universe layout, and CI-aligned check commands
+(`ddev phpunit`, `ddev phpstan`, `ddev phpcs`) that mirror the Drupal
+Association's GitLab CI. This is deliberately not rebuilt: reusing it gives
+better CI fidelity than any hand-rolled rig, and it is mature and actively
+maintained.
+
+**Driver — the orchestrator (new).**
+A PHP command-line application, distributed as a Composer package. It is *not* a
+ddev add-on, because its job is inherently cross-project and external: it talks
+to the Drupal.org GitLab API and shells out to `ddev`. It enumerates modules and
+their MRs, drives the engine to test them, aggregates results into a dashboard,
+performs fast-lane merges, and drafts release notes.
+
+**Supporting — fixtures and maintenance (new).**
+Environment-internal commands that run *inside* a project: load/create DB
+fixtures, and prune a project's disposable state. Because these operate on the
+container/DB, they are `ddev` commands, shipped initially as a small companion
+ddev add-on (with the option to upstream into `ddev-drupal-contrib` later).
+
+**Cockpit — the control project (new).**
+A designated directory that houses the orchestrator's configuration (the module
+registry), the per-core-version base artifacts used for fast cold starts, and
+serves as the home you run the tool from.
+
+### The adapter boundary
+
+The single most important structural decision. The orchestrator does not call
+`ddev-drupal-contrib`'s specifics directly. It talks to a thin internal
+interface — roughly:
+
+- `ensure_env(module, core_version)`
+- `apply_mr(ref)`
+- `load_fixture(name)`
+- `run_checks()`
+- `serve()`
+- `teardown()`
+
+`ddev-drupal-contrib` is *one implementation* behind that interface. This means
+the decision to reuse it is not load-bearing: if it changes, or a different rig
+is preferable later, only the adapter is swapped, not the orchestrator. It also
+keeps the fixture commands separable — the orchestrator calls `load_fixture`,
+not a hard-coded ddev command name.
+
+## 5. Why not the alternatives
+
+Recording the roads not taken, so the choices are legible.
+
+- **`ddev-drupal-suite` (one site, many modules).** Its model shares one
+  codebase across modules, which breaks Composer and PHP-version isolation. It
+  was a useful design foil but is the wrong fit for cross-version testing.
+- **One project, many docroots via nginx.** Serves multiple roots from one
+  project, but shares one PHP version and one Composer root — isolation only of
+  the served directory, not the dependency/runtime environment. Fine for
+  same-core-version work; leaks exactly where cross-version testing needs it.
+- **Re-pointing one container set at swappable trees.** ddev's `composer_root`
+  is config-plus-restart, not a fast per-check switch, and driving Composer
+  against arbitrary subtrees is not cleanly supported. Fighting the grain of the
+  tool for a fragile result.
+- **A proxy in front of separate projects.** This is actually already true —
+  ddev runs a shared router in front of every project, so each (module ×
+  version) project is reachable at its own `*.ddev.site` URL with no extra
+  work. "Switching" is a URL lookup, not a reconfiguration. An extra proxy
+  container in the control project could add a single unified hostname on top,
+  but is optional.
+
+The conclusion the research pushed toward: separate projects are ddev's intended
+unit of isolation. Accept N projects, and claw back the cost through shared
+caches and base artifacts rather than through shared codebases.
+
+## 6. Fast cold starts
+
+Running N projects is accepted. The lever for making a *new* (module ×
+core-version) project spin up quickly is caching the stateful layers, since the
+containers themselves are already cheap (shared images, create-from-image in
+seconds).
+
+**Already shared/cached for free across projects:**
+
+- Docker images — pulled once, shared by every project.
+- Composer package cache — global; the first resolve of a core version's
+  dependency graph downloads packages, every later tree of that version reuses
+  them. This is the big win for the version matrix.
+- Docker layer cache — any real image building is layer-cached.
+
+**Built once per core version (the engineered part):**
+
+- **Base vendor tree** — a resolved `drupal/recommended-project` for each core
+  version. Identical across all modules until the module itself is required. A
+  new project is seeded by copying this base tree (fast local copy), then
+  `composer require`-ing just the one module on top — resolving the ~5% that is
+  the module, not the ~95% that is Drupal.
+- **Clean-install DB snapshot** — a freshly installed, module-free site per core
+  version, stored as a fixture/snapshot. New projects restore it in seconds
+  instead of running a full site install.
+
+**Cold-start recipe for a fresh (module × core-version) project:**
+
+1. Create project, start containers → seconds (shared images).
+2. Seed codebase from the cached base vendor tree for that core version → fast
+   local copy.
+3. `composer require` the one module → small incremental resolve, packages
+   already cached.
+4. Restore the clean-base DB snapshot for that core version → seconds.
+5. Apply the MR, enable the module, run checks.
+
+Every step rides an existing cache or a per-core-version base artifact built
+once. The only irreducible per-check cost is the module's incremental require
+and the MR checkout — which is the actual thing under test.
+
+Note: containers cannot be meaningfully "snapshotted" in a VM sense in ddev's
+model — they are disposable and recreated from images plus volumes. All caching
+effort correctly targets the two stateful layers: DB (snapshots) and
+vendor/codebase (base-tree copy).
+
+## 7. Fixtures
+
+Fixtures are the mechanism for fast, realistic, isolated DB state. Two formats,
+each for a different job.
+
+- **Snapshots** — the fast local working mechanism. Restore a known state in
+  seconds; discard after a check. Tied to the exact DB engine/version, so they
+  are a local cache, not a portable artifact.
+- **Dumps (gzipped SQL)** — the portable, version-controllable source of truth.
+  Engine-agnostic, used to *build* a snapshot on any machine or DB version.
+  Slower to restore, but shareable and committable.
+
+**Model:** a fixture is a named SQL dump; the tool materializes it into a fast
+snapshot on first use, then restores the snapshot for subsequent checks.
+Portability and speed both, and the cross-version DB-engine skew problem is
+handled because the portable dump can always rebuild a snapshot against whatever
+engine the current core version uses.
+
+**Scope — both shared and per-module:**
+
+- **Shared library** — generic states (`minimal`, `with-content`,
+  `multilingual`) living with the workbench, reused across modules.
+- **Per-module fixtures** — committed to the module repo under a conventional
+  `tests/fixtures/` path, travelling to everyone who clones it. Resolution is
+  per-module-first, falling back to the shared library.
+
+Committing fixtures to module repos turns them into reusable test infrastructure
+that co-maintainers and contributors inherit — a genuine contribution to the
+module, not just a personal convenience.
+
+**Cautions for committed fixtures (public, licensed artifacts):**
+
+- **Sanitization.** A DB dump can carry PII, emails, hashed passwords, session
+  data, real content. Anything committed must be synthetic or sanitized. The
+  create flow should default to running `drush sql:sanitize` when the
+  destination is a module repo.
+- **Size / repo hygiene.** Gzipped dumps are binary blobs; Git keeps every
+  version forever. Keep fixtures deliberately lean — enough to exercise the code
+  path, not a production copy — and warn on large ones.
+
+Establishing the `tests/fixtures/` convention as a documented standard is itself
+a contribution: any maintainer with the tooling can check out any
+convention-following module and immediately load its fixtures.
+
+## 8. The general case vs. the fast lane
+
+Two tiers of behavior, so the tool is a year-round workbench rather than a
+one-off migration device.
+
+**General case (any issue, any MR, any core version).** For any MR pointed at,
+the tool fetches the ref, drops it onto the rig, runs the fast checks, pulls
+GitLab CI status, and can put it on a live site to click through. It assumes
+nothing about *why* the MR exists — bugfix, feature, security, compatibility all
+work the same. The core version is read from the project, never hard-coded.
+
+**Fast lane (automatable classes of MR).** On top sits an optional auto-merge
+gate that fires only for MRs matching a recognizable, safe pattern: currently,
+trusted automated compatibility MRs from the project update bot, with green
+GitLab CI and green local checks. The gate is deliberately conservative;
+anything not matching routes to manual review. The pattern is parameterized by
+the current target core version, so it carries forward to future versions
+unchanged, and other trusted classes could be added later.
+
+Checks that feed the gate: GitLab CI status (authoritative, via API) plus local
+PHPStan, deprecation/upgrade-status report, module install/enable, and a basic
+functional smoke — the fast, high-signal local checks, trusting CI for the full
+test matrix.
+
+### Critical constraint: the Drupal Association PAT/automation policy
+
+This is the single biggest external constraint on the design and it reshapes
+the fast lane. The DA's policy for Personal Access Tokens on git.drupalcode.org
+draws a hard line:
+
+- A PAT *may* be used to "perform any individual action that a user could
+  already perform with a regular authenticated session." Interactive,
+  human-triggered, one-action-at-a-time use is within this envelope.
+- A PAT *may not* be used "to create automation/bots without prior approval from
+  the Drupal Association engineering team."
+- The API is block-by-default. Specific endpoints are opened for PAT use on
+  request, by opening an issue in the Infrastructure project tagged `gitlab api`.
+- A 403 on this instance often reflects a closed endpoint or project config, not
+  just token scope. Build for graceful degradation, not assumed full access.
+
+Consequence: **the fast lane is human-triggered (decided).**
+
+The default and only v1 behavior is human-triggered, one-action-at-a-time
+merging:
+
+- **Human-triggered mode (v1).** The dashboard surfaces READY-AUTO rows; the
+  maintainer reviews and presses a key; the tool performs *that merge, as a
+  single action the user could have done in the browser*. This keeps the
+  policy's "individual action a user could perform" framing while removing the
+  per-MR UI clicking. It captures nearly all the time savings, requires no DA
+  sign-off, and aligns with the maintainer's preference that merging be
+  acknowledged and releases stay manual. Beyond compliance, a moment of human
+  acknowledgment before merging into projects the maintainer is responsible for
+  is the right default: cheap insurance against the compat MR that passes every
+  check but is subtly wrong.
+- **Unattended mode (future, out of scope for v1).** True batch
+  auto-merge-on-a-schedule is "automation/bots" under the policy and would
+  require explicit DA engineering approval (and possibly endpoint-opening
+  requests). Noted as a possible future extension, not designed around now. v1
+  does not build a gated second tier.
+
+Auth uses the same PATs maintainers already generate for HTTPS Git access
+(Drupal.org account → "Git access"), sent via the `PRIVATE-TOKEN` header. The
+tool must be rate-limit-friendly and well-behaved regardless of tier.
+
+## 9. Command surface
+
+Illustrative, not final. `upkeep` is the orchestrator (Composer package
+`owenbush/upkeep`); `ddev <verb>` are the companion add-on's in-project commands.
+
+**Orchestrator (run from the control project):**
+
+```
+upkeep dashboard              # all MRs, all modules, all core versions
+upkeep check <module> <mr>    # test one MR: checks + results
+upkeep check <module> <mr> --version=12
+upkeep check <module> <mr> --fixture=with-content
+upkeep review <module> <mr>   # drop MR onto a live site to click through
+upkeep merge --fast-lane      # merge the ready class, one approved action at a time
+upkeep notes <module>         # draft release notes since last tag
+```
+
+Dashboard sketch:
+
+```
+MODULE            MR   CORE   TITLE                     CI    LOCAL  STATUS
+my_module         12   12     Automated D12 compat      ok    ok     READY-AUTO
+another_module    8    12     Automated D12 compat      ok    fail   REVIEW (phpstan)
+third_module      15   11     Fix random test failure   fail  -      BLOCKED (CI)
+gadget            3    12     Automated D12 compat       ok    ok     READY-AUTO
+```
+
+**Fixtures (in-project ddev commands):**
+
+```
+ddev fixture-create <name>    # export current DB -> portable dump (sanitized if module repo)
+ddev fixture-load <name>      # materialize dump -> snapshot -> restore
+ddev fixture-list
+```
+
+**Maintenance / prune (disk control):**
+
+```
+upkeep status --disk               # disk per module/version/category
+upkeep prune --trees --older-than=30d    # drop disposable vendor/codebase trees
+upkeep prune --snapshots           # keep-latest-N per module
+upkeep prune --projects            # tear down stale project volumes
+upkeep prune --all --older-than=30d      # orchestrated sweep
+```
+
+Maintenance principles: **dry-run by default** on anything destructive (show the
+reclaim, require confirmation), and **protect canonical artifacts** — committed
+`tests/fixtures/`, "keep" snapshots, and the per-core-version base artifacts are
+never auto-pruned. Only disposable derived state (per-module vendor trees,
+materialized snapshots, stopped project volumes) is aggressively reclaimable,
+which is safe precisely because it is cheap to regenerate.
+
+## 10. Disk and the maintenance lifecycle
+
+Disk grows with (modules × core-versions tested). Ten modules across two core
+versions is twenty vendor trees plus their volumes and snapshots. This is the
+accepted cost of honest cross-version isolation — a green check meaning green
+*for that exact core version*, with no cross-contamination, is the product.
+
+The trade is favorable because the disposable layers are cheap to regenerate:
+vendor trees rebuild from the shared Composer cache and the base tree; snapshots
+rebuild from dumps. So pruning can be aggressive on disposable state while base
+artifacts and committed fixtures stay protected. `status --disk` surfaces where
+space is going before anything is reclaimed.
+
+Lifecycle in one line: build (module × version) trees lazily on first check,
+reuse them warm via shared caches, snapshot-swap DB state per check, prune the
+disposable layers on a threshold — canonical and base artifacts always
+preserved.
+
+## 11. Packaging and distribution
+
+- **Orchestrator** → `upkeep`, a PHP CLI (Symfony Console), distributed as the
+  Composer package `owenbush/upkeep` (`composer global require owenbush/upkeep`),
+  optionally also a phar later. Chosen because the audience is Drupal contrib
+  maintainers who already live in PHP/Composer; this is how Drush, PHPStan,
+  PHP_CodeSniffer, and Rector ship. It keeps the whole project in one ecosystem
+  and asks the user to adopt no foreign toolchain.
+- **Fixtures + maintenance ddev commands** → a companion ddev add-on
+  (`ddev add-on get ...`), the native mechanism for in-project commands. Start
+  as a companion for fast iteration; propose upstream into `ddev-drupal-contrib`
+  once proven.
+- **Engine** → the existing `ddev-drupal-contrib`, unchanged.
+
+The result is a stack where every piece feels native to a Drupal maintainer: the
+orchestrator ships like Drush, the extension ships like a ddev add-on, and
+nothing requires a Node or Python toolchain.
+
+**On the name.** "Upkeep" says exactly what the tool does — keeping a set of
+modules maintained — is short and comfortable to type as a command, and is
+gender-neutral. It was chosen after checking the Drupal namespace, which is
+dense with brands: `druid`, `steward`, and `forge` were each ruled out for
+colliding with existing Drupal agencies or projects, and `bench` was set aside
+for its proximity to the established Workbench module suite. "Upkeep" appears in
+the Drupal space only as the ordinary English word, with no module, project,
+suite, or agency collision. One verification remains before publishing: confirm
+`owenbush/upkeep` and the `upkeep` binary name are free on Packagist
+specifically (a clear web search does not guarantee the package registry is
+free).
+
+## 11a. Prior art and references
+
+Related projects in the same arena. None is a dependency of this design; they
+are reference implementations, foils, and signals of who is working nearby.
+
+- **`ddev-drupal-contrib`** — the engine. Reused wholesale (see sections 4 and
+  5). Confirmed healthy and officially blessed: ~136 stars, actively maintained,
+  and the subject of a DDEV issue to "make the add-on official... align local
+  development with what the DA uses in its CI." It already treats core version as
+  a first-class dimension (`TEST_DRUPAL_CORE` env var; nightly tests against all
+  supported cores), which validates the per-(module × core-version) model. Its
+  `symlink-project` + `poser` commands are its answer to getting a module's
+  working copy into the site without Composer clobbering it (a temporary
+  `composer.contrib.json` keeps the module's own `composer.json` untouched).
+
+- **`joachim-n/drupal-project-contrib-development`** — prior art, not a
+  dependency. It is a Composer *plugin* aimed at the site-builder workflow
+  (patch a contrib dependency of a production site against its installed
+  version), which is a different workflow from ours (evaluate incoming MRs
+  against clean core). It cannot be reused as a library — its commands are
+  human-typed Composer subcommands operating on the host project's
+  `composer.json`, not a programmatic API. Its value is two borrowable insights:
+    1. **Path repositories over `--prefer-source`.** When bringing a module's
+       git clone into a Composer project, use a Composer *path repository* so
+       Composer treats the checked-out code as an external working copy it will
+       not delete or reset. `--prefer-source` makes Composer consider itself the
+       owner and it may remove branches or the whole checkout. When building the
+       adapter's `apply_mr`, use the path-repository approach (or the engine's
+       equivalent `symlink-project`/`poser` mechanism, which is what we will use
+       by default) — never `--prefer-source`.
+    2. **Native-base vs. backport boundary.** An MR's diff is cut against the
+       module's development branch. Our model tests each MR against its *native
+       base branch* on clean core, so MR application is a straightforward branch
+       checkout and the diff always applies. Testing an MR against a *different*
+       branch than it was cut against (backport / against-stable scenarios) is a
+       distinct, harder case that would need a diff-from-installed-version
+       approach like Joachim's `apply-patch-from-branch`. This design scopes to
+       native-base testing; backport testing is explicitly out of scope for the
+       first version.
+  Joachim is also active in the `ddev-drupal-contrib` queue, so he is a natural
+  person to solicit feedback from when proposing fixtures upstream or floating
+  the orchestrator.
+
+- **`ddev-drupal-suite`** — design foil only. Its one-site-many-modules model
+  demonstrated the shared-codebase approach this design rejects (breaks
+  Composer/PHP-version isolation). Early and small; referenced for contrast, not
+  used.
+
+## 12. Build sequence
+
+Smallest independent value first.
+
+1. **Fixture + maintenance ddev commands** (companion add-on). Self-contained,
+   independently useful, testable against one real module immediately.
+2. **Base-artifact caching** — per-core-version base vendor tree and clean
+   install snapshot, plus the seed-a-new-project logic. Prerequisite for fast
+   cold starts; the orchestrator depends on it.
+3. **Orchestrator core** — GitLab API client + environment driver behind the
+   adapter interface + the dashboard. The bulk of the novel work.
+4. **Fast-lane merge + release notes** — layered on once dashboard and driving
+   work.
+5. **Control project + packaging** — tie together; finalize the invocation and
+   distribution.
+
+## 13. Open questions to verify before building
+
+- **Fixtures: upstream vs. companion.** Lean is companion-first, upstream later.
+  A scan of the `ddev-drupal-contrib` open issue queue (mid-2026) showed no
+  existing fixture or MR-orchestration feature, supporting the companion-first
+  read. Still worth reading the full text of the open enhancement issues
+  (#164, #163, #157, #172, #170) before building the fixture piece, to confirm
+  none overlaps.
+- **Toolchain churn underneath the engine.** The queue shows the engine and
+  wider toolchain move (Composer 2.9 broke tests; a `gitlab_templates` upstream
+  change broke `symlink-project` until the add-on was upgraded). This is the
+  concrete argument for the adapter boundary: absorb such churn in one adapter,
+  not across the orchestrator. Pin the engine add-on version and treat upgrades
+  as deliberate adapter-maintenance events.
+- **MR application mechanics.** Use the engine's `symlink-project`/`poser` (or a
+  Composer path repository) — never `--prefer-source` — so Composer does not
+  clobber the checked-out MR branch. See section 11a.
+- **ddev reclamation semantics.** Confirm exactly what `ddev delete`,
+  `ddev stop --remove-data`, and plain tree removal each reclaim, so the prune
+  commands target the right things.
+- **Shared Composer cache across the version matrix.** Verify behavior when D11
+  and D12 pull different versions of the same package into one global cache — no
+  correctness issue expected, but worth confirming.
+- **Base-vendor-copy seeding.** Confirm that copying a resolved base tree and
+  incrementally requiring a module on top behaves cleanly (autoloader,
+  installed-paths, scaffold) versus a from-scratch resolve.
+- **GitLab API specifics on git.drupalcode.org.** *Partly resolved.*
+  git.drupalcode.org is a stock GitLab instance; MR listing (`state=opened`,
+  `scope=all`), pipeline status, and merge are standard REST endpoints authed via
+  the `PRIVATE-TOKEN` header using the maintainer's existing Git-access PAT. The
+  binding constraint is the DA PAT/automation policy (see section 8): interactive
+  single-actions are permitted; unattended automation needs prior DA approval;
+  the API is block-by-default with endpoints opened on request via an
+  Infrastructure issue tagged `gitlab api`. Remaining to verify: exactly which
+  endpoints are currently open to PATs vs. blocked (test empirically against a
+  real project, expect 403s on closed paths), and whether the merge endpoint
+  specifically is open for interactive use without special approval.
+- **Bot-MR identification.** Pin down the exact author/branch pattern of the
+  automated compatibility MRs, since the fast-lane gate keys off it.
+
+## 14. Summary
+
+Reuse `ddev-drupal-contrib` as the engine. Build a PHP/Composer-packaged
+orchestrator as the driver, talking to the Drupal.org GitLab API and driving the
+engine through a thin, swappable adapter interface. Add fixtures and maintenance
+as a companion ddev add-on. Isolate each axis with its cheapest-correct
+mechanism — snapshots for DB state, separate projects for codebase/Composer/PHP,
+shared caches for containers — and make cold starts fast with per-core-version
+base artifacts. Keep disk in check with a dry-run-by-default prune surface that
+protects canonical artifacts. Automate up to merge for trusted compatibility
+MRs; keep releases manual with drafted notes. The fast lane is human-triggered —
+the tool tests and surfaces ready MRs; the maintainer approves each merge as a
+single action — which respects the DA automation policy and is the right default
+for merging into projects one is responsible for. Design for the version matrix
+from the start, so the tool stays useful for every future Drupal transition, not
+just the current one.
