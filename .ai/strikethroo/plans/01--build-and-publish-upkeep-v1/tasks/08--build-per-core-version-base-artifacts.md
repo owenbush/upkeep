@@ -2,7 +2,7 @@
 id: 8
 group: "orchestrator-core"
 dependencies: [3, 7]
-status: "pending"
+status: "in-progress"
 created: 2026-07-29
 skills:
   - composer
