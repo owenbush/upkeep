@@ -2,7 +2,7 @@
 id: 7
 group: "orchestrator-core"
 dependencies: []
-status: "in-progress"
+status: "completed"
 created: 2026-07-29
 skills:
   - symfony-console
