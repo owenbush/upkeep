@@ -1,0 +1,38 @@
+{
+    "name": "owenbush/upkeep",
+    "description": "Maintenance orchestrator CLI for contributed Drupal modules: cockpit-driven module registry, fixtures, and merge-request workflows.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["drupal", "maintenance", "cli", "contrib"],
+    "authors": [
+        {
+            "name": "Owen Bush",
+            "email": "owen@obush.co.uk"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "symfony/console": "^7.0",
+        "symfony/yaml": "^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "bin": [
+        "bin/upkeep"
+    ],
+    "autoload": {
+        "psr-4": {
+            "Upkeep\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Upkeep\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}
