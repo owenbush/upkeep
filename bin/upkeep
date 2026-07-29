@@ -1,0 +1,22 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Symfony\Component\Console\Application;
+use Upkeep\Command\InitCommand;
+use Upkeep\Command\ModulesCommand;
+
+foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
+    if (file_exists($autoload)) {
+        require $autoload;
+        break;
+    }
+}
+
+$application = new Application('Upkeep', 'dev');
+$application->addCommands([
+    new InitCommand(),
+    new ModulesCommand(),
+]);
+$application->run();
