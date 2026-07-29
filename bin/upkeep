@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use Symfony\Component\Console\Application;
+use Upkeep\Command\ApiProbeCommand;
 use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
 use Upkeep\Command\InitCommand;
@@ -18,6 +19,7 @@ foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php
 
 $application = new Application('Upkeep', 'dev');
 $application->addCommands([
+    new ApiProbeCommand(),
     new BaseArtifactsBuildCommand(),
     new BaseArtifactsStatusCommand(),
     new InitCommand(),
