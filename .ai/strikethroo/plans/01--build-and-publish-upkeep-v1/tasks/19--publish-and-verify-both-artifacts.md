@@ -11,6 +11,12 @@ complexity_score: 3
 ---
 # Publish both artifacts and verify the installation paths
 
+> **⛔ HOLD (2026-07-29, user directive): Do NOT execute this task — in this or any
+> future session — until the user (Owen) has tested the full toolchain locally and
+> given explicit, fresh approval to publish. This supersedes the plan's "publish"
+> end-state until lifted. Blueprint execution stops after Phase 7 and hands over
+> for local testing.**
+
 ## Objective
 Take both repos public and make the tool really installable: create/publish the public GitHub repo for `owenbush/upkeep`, register it on Packagist, tag initial versions of both repos, flip `owenbush/ddev-upkeep` public, and verify both ecosystem install paths end-to-end from clean state — `composer global require owenbush/upkeep` and `ddev add-on get owenbush/ddev-upkeep`.
 

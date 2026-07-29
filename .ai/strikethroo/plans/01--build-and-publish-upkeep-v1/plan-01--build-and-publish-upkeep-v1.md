@@ -340,11 +340,11 @@ graph TD
 - ✔️ Task 04: Scaffold the ddev-upkeep add-on repo from the official template — `completed`
 - ✔️ Task 07: Scaffold the upkeep CLI package with cockpit config and module registry — `completed`
 
-### Phase 2: Add-on Commands and Orchestrator Foundations
+### ✅ Phase 2: Add-on Commands and Orchestrator Foundations
 **Parallel Tasks:**
-- Task 05: Implement fixture and project-local maintenance commands (depends on: 04)
-- Task 08: Implement per-core-version base artifact building (depends on: 03, 07)
-- Task 09: Implement the git.drupalcode.org GitLab API client (depends on: 02, 07)
+- ✔️ Task 05: Implement fixture and project-local maintenance commands (depends on: 04) — `completed`
+- ✔️ Task 08: Implement per-core-version base artifact building (depends on: 03, 07) — `completed`
+- ✔️ Task 09: Implement the git.drupalcode.org GitLab API client (depends on: 02, 07) — `completed`
 
 ### Phase 3: Add-on Tests, Environment Lifecycle, Release Notes
 **Parallel Tasks:**
