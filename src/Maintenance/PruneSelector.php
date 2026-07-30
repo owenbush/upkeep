@@ -14,7 +14,11 @@ namespace Upkeep\Maintenance;
  *   - the item is keep-marked (a `.keep` marker exists next to it);
  *   - its path lies under a protected root (the cockpit's base-artifacts/
  *     and fixtures/ directories) — guards against scanner mislabeling;
- *   - its path contains a `tests/fixtures/` segment (committed module dumps).
+ *   - its path contains a `tests/fixtures/` segment (committed module dumps);
+ *   - it is the tree (or a volume) of an environment holding a keep-marked
+ *     snapshot: pruning the tree would destroy the kept snapshot with it, so
+ *     the keep mark escalates to the whole environment. Committed dumps do
+ *     NOT escalate — the module clone is regenerable from upstream.
  */
 final readonly class PruneSelector
 {
@@ -41,10 +45,13 @@ final readonly class PruneSelector
         \DateTimeImmutable $now,
         int $keepLatest = 0,
     ): array {
+        $keptProjects = self::projectsWithKeepMarkedSnapshots($items);
+
         $inScope = array_values(array_filter(
             $items,
             fn (InventoryItem $item): bool => \in_array($item->category, $scope->categories(), true)
-                && $this->protectionReason($item) === null,
+                && $this->protectionReason($item) === null
+                && !self::keepMarkEscalates($item, $keptProjects),
         ));
 
         // keep-latest budgets are computed over ALL unprotected snapshots
@@ -91,6 +98,33 @@ final readonly class PruneSelector
         }
 
         return null;
+    }
+
+    /**
+     * @param list<InventoryItem> $items
+     *
+     * @return array<string, true> project names whose snapshot store holds a keep-marked snapshot
+     */
+    private static function projectsWithKeepMarkedSnapshots(array $items): array
+    {
+        $projects = [];
+        foreach ($items as $item) {
+            if ($item->category === Category::Snapshot && $item->keepMarked && $item->projectName !== null) {
+                $projects[$item->projectName] = true;
+            }
+        }
+
+        return $projects;
+    }
+
+    /**
+     * @param array<string, true> $keptProjects
+     */
+    private static function keepMarkEscalates(InventoryItem $item, array $keptProjects): bool
+    {
+        return ($item->category === Category::ProjectTree || $item->category === Category::ProjectVolume)
+            && $item->projectName !== null
+            && isset($keptProjects[$item->projectName]);
     }
 
     private static function oldEnough(InventoryItem $item, ?int $olderThanSeconds, \DateTimeImmutable $now): bool

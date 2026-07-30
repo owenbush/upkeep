@@ -66,6 +66,17 @@ final class PruneCommandTest extends TestCase
         // A keep-marked environment.
         mkdir($this->projects . '/upkeep-kept-env-d11', 0755, true);
         file_put_contents($this->projects . '/upkeep-kept-env-d11/.keep', '');
+
+        // A plain prunable environment (no keep marks anywhere): the d11 env
+        // above is tree-protected by its keep-marked snapshot (escalation).
+        mkdir($this->projects . '/upkeep-conditions-helper-d10', 0755, true);
+        file_put_contents($this->projects . '/upkeep-conditions-helper-d10/.upkeep-env.yml', implode("\n", [
+            'module: conditions_helper',
+            'core_major: \'10\'',
+            'seed_core_version: 10.6.14',
+            'addon_version: v1.0.0',
+            'created_at: \'2026-01-01T00:00:00+00:00\'',
+        ]));
     }
 
     protected function tearDown(): void
@@ -179,8 +190,12 @@ final class PruneCommandTest extends TestCase
         $tester = $this->runPrune(['--trees' => true, '--yes' => true]);
 
         $tester->assertCommandIsSuccessful();
-        self::assertSame([['conditions_helper', '11']], $this->teardowns);
+        // Only the plain d10 env is torn down: the d11 env is protected by its
+        // keep-marked snapshot (escalation), upkeep-kept-env-d11 by its .keep.
+        self::assertSame([['conditions_helper', '10']], $this->teardowns);
         self::assertDirectoryExists($this->projects . '/upkeep-kept-env-d11', 'keep-marked environment must survive');
+        self::assertDirectoryExists($this->projects . '/upkeep-conditions-helper-d11', 'environment holding a keep-marked snapshot must survive a tree prune');
+        self::assertFileExists($this->snapshotPath('kept'));
         self::assertDirectoryExists($this->cockpit . '/base-artifacts/11');
     }
 

@@ -145,6 +145,43 @@ final class PruneSelectorTest extends TestCase
         self::assertCount(1, $candidates);
     }
 
+    public function testTreeContainingKeepMarkedSnapshotIsProtectedFromTreeAndProjectPruning(): void
+    {
+        // Pruning the tree would destroy the kept snapshot with it: the keep
+        // mark escalates to the containing environment (tree and volumes).
+        $tree = $this->tree('upkeep-conditions-helper-d11');
+        $volume = new InventoryItem(
+            path: 'upkeep-conditions-helper-d11-mariadb',
+            category: Category::ProjectVolume,
+            sizeBytes: 200,
+            projectName: 'upkeep-conditions-helper-d11',
+            lastUsedAt: $this->now->modify('-60 days'),
+        );
+        $keptSnapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '10 days', keep: true);
+        $otherTree = $this->tree('upkeep-other-d11');
+
+        foreach ([PruneScope::Trees, PruneScope::Projects, PruneScope::All] as $scope) {
+            $candidates = $this->selector()->select([$tree, $volume, $keptSnapshot, $otherTree], $scope, null, $this->now);
+            self::assertSame([$otherTree], $candidates, 'kept-snapshot escalation failed for scope ' . $scope->value);
+        }
+    }
+
+    public function testCommittedDumpsDoNotEscalateToTheirTree(): void
+    {
+        // Unlike keep marks, committed dumps are durable upstream (the module
+        // clone is regenerable), so they never protect the containing tree.
+        $tree = $this->tree('upkeep-conditions-helper-d11');
+        $dump = new InventoryItem(
+            path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
+            category: Category::FixtureDump,
+            sizeBytes: 100,
+            module: 'conditions_helper',
+            projectName: 'upkeep-conditions-helper-d11',
+        );
+
+        self::assertSame([$tree], $this->selector()->select([$tree, $dump], PruneScope::Trees, null, $this->now));
+    }
+
     // --- Scope filtering --------------------------------------------------
 
     public function testTreesScopeSelectsOnlyProjectTrees(): void
