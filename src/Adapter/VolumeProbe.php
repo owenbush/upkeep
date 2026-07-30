@@ -9,16 +9,18 @@ use Upkeep\Maintenance\InventoryItem;
 
 /**
  * Best-effort probe for the engine projects' docker named volumes: names via
- * `docker volume ls` (the engine labels every project volume with
- * com.ddev.site-name), sizes via `docker system df -v`. Only volumes whose
- * site label matches an inventoried project tree are reported — other
- * projects' volumes are none of our business. When docker is unavailable the
- * probe yields nothing; volume reclamation itself is always the adapter
- * teardown's job, never this class's.
+ * `docker volume ls` (verified live: the engine's compose-managed volumes
+ * carry com.docker.compose.project=ddev-<projectname>), sizes via
+ * `docker system df -v`. Only volumes whose label maps to an inventoried
+ * project tree are reported — other projects' volumes are none of our
+ * business. When docker is unavailable the probe yields nothing; volume
+ * reclamation itself is always the adapter teardown's job, never this
+ * class's.
  */
 final readonly class VolumeProbe
 {
-    private const string SITE_LABEL = 'com.ddev.site-name';
+    private const string PROJECT_LABEL = 'com.docker.compose.project';
+    private const string COMPOSE_PROJECT_PREFIX = 'ddev-';
 
     /**
      * @param \Closure(list<string>): ?string $exec runs a command, returns stdout or null on failure
@@ -39,7 +41,7 @@ final readonly class VolumeProbe
      */
     public function items(array $treesByProjectName): array
     {
-        $listing = ($this->exec)(['docker', 'volume', 'ls', '--format', sprintf('{{.Name}}\t{{.Label "%s"}}', self::SITE_LABEL)]);
+        $listing = ($this->exec)(['docker', 'volume', 'ls', '--format', sprintf('{{.Name}}\t{{.Label "%s"}}', self::PROJECT_LABEL)]);
         if ($listing === null) {
             return [];
         }
@@ -70,16 +72,18 @@ final readonly class VolumeProbe
 
     /**
      * Parses `docker volume ls --format '{{.Name}}\t{{.Label ...}}'` output.
+     * Only volumes whose compose-project label carries the engine's prefix
+     * are engine volumes; everything else is omitted.
      *
-     * @return array<string, string> volume name => site-name label (unlabeled volumes omitted)
+     * @return array<string, string> volume name => engine project name
      */
     public static function parseVolumeList(string $output): array
     {
         $volumes = [];
         foreach (explode("\n", trim($output)) as $line) {
             $parts = explode("\t", $line);
-            if (\count($parts) === 2 && $parts[0] !== '' && $parts[1] !== '') {
-                $volumes[$parts[0]] = $parts[1];
+            if (\count($parts) === 2 && $parts[0] !== '' && str_starts_with($parts[1], self::COMPOSE_PROJECT_PREFIX)) {
+                $volumes[$parts[0]] = substr($parts[1], \strlen(self::COMPOSE_PROJECT_PREFIX));
             }
         }
 

@@ -9,19 +9,22 @@ use Upkeep\Adapter\VolumeProbe;
 
 final class VolumeProbeTest extends TestCase
 {
-    public function testParsesVolumeListWithSiteLabels(): void
+    public function testParsesVolumeListMappingComposeProjectLabelsToEngineProjects(): void
     {
+        // Verified live: the engine's volumes carry
+        // com.docker.compose.project=ddev-<projectname> (NOT com.ddev.site-name).
         $output = implode("\n", [
-            "upkeep-conditions-helper-d10-mariadb\tupkeep-conditions-helper-d10",
+            "upkeep-conditions-helper-d10-mariadb\tddev-upkeep-conditions-helper-d10",
+            "ddev-upkeep-conditions-helper-d10-snapshots\tddev-upkeep-conditions-helper-d10",
             "ddev-global-cache\t",
-            "some-unrelated-volume\tother-project",
+            "unrelated-compose-volume\tsomeapp",
             '',
         ]);
 
         self::assertSame(
             [
                 'upkeep-conditions-helper-d10-mariadb' => 'upkeep-conditions-helper-d10',
-                'some-unrelated-volume' => 'other-project',
+                'ddev-upkeep-conditions-helper-d10-snapshots' => 'upkeep-conditions-helper-d10',
             ],
             VolumeProbe::parseVolumeList($output),
         );
