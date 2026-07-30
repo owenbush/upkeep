@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\BaseArtifact;
 
 use Symfony\Component\Process\Process;
+use Upkeep\Adapter\ThrowawaySite;
 
 /**
  * Builds the two canonical per-core-version base artifacts:
@@ -24,7 +25,8 @@ use Symfony\Component\Process\Process;
  * full `composer create-project` riding the shared global Composer cache
  * (also verified: dists are reused across majors, 0 downloads on a warm
  * re-resolve); every downstream environment then seeds by tree copy with
- * confidence. The throwaway ddev site-install project used for the DB dump is
+ * confidence. The throwaway install project used for the DB dump (engine
+ * mechanics owned by the adapter layer, see Upkeep\Adapter\ThrowawaySite) is
  * itself seeded from this tree by `cp -a` — the verified-identical copy path —
  * never by a second resolve, and drush is required only in the throwaway copy
  * so the canonical tree stays module-free.
@@ -38,6 +40,7 @@ final readonly class BaseArtifactBuilder
      */
     public function __construct(
         private ArtifactLayout $layout,
+        private ThrowawaySite $installSite,
         private string $scratchDir,
         private \Closure $log,
     ) {
@@ -56,9 +59,10 @@ final readonly class BaseArtifactBuilder
                 ));
             }
             // Deliberate stale rebuild: discard the previous artifact set. The
-            // artifact directory never has a ddev project attached (only the
-            // throwaway copy does), so plain removal is safe here — the
-            // ddev-delete-first rule applies to the throwaway, in teardown().
+            // artifact directory never has an engine project attached (only
+            // the throwaway copy does), so plain removal is safe here — the
+            // delete-project-first reclamation rule applies to the throwaway,
+            // inside the adapter's ThrowawaySite::teardown().
             ($this->log)(sprintf('--force: removing existing artifact set at %s', $versionDir));
             $this->run(['rm', '-rf', $versionDir], null);
         }
@@ -102,10 +106,20 @@ final readonly class BaseArtifactBuilder
         $projectName = sprintf('upkeep-base-d%s-%s', $coreMajor, substr(bin2hex(random_bytes(4)), 0, 6));
         $throwaway = rtrim($this->scratchDir, '/') . '/' . $projectName;
 
+        $dumpPath = $this->layout->dumpPath($coreMajor);
+
+        if (!is_dir($this->scratchDir) && !mkdir($this->scratchDir, 0755, true) && !is_dir($this->scratchDir)) {
+            throw new BuildException(sprintf('Could not create scratch directory "%s".', $this->scratchDir));
+        }
+
         try {
-            [$phpVersion, $dbEngine] = $this->cleanInstallAndDump($coreMajor, $treePath, $throwaway, $projectName);
+            [$phpVersion, $dbEngine] = $this->installSite->cleanInstallAndDump($coreMajor, $treePath, $throwaway, $projectName, $dumpPath);
         } finally {
-            $this->teardown($throwaway, $projectName);
+            $this->installSite->teardown($throwaway, $projectName);
+        }
+
+        if (!is_file($dumpPath) || (int) filesize($dumpPath) === 0) {
+            throw new BuildException(sprintf('DB export did not produce a non-empty dump at "%s".', $dumpPath));
         }
 
         $meta = new ArtifactMeta($coreVersion, $coreMajor, $phpVersion, $dbEngine, new \DateTimeImmutable());
@@ -116,91 +130,6 @@ final readonly class BaseArtifactBuilder
         );
 
         return $meta;
-    }
-
-    /**
-     * @return array{string, string} [php version, db engine identity] of the install environment
-     */
-    private function cleanInstallAndDump(string $coreMajor, string $treePath, string $throwaway, string $projectName): array
-    {
-        $scratchDir = \dirname($throwaway);
-        if (!is_dir($scratchDir) && !mkdir($scratchDir, 0755, true) && !is_dir($scratchDir)) {
-            throw new BuildException(sprintf('Could not create scratch directory "%s".', $scratchDir));
-        }
-
-        // Seed the throwaway by tree copy — the task-3-verified-identical path.
-        ($this->log)(sprintf('Copying base tree to throwaway ddev project %s ...', $throwaway));
-        $this->run(['cp', '-a', $treePath, $throwaway], null);
-
-        ($this->log)('Configuring throwaway ddev project ...');
-        $this->run([
-            'ddev', 'config',
-            '--project-type=' . sprintf('drupal%s', $coreMajor),
-            '--docroot=web',
-            '--project-name=' . $projectName,
-        ], $throwaway);
-
-        ($this->log)('Starting ddev ...');
-        $this->run(['ddev', 'start', '-y'], $throwaway);
-
-        // drush goes into the throwaway copy only; the canonical tree must
-        // stay module-free. Run composer inside the container so resolution
-        // happens against the same PHP the site will run on.
-        ($this->log)('Requiring drush in the throwaway copy (container-side composer) ...');
-        $this->run(['ddev', 'composer', 'require', 'drush/drush', '--no-interaction'], $throwaway);
-
-        ($this->log)('Installing Drupal (minimal profile, module-free) ...');
-        $this->run(['ddev', 'drush', 'site:install', 'minimal', '-y', '--account-pass=admin'], $throwaway);
-
-        $phpVersion = trim($this->run(['ddev', 'exec', 'php', '-r', 'echo PHP_VERSION;'], $throwaway));
-        $dbEngine = $this->detectDbEngine($throwaway);
-        ($this->log)(sprintf('Install environment: PHP %s, DB %s.', $phpVersion, $dbEngine));
-
-        $dumpPath = $this->layout->dumpPath($coreMajor);
-        ($this->log)(sprintf('Exporting clean-install DB dump to %s ...', $dumpPath));
-        $this->run(['ddev', 'export-db', '--file=' . $dumpPath, '--gzip=true'], $throwaway);
-
-        if (!is_file($dumpPath) || (int) filesize($dumpPath) === 0) {
-            throw new BuildException(sprintf('DB export did not produce a non-empty dump at "%s".', $dumpPath));
-        }
-
-        return [$phpVersion, $dbEngine];
-    }
-
-    private function detectDbEngine(string $throwaway): string
-    {
-        $json = $this->run(['ddev', 'describe', '-j'], $throwaway);
-        $decoded = json_decode($json, true);
-        $dbinfo = $decoded['raw']['dbinfo'] ?? [];
-        $type = $dbinfo['database_type'] ?? null;
-        $version = $dbinfo['database_version'] ?? null;
-
-        if (is_string($type) && $type !== '') {
-            return is_string($version) && $version !== '' ? $type . ':' . $version : $type;
-        }
-
-        return 'unknown';
-    }
-
-    private function teardown(string $throwaway, string $projectName): void
-    {
-        if (!is_dir($throwaway)) {
-            return;
-        }
-
-        // Reclamation order per the task-3 verification: `ddev delete
-        // --omit-snapshot` removes containers, all named volumes and per-project
-        // built images. A bare rm -rf would leave containers running and
-        // volumes orphaned — always ddev delete first, then remove the tree.
-        ($this->log)(sprintf('Tearing down throwaway ddev project %s ...', $projectName));
-        try {
-            $this->run(['ddev', 'delete', '--omit-snapshot', '--yes', $projectName], null);
-        } catch (BuildException $e) {
-            // Best effort: config may not have been written yet if the build
-            // failed before `ddev config` — nothing registered to delete.
-            ($this->log)('ddev delete reported: ' . $e->getMessage());
-        }
-        $this->run(['rm', '-rf', $throwaway], null);
     }
 
     /**

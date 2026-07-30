@@ -10,6 +10,9 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\ProcessRunner;
+use Upkeep\Adapter\ThrowawaySite;
 use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\BaseArtifactBuilder;
 use Upkeep\BaseArtifact\BuildException;
@@ -30,15 +33,16 @@ final class BaseArtifactsBuildCommand extends Command
             // command runs), so a command-scoped --version can never be received.
             ->addOption('core', null, InputOption::VALUE_REQUIRED, 'Drupal core major version to build artifacts for (e.g. 11)')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Deliberately rebuild over an existing artifact set')
-            // Defaults under $HOME, not the system temp dir: the throwaway ddev
-            // project is bind-mounted into the Docker VM, and macOS providers
-            // (colima, Docker Desktop) only share the home directory by default
-            // — /tmp and /private/tmp are not mounted and the install fails.
+            // Defaults under $HOME, not the system temp dir: the throwaway
+            // install project is bind-mounted into the Docker VM, and macOS
+            // providers (colima, Docker Desktop) only share the home directory
+            // by default — /tmp and /private/tmp are not mounted and the
+            // install fails.
             ->addOption(
                 'scratch-dir',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Directory for the throwaway ddev site-install project (must be a path your Docker provider mounts, e.g. under your home directory)',
+                'Directory for the throwaway site-install project (must be a path your Docker provider mounts, e.g. under your home directory)',
                 self::defaultScratchDir(),
             )
             ->addOption(
@@ -68,15 +72,17 @@ final class BaseArtifactsBuildCommand extends Command
         }
 
         $layout = new ArtifactLayout($cockpit->baseArtifactsPath());
+        $log = static fn (string $line) => $output->writeln($line);
         $builder = new BaseArtifactBuilder(
             $layout,
+            new ThrowawaySite(new ProcessRunner($log), $log),
             (string) $input->getOption('scratch-dir'),
-            static fn (string $line) => $output->writeln($line),
+            $log,
         );
 
         try {
             $meta = $builder->build($version, (bool) $input->getOption('force'));
-        } catch (\InvalidArgumentException | BuildException | MetaException $e) {
+        } catch (\InvalidArgumentException | BuildException | MetaException | AdapterException $e) {
             $io->error($e->getMessage());
 
             return Command::FAILURE;
