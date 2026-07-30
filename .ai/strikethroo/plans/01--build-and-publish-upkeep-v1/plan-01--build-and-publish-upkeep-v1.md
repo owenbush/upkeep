@@ -346,11 +346,11 @@ graph TD
 - ✔️ Task 08: Implement per-core-version base artifact building (depends on: 03, 07) — `completed`
 - ✔️ Task 09: Implement the git.drupalcode.org GitLab API client (depends on: 02, 07) — `completed`
 
-### Phase 3: Add-on Tests, Environment Lifecycle, Release Notes
+### ✅ Phase 3: Add-on Tests, Environment Lifecycle, Release Notes
 **Parallel Tasks:**
-- Task 06: Add-on integration tests for the fixture round-trip (depends on: 05)
-- Task 10: Define the adapter interface and implement environment lifecycle (depends on: 08)
-- Task 15: Implement the release notes drafting command (depends on: 09)
+- ✔️ Task 06: Add-on integration tests for the fixture round-trip (depends on: 05) — `completed` (CI-green deferred to task 19; Actions credits exhausted)
+- ✔️ Task 10: Define the adapter interface and implement environment lifecycle (depends on: 08) — `completed`
+- ✔️ Task 15: Implement the release notes drafting command (depends on: 09) — `completed`
 
 ### Phase 4: Adapter Completion and Maintenance Surface
 **Parallel Tasks:**

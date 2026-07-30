@@ -2,7 +2,7 @@
 id: 6
 group: "ddev-addon"
 dependencies: [5]
-status: "pending"
+status: "completed"
 created: 2026-07-29
 skills:
   - bats
@@ -36,6 +36,8 @@ Use your internal Todo tool to track these and keep on track.
 - Passing test suite and green CI in `owenbush/ddev-upkeep`, gating task 19 (publication requires green CI on the published tag).
 
 ## Implementation Notes
+2026-07-30: CI-green verification is DEFERRED to task 19 with the user's approval — the GitHub account's Actions credits are exhausted until they reset in a few days, so the "CI workflow runs green on push" criterion cannot be verified now. Local bats green (`bats tests --filter-tags '!release'` → 4/4 ok) is the accepted evidence; the pushed workflow run's queued/blocked state is recorded in the task 6 report.
+
 Test philosophy (apply verbatim): **write a few tests, mostly integration.** Meaningful tests verify custom business logic, critical paths, and edge cases specific to this application — test *your* code, not the framework or library. Write tests for: custom business logic, critical workflows and data transformations, edge cases and error conditions for core functionality, integration points. Do NOT write tests for: third-party functionality (ddev itself, mysqldump), framework features, trivial operations, or obvious functionality that would break immediately if incorrect. Combine related scenarios into single tests; favor integration and critical-path coverage over per-command micro-tests.
 
 <details>
