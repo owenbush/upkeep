@@ -352,10 +352,10 @@ graph TD
 - ✔️ Task 10: Define the adapter interface and implement environment lifecycle (depends on: 08) — `completed`
 - ✔️ Task 15: Implement the release notes drafting command (depends on: 09) — `completed`
 
-### Phase 4: Adapter Completion and Maintenance Surface
+### ✅ Phase 4: Adapter Completion and Maintenance Surface
 **Parallel Tasks:**
-- Task 11: Implement adapter MR, fixture, check, and serve operations (depends on: 10, 05)
-- Task 16: Implement disk status and prune commands (depends on: 10, 03)
+- ✔️ Task 11: Implement adapter MR, fixture, check, and serve operations (depends on: 10, 05) — `completed`
+- ✔️ Task 16: Implement disk status and prune commands (depends on: 10, 03) — `completed`
 
 ### Phase 5: Primary Workflow Commands
 **Parallel Tasks:**
