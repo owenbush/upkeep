@@ -57,6 +57,39 @@ final readonly class ProcessRunner
     }
 
     /**
+     * Runs a command treating any outcome — success, failure, timeout — as
+     * data. For check runs, where a non-zero exit is a result to report,
+     * not an error to throw.
+     *
+     * @param list<string> $command
+     */
+    public function capture(array $command, ?string $cwd = null, int $timeout = self::DEFAULT_TIMEOUT): CapturedProcess
+    {
+        $started = microtime(true);
+        $combined = '';
+        $process = new Process($command, $cwd, timeout: $timeout);
+        $timedOut = false;
+
+        try {
+            $process->run(function (string $type, string $buffer) use (&$combined): void {
+                $combined .= $buffer;
+                foreach (explode("\n", rtrim($buffer, "\n")) as $line) {
+                    ($this->log)('  ' . $line);
+                }
+            });
+        } catch (\Symfony\Component\Process\Exception\ProcessTimedOutException) {
+            $timedOut = true;
+        }
+
+        return new CapturedProcess(
+            exitCode: $process->getExitCode() ?? -1,
+            output: $combined,
+            timedOut: $timedOut,
+            durationSeconds: microtime(true) - $started,
+        );
+    }
+
+    /**
      * @param list<string> $command
      */
     private function start(array $command, ?string $cwd, int $timeout): Process

@@ -60,6 +60,8 @@ final class ModuleWiringTest extends TestCase
     {
         self::assertSame('dev-main', ModuleWiring::devConstraintForBranch('main'));
         self::assertSame('dev-8.x-1.x', ModuleWiring::devConstraintForBranch('8.x-1.x'));
+        // applyMr pins the working copy's mr-<iid> branch through the same rule.
+        self::assertSame('dev-mr-2', ModuleWiring::devConstraintForBranch('mr-2'));
     }
 
     public function testVersionLikeBranchesGetTheDevSuffixPerComposerNormalization(): void

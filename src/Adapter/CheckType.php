@@ -16,4 +16,13 @@ enum CheckType: string
     case PhpStan = 'phpstan';
     case EsLint = 'eslint';
     case StyleLint = 'stylelint';
+
+    /** The module installs/enables cleanly (`drush pm:install`). */
+    case ModuleInstall = 'module_install';
+
+    /** Front page returns HTTP 200 with the module enabled. */
+    case FunctionalSmoke = 'functional_smoke';
+
+    /** Deprecation/upgrade-status report for the target core, when the engine provides one. */
+    case Deprecation = 'deprecation';
 }

@@ -33,6 +33,14 @@ final readonly class EngineAddOn
     public const string CONFIG_FILENAME = 'config.contrib.yaml';
 
     /**
+     * Where the add-on's check commands look for the module, relative to the
+     * docroot: adaptContribConfig() repoints DRUPAL_PROJECTS_PATH here, and
+     * the adapter's check invocations scope themselves to
+     * <PROJECTS_PATH>/<module> beneath it.
+     */
+    public const string PROJECTS_PATH = 'modules/contrib';
+
+    /**
      * Adapts the shipped config.contrib.yaml to upkeep's seeded-tree layout.
      *
      * The add-on assumes the MODULE is the project root ("module as the
@@ -65,7 +73,7 @@ final readonly class EngineAddOn
         if (isset($config['web_environment']) && is_array($config['web_environment'])) {
             $config['web_environment'] = array_values(array_map(
                 static fn (string $var): string => str_starts_with($var, 'DRUPAL_PROJECTS_PATH=')
-                    ? 'DRUPAL_PROJECTS_PATH=modules/contrib'
+                    ? 'DRUPAL_PROJECTS_PATH=' . self::PROJECTS_PATH
                     : $var,
                 $config['web_environment'],
             ));

@@ -31,6 +31,37 @@ final class DdevContribAdapter implements EngineAdapterInterface
     private const string GIT_BASE_URL = 'https://git.drupalcode.org/';
     private const string MODULE_DIR = 'module';
 
+    /** Generous per-check timebox; a timeout is a failure with reason. */
+    private const int CHECK_TIMEOUT = 1800;
+
+    /** The default suite: engine static/test checks, install, smoke, deprecation. */
+    private const array DEFAULT_CHECKS = [
+        CheckType::PhpUnit,
+        CheckType::PhpStan,
+        CheckType::PhpCs,
+        CheckType::ModuleInstall,
+        CheckType::FunctionalSmoke,
+        CheckType::Deprecation,
+    ];
+
+    /** Checks that need the dev toolchain (phpunit/phpstan/phpcs binaries) in vendor/. */
+    private const array TOOLCHAIN_CHECKS = [CheckType::PhpUnit, CheckType::PhpStan, CheckType::PhpCs];
+
+    /**
+     * What check provisioning installs (container-side, --dev): the same
+     * toolchain drupal.org GitLab CI uses. core-dev pins phpunit and friends
+     * to the seeded core; coder ships phpcs + the Drupal standards;
+     * mglaman/phpstan-drupal + extension-installer + deprecation-rules make
+     * the gitlab_templates phpstan.neon work as it does in CI.
+     */
+    private const array TOOLCHAIN_PACKAGES = [
+        'drupal/core-dev:^%s',
+        'drupal/coder',
+        'mglaman/phpstan-drupal',
+        'phpstan/extension-installer',
+        'phpstan/phpstan-deprecation-rules',
+    ];
+
     /**
      * @param \Closure(string): void $log
      */
@@ -68,22 +99,83 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
     public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
     {
-        throw new \BadMethodCallException('apply_mr is implemented by task 11 (per-MR operations).');
+        $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        $currentBranch = $this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD']);
+        $recordedBase = $this->runner->tryRun(['git', '-C', $moduleDir, 'config', '--get', 'upkeep.base-branch']);
+        $baseBranch = MrCheckout::resolveBaseBranch(
+            $currentBranch !== null ? trim($currentBranch) : null,
+            $recordedBase !== null ? trim($recordedBase) : null,
+        );
+
+        MrCheckout::assertNativeBase($mergeRequest, $baseBranch);
+
+        ($this->log)(sprintf('Applying MR !%d (%s -> %s) into the module working copy ...', $mergeRequest->iid, $mergeRequest->sourceBranch, $mergeRequest->targetBranch));
+
+        // Step back onto the base first: git refuses to fetch into the
+        // currently checked-out branch, which mr-<iid> is on a re-apply.
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
+        $this->runner->run(['git', '-C', $moduleDir, 'fetch', 'origin', MrCheckout::fetchRefspec($mergeRequest->iid)]);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', MrCheckout::branchName($mergeRequest->iid)]);
+        // Record the base so the next applyMr can validate native-base even
+        // though the working copy now sits on an mr-* branch.
+        $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $baseBranch]);
+
+        $head = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', '--abbrev-ref', 'HEAD']));
+        if ($head !== MrCheckout::branchName($mergeRequest->iid)) {
+            throw new AdapterException(sprintf('MR checkout did not stick: working copy is on "%s", expected "%s".', $head, MrCheckout::branchName($mergeRequest->iid)));
+        }
+
+        $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
+        if ($mergeRequest->headSha !== null && $sha !== $mergeRequest->headSha) {
+            ($this->log)(sprintf('Note: checked-out head %s differs from the MR model\'s head %s — the MR may have moved since it was fetched.', $sha, $mergeRequest->headSha));
+        }
+
+        ($this->log)('Syncing the composer pin to the MR branch (and resolving any dependencies the MR adds) ...');
+        $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $head);
+
+        ($this->log)(sprintf('MR !%d applied: working copy on %s at %s (base %s).', $mergeRequest->iid, $head, $sha, $baseBranch));
     }
 
     public function loadFixture(Environment $environment, string $fixtureName): void
     {
-        throw new \BadMethodCallException('load_fixture is implemented by task 11 (per-MR operations).');
+        $this->ensureFixtureAddOn($environment);
+
+        ($this->log)(sprintf('Loading fixture "%s" via the engine fixture command ...', $fixtureName));
+        // The add-on command owns all fixture resolution and load semantics
+        // (module scope, shared library, snapshot fast path) — the adapter
+        // only invokes it and surfaces failure as AdapterException.
+        $this->runner->run(['ddev', 'fixture-load', $fixtureName], $environment->projectPath);
     }
 
     public function runChecks(Environment $environment, array $checks = []): CheckRunResult
     {
-        throw new \BadMethodCallException('run_checks is implemented by task 11 (per-MR operations).');
+        $checks = $checks === [] ? self::DEFAULT_CHECKS : $checks;
+
+        if (array_any($checks, static fn (CheckType $check): bool => \in_array($check, self::TOOLCHAIN_CHECKS, true))) {
+            $this->ensureCheckToolchain($environment);
+        }
+
+        $results = [];
+        foreach ($checks as $check) {
+            ($this->log)(sprintf('Running check: %s ...', $check->value));
+            $results[] = $this->runCheck($environment, $check);
+        }
+
+        return new CheckRunResult($results);
     }
 
     public function serve(Environment $environment): ServeResult
     {
-        throw new \BadMethodCallException('serve is implemented by task 11 (per-MR operations).');
+        ($this->log)(sprintf('Ensuring module %s is installed ...', $environment->moduleName));
+        $this->runner->run(['ddev', 'drush', 'pm:install', $environment->moduleName, '-y'], $environment->projectPath);
+
+        $login = $this->runner->tryRun(['ddev', 'drush', 'uli', '--uri=' . $environment->primaryUrl], $environment->projectPath);
+
+        return new ServeResult(
+            url: $environment->primaryUrl,
+            loginUrl: $login !== null && trim($login) !== '' ? trim($login) : null,
+        );
     }
 
     public function teardown(Module $module, string $coreMajor): void
@@ -177,6 +269,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ($this->log)(sprintf('Installing engine add-on %s at pinned version %s ...', EngineAddOn::NAME, EngineAddOn::VERSION));
             $this->runner->run(['ddev', 'add-on', 'get', EngineAddOn::NAME, '--version', EngineAddOn::VERSION], $projectPath);
             $this->adaptAddOnConfig($projectPath);
+            $this->ensureFixtureAddOn($projectPath);
 
             ($this->log)('Starting the environment ...');
             $this->runner->run(['ddev', 'start', '-y'], $projectPath);
@@ -245,19 +338,184 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // "*@dev" could resolve to a different dev branch published on
         // packages.drupal.org instead of the path repository.
         $branch = trim($this->runner->run(['git', '-C', $projectPath . '/' . self::MODULE_DIR, 'symbolic-ref', '--short', 'HEAD']));
+        $this->requireWorkingCopyBranch($projectPath, $module->name, $branch);
+    }
+
+    /**
+     * (Re-)pins the project's composer requirement to the branch the module
+     * working copy has checked out, resolving through the path repository.
+     * Every branch switch in the working copy must be followed by this sync:
+     * a stale pin (e.g. "1.0.x-dev" while the checkout is mr-2) makes every
+     * later composer resolution in the project unsatisfiable. The partial
+     * update also materializes dependencies the checked-out branch newly
+     * requires in the module's composer.json.
+     */
+    private function requireWorkingCopyBranch(string $projectPath, string $moduleName, string $branch): void
+    {
         $this->runner->run([
             'ddev', 'composer', 'require',
-            sprintf('drupal/%s:%s', $module->name, ModuleWiring::devConstraintForBranch($branch)),
+            sprintf('drupal/%s:%s', $moduleName, ModuleWiring::devConstraintForBranch($branch)),
             '--no-interaction',
         ], $projectPath);
 
-        $installedPath = sprintf('%s/web/modules/contrib/%s', $projectPath, $module->name);
+        $installedPath = sprintf('%s/web/modules/contrib/%s', $projectPath, $moduleName);
         if (!is_link($installedPath)) {
             throw new AdapterException(sprintf(
                 'Module wiring violated the ownership constraint: "%s" is not a symlink into the working copy (composer mirrored the package instead).',
                 $installedPath,
             ));
         }
+    }
+
+    /**
+     * Installs the ddev-upkeep fixture add-on when the environment lacks it.
+     * Called during provisioning (new environments get it from birth) and
+     * lazily by loadFixture() (environments provisioned before the add-on
+     * became part of the layout get it on first use, without re-provisioning).
+     */
+    private function ensureFixtureAddOn(Environment|string $environmentOrPath): void
+    {
+        $projectPath = $environmentOrPath instanceof Environment ? $environmentOrPath->projectPath : $environmentOrPath;
+        if (is_file($projectPath . '/.ddev/' . FixtureAddOn::MARKER)) {
+            return;
+        }
+
+        ($this->log)(sprintf('Installing fixture add-on from %s ...', FixtureAddOn::source()));
+        $this->runner->run(['ddev', 'add-on', 'get', FixtureAddOn::source()], $projectPath);
+    }
+
+    /**
+     * Ensures the check toolchain is present in the environment (probe:
+     * vendor/bin binaries). Installs TOOLCHAIN_PACKAGES container-side and
+     * allows the composer plugins they need (the phpcs standards installer;
+     * extension-installer is already allowed by the base tree).
+     */
+    private function ensureCheckToolchain(Environment $environment): void
+    {
+        $binaries = ['phpunit', 'phpstan', 'phpcs'];
+        if (array_all($binaries, static fn (string $binary): bool => is_file($environment->projectPath . '/vendor/bin/' . $binary))) {
+            return;
+        }
+
+        ($this->log)('Provisioning the check toolchain (core-dev, coder, phpstan-drupal) ...');
+        $this->runner->run([
+            'ddev', 'composer', 'config', '--no-plugins',
+            'allow-plugins.dealerdirect/phpcodesniffer-composer-installer', 'true',
+        ], $environment->projectPath);
+        $packages = array_map(
+            static fn (string $package): string => sprintf($package, $environment->coreMajor),
+            self::TOOLCHAIN_PACKAGES,
+        );
+        $this->runner->run([
+            'ddev', 'composer', 'require', '--dev', '--with-all-dependencies', '--no-interaction',
+            ...$packages,
+        ], $environment->projectPath);
+    }
+
+    private function runCheck(Environment $environment, CheckType $check): CheckResult
+    {
+        if ($check === CheckType::Deprecation) {
+            return $this->runDeprecationCheck($environment);
+        }
+        if ($check === CheckType::FunctionalSmoke) {
+            return $this->runSmokeCheck($environment);
+        }
+
+        // Checks target exactly the module under maintenance — never all of
+        // DRUPAL_PROJECTS_PATH, where composer also materializes the module's
+        // real dependencies (their packaged code must not pollute results).
+        // In-container path; $DRUPAL_PROJECTS_PATH expands inside the web
+        // container, moduleName is adapter-controlled.
+        $modulePath = sprintf('"$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/%s', $environment->moduleName);
+
+        $command = match ($check) {
+            // Engine command as shipped: an existing path argument makes it
+            // run exactly that directory (host-side path, container cwd is
+            // the project root).
+            CheckType::PhpUnit => ['ddev', 'phpunit', sprintf('web/%s/%s', EngineAddOn::PROJECTS_PATH, $environment->moduleName)],
+            CheckType::EsLint, CheckType::StyleLint => ['ddev', $check->value],
+            // The engine's phpcs/phpstan commands derive the target directory
+            // from the ddev site name (module-as-project-root assumption),
+            // which does not exist in the seeded-tree layout. Run the same
+            // CI-aligned invocations (gitlab_templates configs) scoped to the
+            // module instead.
+            CheckType::PhpCs => ['ddev', 'exec', 'bash', '-c', implode("\n", [
+                'set -eu',
+                'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
+                sprintf('phpcs -s --report-full --report-summary --report-source %s --ignore=*/.ddev/*', $modulePath),
+            ])],
+            CheckType::PhpStan => ['ddev', 'exec', 'bash', '-c', implode("\n", [
+                'set -eu',
+                'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
+                "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
+                'test -e phpstan-baseline.neon || touch phpstan-baseline.neon',
+                'phpstan analyze ' . $modulePath,
+            ])],
+            CheckType::ModuleInstall => ['ddev', 'drush', 'pm:install', $environment->moduleName, '-y'],
+            CheckType::FunctionalSmoke, CheckType::Deprecation => throw new \LogicException('Handled above.'),
+        };
+
+        $process = $this->runner->capture($command, $environment->projectPath, self::CHECK_TIMEOUT);
+        if ($process->timedOut) {
+            return CheckResult::timedOut($check, $process->output, $process->durationSeconds, self::CHECK_TIMEOUT);
+        }
+
+        return CheckResult::fromProcess($check, $process->exitCode, $process->output, $process->durationSeconds);
+    }
+
+    /**
+     * Front page over HTTP with the module enabled: requests the
+     * environment's primary URL and passes only on HTTP 200.
+     */
+    private function runSmokeCheck(Environment $environment): CheckResult
+    {
+        $process = $this->runner->capture(
+            ['curl', '-ksS', '-o', '/dev/null', '-w', '%{http_code}', $environment->primaryUrl],
+            $environment->projectPath,
+            120,
+        );
+        if ($process->timedOut) {
+            return CheckResult::timedOut(CheckType::FunctionalSmoke, $process->output, $process->durationSeconds, 120);
+        }
+        if ($process->exitCode !== 0) {
+            return new CheckResult(CheckType::FunctionalSmoke, CheckStatus::Failed, $process->exitCode, 'Request failed: ' . $process->output, $process->durationSeconds);
+        }
+
+        $httpCode = trim($process->output);
+        $status = $httpCode === '200' ? CheckStatus::Passed : CheckStatus::Failed;
+
+        return new CheckResult(
+            CheckType::FunctionalSmoke,
+            $status,
+            0,
+            sprintf('GET %s -> HTTP %s', $environment->primaryUrl, $httpCode),
+            $process->durationSeconds,
+        );
+    }
+
+    /**
+     * Deprecation/upgrade-status: only when the pinned engine provides a
+     * command for it; otherwise an explicit Unavailable result — never a
+     * silent omission. ddev-drupal-contrib 1.1.5 ships no such command.
+     */
+    private function runDeprecationCheck(Environment $environment): CheckResult
+    {
+        $commandPath = $environment->projectPath . '/.ddev/commands/web/upgrade-status';
+        if (!is_file($commandPath)) {
+            return CheckResult::unavailable(CheckType::Deprecation, sprintf(
+                'The pinned engine add-on (%s %s) provides no deprecation/upgrade-status command for Drupal %s.',
+                EngineAddOn::NAME,
+                EngineAddOn::VERSION,
+                $environment->coreMajor,
+            ));
+        }
+
+        $process = $this->runner->capture(['ddev', 'upgrade-status'], $environment->projectPath, self::CHECK_TIMEOUT);
+        if ($process->timedOut) {
+            return CheckResult::timedOut(CheckType::Deprecation, $process->output, $process->durationSeconds, self::CHECK_TIMEOUT);
+        }
+
+        return CheckResult::fromProcess(CheckType::Deprecation, $process->exitCode, $process->output, $process->durationSeconds);
     }
 
     private function adaptAddOnConfig(string $projectPath): void

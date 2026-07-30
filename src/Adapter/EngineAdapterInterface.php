@@ -39,8 +39,6 @@ interface EngineAdapterInterface
      * Checks out the merge request's code in the environment's module working
      * copy (fetched from the module's origin repository).
      *
-     * Implemented by task 11.
-     *
      * @throws AdapterException
      */
     public function applyMr(Environment $environment, MergeRequest $mergeRequest): void;
@@ -48,8 +46,6 @@ interface EngineAdapterInterface
     /**
      * Restores the named fixture's database state into the environment,
      * replacing whatever state it currently holds.
-     *
-     * Implemented by task 11 (fixture model: tasks 12/13).
      *
      * @throws AdapterException
      */
@@ -60,8 +56,6 @@ interface EngineAdapterInterface
      * and reports per-check outcomes. An empty selection means the adapter's
      * default suite. Check failures are results, not exceptions.
      *
-     * Implemented by task 11.
-     *
      * @param list<CheckType> $checks
      *
      * @throws AdapterException when a check cannot be executed at all
@@ -71,8 +65,6 @@ interface EngineAdapterInterface
     /**
      * Makes the environment browsable and returns where: its primary URL and,
      * when available, a one-time authenticated login URL.
-     *
-     * Implemented by task 11.
      *
      * @throws AdapterException
      */

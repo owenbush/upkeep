@@ -18,7 +18,7 @@ final readonly class CheckRunResult
 
     public function allPassed(): bool
     {
-        return array_all($this->results, static fn (CheckResult $result): bool => $result->passed);
+        return array_all($this->results, static fn (CheckResult $result): bool => $result->passed());
     }
 
     /**
@@ -26,6 +26,6 @@ final readonly class CheckRunResult
      */
     public function failures(): array
     {
-        return array_values(array_filter($this->results, static fn (CheckResult $result): bool => !$result->passed));
+        return array_values(array_filter($this->results, static fn (CheckResult $result): bool => !$result->passed()));
     }
 }
