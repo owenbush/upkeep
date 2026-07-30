@@ -2,7 +2,7 @@
 id: 10
 group: "orchestrator-core"
 dependencies: [8]
-status: "pending"
+status: "completed"
 created: 2026-07-29
 skills:
   - php
@@ -19,11 +19,11 @@ Define the plan's single most important structural boundary — the engine adapt
 `php` for the interface and orchestration; `ddev` for driving project lifecycle via shell-outs.
 
 ## Acceptance Criteria
-- [ ] A PHP interface exists declaring all six operations with typed parameters/results; the orchestrator layer references only this interface (enforced by namespace layout: nothing outside the adapter implementation namespace mentions `ddev`), verified by `grep -r "ddev" src/ --exclude-dir=<adapter-namespace-dir>` returning nothing.
-- [ ] `ensure_env` for a registered module + core version, run for real: creates the ddev project (engine add-on installed, pinned version), seeds the codebase from the core version's base tree, requires the module via the engine's symlink/path-repository mechanism (never `--prefer-source`), restores the clean-install snapshot — and a second call with the same arguments reuses the existing project (observably faster, states "reusing").
-- [ ] The provisioned project serves at its own `*.ddev.site` URL (`curl -sI https://<project>.ddev.site` returns an HTTP response) with the core version read from the project, not hard-coded — `ddev exec drush status --field=drupal-version` reports the requested major.
-- [ ] `teardown(module, core_version)` removes the project and its volumes per task 3's reclamation table; `ddev list` no longer shows it and its volumes are gone (`docker volume ls`).
-- [ ] The engine add-on version is pinned in one configuration point, with a code comment naming the upgrade procedure (deliberate adapter-maintenance event).
+- [x] A PHP interface exists declaring all six operations with typed parameters/results; the orchestrator layer references only this interface (enforced by namespace layout: nothing outside the adapter implementation namespace mentions `ddev`), verified by `grep -r "ddev" src/ --exclude-dir=Adapter` returning nothing.
+- [x] `ensure_env` for a registered module + core version, run for real: creates the ddev project (engine add-on installed, pinned version), seeds the codebase from the core version's base tree, requires the module via a Composer path-repository symlink (never `--prefer-source`), restores the clean-install snapshot — and a second call with the same arguments reuses the existing project (2.2s vs 51.0s, states "Reusing").
+- [x] The provisioned project serves at its own `*.ddev.site` URL (`curl -sI` returned HTTP/2 200 for both cores) with the core version read from the project — `ddev exec drush status --field=drupal-version` reported 11.4.4 / 10.6.14 for the requested majors.
+- [x] `teardown(module, core_version)` removes the project and its volumes per task 3's reclamation table; verified live for core 10: `ddev list` no longer shows it and all its volumes (mariadb, snapshots, mutagen) are gone from `docker volume ls`.
+- [x] The engine add-on version is pinned in one configuration point (`EngineAddOn::VERSION` = 1.1.5 — release tags carry no `v` prefix), with a code comment naming the upgrade procedure (deliberate adapter-maintenance event).
 
 Use your internal Todo tool to track these and keep on track.
 
