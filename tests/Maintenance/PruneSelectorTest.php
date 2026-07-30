@@ -1,0 +1,278 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Upkeep\Tests\Maintenance;
+
+use PHPUnit\Framework\TestCase;
+use Upkeep\Maintenance\Category;
+use Upkeep\Maintenance\InventoryItem;
+use Upkeep\Maintenance\PruneScope;
+use Upkeep\Maintenance\PruneSelector;
+
+final class PruneSelectorTest extends TestCase
+{
+    private const string COCKPIT = '/cockpit';
+    private const string PROJECTS = '/projects';
+
+    private \DateTimeImmutable $now;
+
+    protected function setUp(): void
+    {
+        $this->now = new \DateTimeImmutable('2026-07-30T12:00:00Z');
+    }
+
+    private function selector(): PruneSelector
+    {
+        return new PruneSelector([
+            self::COCKPIT . '/base-artifacts',
+            self::COCKPIT . '/fixtures',
+        ]);
+    }
+
+    private function tree(string $name, ?string $age = '60 days', bool $keep = false, string $root = self::PROJECTS): InventoryItem
+    {
+        return new InventoryItem(
+            path: $root . '/' . $name,
+            category: Category::ProjectTree,
+            sizeBytes: 1000,
+            module: 'conditions_helper',
+            coreMajor: '11',
+            projectName: $name,
+            lastUsedAt: $age === null ? null : $this->now->modify('-' . $age),
+            keepMarked: $keep,
+        );
+    }
+
+    private function snapshot(string $project, string $name, string $age, bool $keep = false): InventoryItem
+    {
+        return new InventoryItem(
+            path: self::PROJECTS . "/$project/.ddev/upkeep/materialized/$name.sql",
+            category: Category::Snapshot,
+            sizeBytes: 500,
+            module: 'conditions_helper',
+            coreMajor: '11',
+            projectName: $project,
+            lastUsedAt: $this->now->modify('-' . $age),
+            keepMarked: $keep,
+        );
+    }
+
+    // --- Protection guarantees -------------------------------------------
+
+    public function testBaseArtifactsAreNeverCandidatesInAnyScope(): void
+    {
+        $baseArtifact = new InventoryItem(
+            path: self::COCKPIT . '/base-artifacts/11',
+            category: Category::BaseArtifact,
+            sizeBytes: 999999,
+            coreMajor: '11',
+            lastUsedAt: $this->now->modify('-400 days'),
+        );
+
+        foreach (PruneScope::cases() as $scope) {
+            $candidates = $this->selector()->select([$baseArtifact], $scope, null, $this->now);
+            self::assertSame([], $candidates, 'base artifact leaked into scope ' . $scope->value);
+        }
+    }
+
+    public function testFixtureDumpsAreNeverCandidatesInAnyScope(): void
+    {
+        $moduleDump = new InventoryItem(
+            path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
+            category: Category::FixtureDump,
+            sizeBytes: 100,
+            module: 'conditions_helper',
+            lastUsedAt: $this->now->modify('-400 days'),
+        );
+        $libraryDump = new InventoryItem(
+            path: self::COCKPIT . '/fixtures/shared.sql.gz',
+            category: Category::FixtureDump,
+            sizeBytes: 100,
+            lastUsedAt: $this->now->modify('-400 days'),
+        );
+
+        foreach (PruneScope::cases() as $scope) {
+            self::assertSame([], $this->selector()->select([$moduleDump, $libraryDump], $scope, null, $this->now));
+        }
+    }
+
+    public function testKeepMarkedItemsAreNeverCandidates(): void
+    {
+        $keptTree = $this->tree('upkeep-conditions-helper-d11', keep: true);
+        $keptSnapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '400 days', keep: true);
+
+        foreach (PruneScope::cases() as $scope) {
+            self::assertSame([], $this->selector()->select([$keptTree, $keptSnapshot], $scope, null, $this->now));
+        }
+    }
+
+    public function testMislabeledItemUnderProtectedRootIsStillExcluded(): void
+    {
+        // Even if the scanner ever mis-categorized something living inside
+        // base-artifacts/ or the fixture library as a disposable tree or
+        // snapshot, the path guard must still refuse it.
+        $mislabeledTree = $this->tree('11/tree', root: self::COCKPIT . '/base-artifacts');
+        $mislabeledSnapshot = new InventoryItem(
+            path: self::COCKPIT . '/fixtures/evil.sql',
+            category: Category::Snapshot,
+            sizeBytes: 5,
+            lastUsedAt: $this->now->modify('-400 days'),
+        );
+
+        self::assertSame([], $this->selector()->select([$mislabeledTree, $mislabeledSnapshot], PruneScope::All, null, $this->now));
+    }
+
+    public function testPathContainingTestsFixturesSegmentIsExcludedRegardlessOfCategory(): void
+    {
+        $mislabeled = new InventoryItem(
+            path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
+            category: Category::Snapshot,
+            sizeBytes: 5,
+            lastUsedAt: $this->now->modify('-400 days'),
+        );
+
+        self::assertSame([], $this->selector()->select([$mislabeled], PruneScope::All, null, $this->now));
+    }
+
+    public function testProtectedRootPrefixMatchIsPerPathSegmentNotPerCharacter(): void
+    {
+        // /cockpit/base-artifacts-old is NOT under /cockpit/base-artifacts.
+        $tree = $this->tree('x', root: self::COCKPIT . '/base-artifacts-old');
+
+        $candidates = $this->selector()->select([$tree], PruneScope::Trees, null, $this->now);
+
+        self::assertCount(1, $candidates);
+    }
+
+    // --- Scope filtering --------------------------------------------------
+
+    public function testTreesScopeSelectsOnlyProjectTrees(): void
+    {
+        $tree = $this->tree('upkeep-conditions-helper-d11');
+        $snapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '60 days');
+        $volume = new InventoryItem(
+            path: 'upkeep-conditions-helper-d11-mariadb',
+            category: Category::ProjectVolume,
+            sizeBytes: 200,
+            projectName: 'upkeep-conditions-helper-d11',
+            lastUsedAt: $this->now->modify('-60 days'),
+        );
+
+        $candidates = $this->selector()->select([$tree, $snapshot, $volume], PruneScope::Trees, null, $this->now);
+
+        self::assertSame([$tree], $candidates);
+    }
+
+    public function testProjectsScopeAlsoItemizesProjectVolumes(): void
+    {
+        $tree = $this->tree('upkeep-conditions-helper-d11');
+        $volume = new InventoryItem(
+            path: 'upkeep-conditions-helper-d11-mariadb',
+            category: Category::ProjectVolume,
+            sizeBytes: 200,
+            projectName: 'upkeep-conditions-helper-d11',
+            lastUsedAt: $this->now->modify('-60 days'),
+        );
+        $snapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '60 days');
+
+        $candidates = $this->selector()->select([$tree, $volume, $snapshot], PruneScope::Projects, null, $this->now);
+
+        self::assertSame([$tree, $volume], $candidates);
+    }
+
+    public function testAllScopeSelectsTreesVolumesAndSnapshots(): void
+    {
+        $tree = $this->tree('upkeep-conditions-helper-d11');
+        $snapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '60 days');
+
+        $candidates = $this->selector()->select([$snapshot, $tree], PruneScope::All, null, $this->now);
+
+        self::assertSame([$tree, $snapshot], $candidates);
+    }
+
+    // --- Age filtering ----------------------------------------------------
+
+    public function testOlderThanFilterExcludesYoungerItems(): void
+    {
+        $old = $this->tree('upkeep-old-d11', age: '31 days');
+        $young = $this->tree('upkeep-young-d11', age: '29 days');
+
+        $candidates = $this->selector()->select([$old, $young], PruneScope::Trees, 30 * 86400, $this->now);
+
+        self::assertSame([$old], $candidates);
+    }
+
+    public function testUnknownAgeItemsAreExcludedWhenAgeFilterGiven(): void
+    {
+        // A tree without a parseable meta dotfile has no reliable age; with
+        // an --older-than filter present we refuse to guess.
+        $unknownAge = $this->tree('upkeep-partial-d11', age: null);
+
+        self::assertSame([], $this->selector()->select([$unknownAge], PruneScope::Trees, 30 * 86400, $this->now));
+    }
+
+    public function testUnknownAgeItemsAreCandidatesWithoutAgeFilter(): void
+    {
+        $unknownAge = $this->tree('upkeep-partial-d11', age: null);
+
+        self::assertSame([$unknownAge], $this->selector()->select([$unknownAge], PruneScope::Trees, null, $this->now));
+    }
+
+    // --- Snapshot keep-latest-N ------------------------------------------
+
+    public function testKeepLatestRetainsNewestSnapshotsPerProject(): void
+    {
+        $p1new = $this->snapshot('upkeep-a-d11', 'new', '1 days');
+        $p1mid = $this->snapshot('upkeep-a-d11', 'mid', '10 days');
+        $p1old = $this->snapshot('upkeep-a-d11', 'old', '20 days');
+        $p2new = $this->snapshot('upkeep-b-d11', 'new', '2 days');
+        $p2old = $this->snapshot('upkeep-b-d11', 'old', '30 days');
+
+        $candidates = $this->selector()->select(
+            [$p1old, $p1new, $p1mid, $p2old, $p2new],
+            PruneScope::Snapshots,
+            null,
+            $this->now,
+            keepLatest: 1,
+        );
+
+        self::assertEqualsCanonicalizing([$p1mid, $p1old, $p2old], $candidates);
+    }
+
+    public function testKeepMarkedSnapshotsDoNotConsumeTheKeepLatestBudget(): void
+    {
+        $kept = $this->snapshot('upkeep-a-d11', 'kept', '1 days', keep: true);
+        $newest = $this->snapshot('upkeep-a-d11', 'newest', '2 days');
+        $older = $this->snapshot('upkeep-a-d11', 'older', '3 days');
+
+        $candidates = $this->selector()->select([$kept, $newest, $older], PruneScope::Snapshots, null, $this->now, keepLatest: 1);
+
+        // keep-marked is protected outright; the newest unprotected snapshot
+        // fills the keep-latest budget; only the older one is a candidate.
+        self::assertSame([$older], $candidates);
+    }
+
+    public function testKeepLatestZeroKeepsNothingExtra(): void
+    {
+        $a = $this->snapshot('upkeep-a-d11', 'a', '1 days');
+        $b = $this->snapshot('upkeep-a-d11', 'b', '2 days');
+
+        $candidates = $this->selector()->select([$a, $b], PruneScope::Snapshots, null, $this->now, keepLatest: 0);
+
+        self::assertEqualsCanonicalizing([$a, $b], $candidates);
+    }
+
+    public function testKeepLatestCombinesWithAgeFilter(): void
+    {
+        $new = $this->snapshot('upkeep-a-d11', 'new', '1 days');
+        $mid = $this->snapshot('upkeep-a-d11', 'mid', '40 days');
+        $old = $this->snapshot('upkeep-a-d11', 'old', '50 days');
+
+        // keep-latest keeps "new"; age filter then drops nothing older-than-30d? No:
+        // both mid and old are older than 30d and outside the keep budget.
+        $candidates = $this->selector()->select([$new, $mid, $old], PruneScope::Snapshots, 30 * 86400, $this->now, keepLatest: 1);
+
+        self::assertEqualsCanonicalizing([$mid, $old], $candidates);
+    }
+}

@@ -2,7 +2,7 @@
 id: 16
 group: "orchestrator-commands"
 dependencies: [10, 3]
-status: "pending"
+status: "in-progress"
 created: 2026-07-29
 skills:
   - symfony-console

@@ -1,0 +1,213 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Upkeep\Tests\Command;
+
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Tester\CommandTester;
+use Upkeep\Adapter\CheckRunResult;
+use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\EngineAdapterInterface;
+use Upkeep\Adapter\ServeResult;
+use Upkeep\Adapter\VolumeProbe;
+use Upkeep\Cockpit\Module;
+use Upkeep\Command\PruneCommand;
+use Upkeep\Gitlab\MergeRequest;
+
+final class PruneCommandTest extends TestCase
+{
+    private string $world;
+    private string $cockpit;
+    private string $projects;
+
+    /** @var list<array{string, string}> */
+    private array $teardowns = [];
+
+    protected function setUp(): void
+    {
+        $this->teardowns = [];
+        $this->world = sys_get_temp_dir() . '/upkeep-prune-cmd-test-' . bin2hex(random_bytes(4));
+        $this->cockpit = $this->world . '/cockpit';
+        $this->projects = $this->world . '/projects';
+
+        mkdir($this->cockpit . '/base-artifacts/11/tree', 0755, true);
+        file_put_contents($this->cockpit . '/base-artifacts/11/tree/index.php', 'x');
+        file_put_contents($this->cockpit . '/base-artifacts/11/canonical', '');
+        mkdir($this->cockpit . '/fixtures', 0755, true);
+        file_put_contents($this->cockpit . '/fixtures/shared.sql.gz', 'library dump');
+        file_put_contents($this->cockpit . '/registry.yml', implode("\n", [
+            'modules:',
+            '  conditions_helper:',
+            '    project: project/conditions_helper',
+            '    core_versions: ["10", "11"]',
+        ]));
+
+        $p = $this->projects . '/upkeep-conditions-helper-d11';
+        mkdir($p . '/.ddev/upkeep/materialized', 0755, true);
+        mkdir($p . '/.ddev/upkeep/snapshots', 0755, true);
+        mkdir($p . '/module/tests/fixtures', 0755, true);
+        file_put_contents($p . '/.upkeep-env.yml', implode("\n", [
+            'module: conditions_helper',
+            'core_major: \'11\'',
+            'seed_core_version: 11.2.5',
+            'addon_version: v1.0.0',
+            'created_at: \'2026-01-01T00:00:00+00:00\'',
+        ]));
+        file_put_contents($p . '/.ddev/upkeep/materialized/older.sql', str_repeat('a', 1000));
+        file_put_contents($p . '/.ddev/upkeep/snapshots/older.meta', "materialized_at=2026-05-01T00:00:00Z\n");
+        file_put_contents($p . '/.ddev/upkeep/materialized/newer.sql', str_repeat('b', 1000));
+        file_put_contents($p . '/.ddev/upkeep/snapshots/newer.meta', "materialized_at=2026-07-01T00:00:00Z\n");
+        file_put_contents($p . '/.ddev/upkeep/materialized/kept.sql', str_repeat('c', 1000));
+        file_put_contents($p . '/.ddev/upkeep/materialized/kept.sql.keep', '');
+        file_put_contents($p . '/.ddev/upkeep/snapshots/kept.meta', "materialized_at=2026-07-20T00:00:00Z\n");
+        file_put_contents($p . '/module/tests/fixtures/base.sql.gz', 'committed dump');
+
+        // A keep-marked environment.
+        mkdir($this->projects . '/upkeep-kept-env-d11', 0755, true);
+        file_put_contents($this->projects . '/upkeep-kept-env-d11/.keep', '');
+    }
+
+    protected function tearDown(): void
+    {
+        exec('rm -rf ' . escapeshellarg($this->world));
+    }
+
+    private function runPrune(array $args): CommandTester
+    {
+        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
+            /** @param list<array{string, string}> $teardowns */
+            public function __construct(private array &$teardowns)
+            {
+            }
+
+            public function ensureEnv(Module $module, string $coreMajor): Environment
+            {
+                throw new \BadMethodCallException('not used');
+            }
+
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+
+            public function loadFixture(Environment $environment, string $fixtureName): void
+            {
+            }
+
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult
+            {
+                throw new \BadMethodCallException('not used');
+            }
+
+            public function serve(Environment $environment): ServeResult
+            {
+                throw new \BadMethodCallException('not used');
+            }
+
+            public function teardown(Module $module, string $coreMajor): void
+            {
+                $this->teardowns[] = [$module->name, $coreMajor];
+            }
+        };
+
+        $tester = new CommandTester(new PruneCommand($adapter, new VolumeProbe(static fn (array $c): ?string => null)));
+        $tester->execute([
+            '--cockpit' => $this->cockpit,
+            '--projects-root' => $this->projects,
+            ...$args,
+        ]);
+
+        return $tester;
+    }
+
+    private function snapshotPath(string $name): string
+    {
+        return $this->projects . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized/' . $name . '.sql';
+    }
+
+    public function testEveryVariantIsADryRunWithoutYes(): void
+    {
+        foreach ([['--trees' => true], ['--snapshots' => true], ['--projects' => true], ['--all' => true]] as $variant) {
+            $tester = $this->runPrune($variant);
+
+            $tester->assertCommandIsSuccessful();
+            self::assertStringContainsString('Dry run: nothing was deleted', $tester->getDisplay());
+            self::assertSame([], $this->teardowns, 'dry run must never tear anything down');
+            self::assertFileExists($this->snapshotPath('older'));
+            self::assertFileExists($this->snapshotPath('newer'));
+            self::assertDirectoryExists($this->projects . '/upkeep-conditions-helper-d11');
+        }
+    }
+
+    public function testDryRunListsCandidatesWithReclaimableTotal(): void
+    {
+        $tester = $this->runPrune(['--snapshots' => true]);
+
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('older.sql', $display);
+        self::assertStringContainsString('newer.sql', $display);
+        self::assertStringNotContainsString('kept.sql', $display);
+        self::assertStringContainsString('Total reclaimable:', $display);
+    }
+
+    public function testConfirmedSnapshotPruneDeletesArtifactsAndMetaButNeverProtectedFiles(): void
+    {
+        $tester = $this->runPrune(['--snapshots' => true, '--yes' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertFileDoesNotExist($this->snapshotPath('older'));
+        self::assertFileDoesNotExist($this->snapshotPath('newer'));
+        self::assertFileDoesNotExist($this->projects . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/older.meta');
+        // Protected: keep-marked snapshot, committed dumps, base artifacts.
+        self::assertFileExists($this->snapshotPath('kept'));
+        self::assertFileExists($this->projects . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz');
+        self::assertFileExists($this->cockpit . '/fixtures/shared.sql.gz');
+        self::assertDirectoryExists($this->cockpit . '/base-artifacts/11');
+    }
+
+    public function testConfirmedSnapshotPruneHonorsKeepLatestPerProject(): void
+    {
+        $this->runPrune(['--snapshots' => true, '--yes' => true, '--keep-latest' => '1']);
+
+        self::assertFileDoesNotExist($this->snapshotPath('older'));
+        self::assertFileExists($this->snapshotPath('newer'), 'keep-latest=1 must retain the newest unprotected snapshot');
+        self::assertFileExists($this->snapshotPath('kept'));
+    }
+
+    public function testConfirmedTreePruneGoesThroughAdapterTeardownAndSkipsKeepMarked(): void
+    {
+        $tester = $this->runPrune(['--trees' => true, '--yes' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertSame([['conditions_helper', '11']], $this->teardowns);
+        self::assertDirectoryExists($this->projects . '/upkeep-kept-env-d11', 'keep-marked environment must survive');
+        self::assertDirectoryExists($this->cockpit . '/base-artifacts/11');
+    }
+
+    public function testOlderThanExcludesRecentEnvironments(): void
+    {
+        // Environment created 2026-01-01; "older than 10000 days" matches nothing.
+        $tester = $this->runPrune(['--trees' => true, '--older-than' => '10000d', '--yes' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('Nothing to prune', $tester->getDisplay());
+        self::assertSame([], $this->teardowns);
+    }
+
+    public function testRejectsInvalidOlderThanSyntax(): void
+    {
+        $tester = $this->runPrune(['--trees' => true, '--older-than' => '30']);
+
+        self::assertSame(1, $tester->getStatusCode());
+        self::assertStringContainsString('Invalid duration', $tester->getDisplay());
+    }
+
+    public function testRequiresExactlyOneScopeFlag(): void
+    {
+        $none = $this->runPrune([]);
+        self::assertSame(1, $none->getStatusCode());
+
+        $two = $this->runPrune(['--trees' => true, '--snapshots' => true]);
+        self::assertSame(1, $two->getStatusCode());
+    }
+}
