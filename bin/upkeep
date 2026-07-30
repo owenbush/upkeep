@@ -9,6 +9,7 @@ use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
 use Upkeep\Command\InitCommand;
 use Upkeep\Command\ModulesCommand;
+use Upkeep\Command\NotesCommand;
 
 foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
     if (file_exists($autoload)) {
@@ -24,5 +25,6 @@ $application->addCommands([
     new BaseArtifactsStatusCommand(),
     new InitCommand(),
     new ModulesCommand(),
+    new NotesCommand(),
 ]);
 $application->run();
