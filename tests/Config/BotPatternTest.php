@@ -41,6 +41,18 @@ final class BotPatternTest extends TestCase
         self::assertFalse($pattern->matchesAuthor('owenbush', null));
     }
 
+    public function testForCoreReturnsTheVerifiedPatternForEveryCurrentCoreVersion(): void
+    {
+        // The observed bot pattern is core-independent today; forCore() is
+        // the single config point where a future per-core divergence lands.
+        foreach (['10', '11', '12'] as $core) {
+            $pattern = BotPattern::forCore($core);
+
+            self::assertSame('Project-Update-Bot', $pattern->authorUsername);
+            self::assertSame('project-update-bot-only', $pattern->sourceBranch);
+        }
+    }
+
     public function testFullMatchRequiresAuthorAndSourceBranch(): void
     {
         $pattern = new BotPattern();

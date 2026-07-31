@@ -31,6 +31,21 @@ final readonly class BotPattern
     }
 
     /**
+     * The bot pattern to apply when gating MRs for one target core version.
+     *
+     * The phase-1 verified pattern is core-independent (same account, same
+     * "project-update-bot-only" branch for every core), so today every core
+     * gets the defaults — but consumers (the fast-lane gate) must obtain
+     * their pattern through here, keyed by target core, so a future
+     * transition where the bot adopts per-core branches or accounts is a
+     * change to this one method, not to gate logic.
+     */
+    public static function forCore(string $coreMajor): self
+    {
+        return new self();
+    }
+
+    /**
      * Author-only match: the MR was opened by the bot account, identified by
      * username or (rename-proof) by user id.
      */
