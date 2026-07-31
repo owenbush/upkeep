@@ -7,11 +7,15 @@ use Symfony\Component\Console\Application;
 use Upkeep\Command\ApiProbeCommand;
 use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
+use Upkeep\Command\CheckCommand;
+use Upkeep\Command\DashboardCommand;
 use Upkeep\Command\InitCommand;
 use Upkeep\Command\ModulesCommand;
 use Upkeep\Command\NotesCommand;
 use Upkeep\Command\PruneCommand;
+use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StatusCommand;
+use Upkeep\Command\VersionOptionInput;
 
 foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
     if (file_exists($autoload)) {
@@ -25,10 +29,23 @@ $application->addCommands([
     new ApiProbeCommand(),
     new BaseArtifactsBuildCommand(),
     new BaseArtifactsStatusCommand(),
+    new CheckCommand(),
+    new DashboardCommand(),
     new InitCommand(),
     new ModulesCommand(),
     new NotesCommand(),
     new PruneCommand(),
+    new ReviewCommand(),
     new StatusCommand(),
 ]);
-$application->run();
+
+// The check/review/dashboard commands use --version as the target-core
+// selector, so the application-level --version option is dropped and the
+// doRun() hijack neutralized (see VersionOptionInput). `upkeep list` still
+// shows the app version in its header.
+$definition = $application->getDefinition();
+$definition->setOptions(array_filter(
+    $definition->getOptions(),
+    static fn ($option): bool => $option->getName() !== 'version',
+));
+$application->run(new VersionOptionInput());
