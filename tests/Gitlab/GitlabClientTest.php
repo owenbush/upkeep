@@ -353,6 +353,10 @@ final class GitlabClientTest extends TestCase
 
     public function testMergedSinceDateQueriesMergedMrsWithUpdatedAfter(): void
     {
+        // Pins the documented limitation (see GitlabClient::mergedSince):
+        // GitLab cannot filter on merge date, so the boundary is
+        // `updated_after` — a superset keyed on update time. If this query
+        // shape ever changes, the release-notes semantics changed with it.
         $client = $this->client([self::json([self::botMrPayload(['state' => 'merged'])])]);
 
         $list = $client->mergedSince($this->projectModel(), new \DateTimeImmutable('2026-05-01T10:00:00+00:00'));

@@ -2,7 +2,7 @@
 id: 17
 group: "testing"
 dependencies: [12, 14, 16]
-status: "pending"
+status: "completed"
 created: 2026-07-29
 skills:
   - phpunit

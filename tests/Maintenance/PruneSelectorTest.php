@@ -182,6 +182,84 @@ final class PruneSelectorTest extends TestCase
         self::assertSame([$tree], $this->selector()->select([$tree, $dump], PruneScope::Trees, null, $this->now));
     }
 
+    public function testNoScopeAgeOrKeepLatestCombinationEverSelectsAProtectedItem(): void
+    {
+        // Property-style sweep: every protection rule × every scope × the
+        // age-filter and keep-latest flag values. Whatever flags are passed,
+        // a protected item must never become a candidate — and (non-vacuity)
+        // only the two disposable decoys ever may.
+        $protected = [
+            'base artifact' => new InventoryItem(
+                path: self::COCKPIT . '/base-artifacts/11',
+                category: Category::BaseArtifact,
+                sizeBytes: 1,
+                coreMajor: '11',
+                lastUsedAt: $this->now->modify('-400 days'),
+            ),
+            'committed module dump' => new InventoryItem(
+                path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
+                category: Category::FixtureDump,
+                sizeBytes: 1,
+                module: 'conditions_helper',
+                lastUsedAt: $this->now->modify('-400 days'),
+            ),
+            'library fixture dump' => new InventoryItem(
+                path: self::COCKPIT . '/fixtures/shared.sql.gz',
+                category: Category::FixtureDump,
+                sizeBytes: 1,
+                lastUsedAt: $this->now->modify('-400 days'),
+            ),
+            'keep-marked tree' => $this->tree('upkeep-kept-tree-d11', age: '400 days', keep: true),
+            'keep-marked snapshot' => $this->snapshot('upkeep-kept-snap-d11', 'kept', '400 days', keep: true),
+            'mislabeled tree under protected root' => $this->tree('11/tree', age: '400 days', root: self::COCKPIT . '/base-artifacts'),
+            'mislabeled snapshot under protected root' => new InventoryItem(
+                path: self::COCKPIT . '/fixtures/evil.sql',
+                category: Category::Snapshot,
+                sizeBytes: 1,
+                lastUsedAt: $this->now->modify('-400 days'),
+            ),
+            'tree escalated by its kept snapshot' => $this->tree('upkeep-kept-snap-d11', age: '400 days'),
+            'volume escalated by its kept snapshot' => new InventoryItem(
+                path: 'upkeep-kept-snap-d11-mariadb',
+                category: Category::ProjectVolume,
+                sizeBytes: 1,
+                projectName: 'upkeep-kept-snap-d11',
+                lastUsedAt: $this->now->modify('-400 days'),
+            ),
+        ];
+        $decoyTree = $this->tree('upkeep-decoy-d11', age: '400 days');
+        $decoySnapshot = $this->snapshot('upkeep-decoy-d11', 'old', '400 days');
+        $items = [...array_values($protected), $decoyTree, $decoySnapshot];
+
+        foreach (PruneScope::cases() as $scope) {
+            foreach ([null, 0, 30 * 86400] as $olderThan) {
+                foreach ([0, 1, 5] as $keepLatest) {
+                    $combination = sprintf(
+                        'scope=%s olderThan=%s keepLatest=%d',
+                        $scope->value,
+                        $olderThan === null ? 'null' : (string) $olderThan,
+                        $keepLatest,
+                    );
+                    $candidates = $this->selector()->select($items, $scope, $olderThan, $this->now, keepLatest: $keepLatest);
+                    foreach ($candidates as $candidate) {
+                        self::assertContains(
+                            $candidate,
+                            [$decoyTree, $decoySnapshot],
+                            'a protected item leaked into the candidates for ' . $combination,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Non-vacuity: with no restricting flags the sweep DID select both
+        // disposable decoys — the loop above is not passing on empty output.
+        self::assertEqualsCanonicalizing(
+            [$decoyTree, $decoySnapshot],
+            $this->selector()->select($items, PruneScope::All, null, $this->now),
+        );
+    }
+
     // --- Scope filtering --------------------------------------------------
 
     public function testTreesScopeSelectsOnlyProjectTrees(): void

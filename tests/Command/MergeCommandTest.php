@@ -255,6 +255,23 @@ final class MergeCommandTest extends TestCase
         self::assertStringContainsString('Merged: 0', $display);
     }
 
+    public function testEmptyPromptResponseFallsBackToSkipAndNeverMerges(): void
+    {
+        // The affirmative-consent guarantee at its weakest input: pressing
+        // Enter (accepting the prompt default) must select the
+        // non-destructive answer. Approval is typing "merge" — never the
+        // absence of an answer.
+        $this->storePassingLocal();
+        $tester = $this->runMerge($this->client($this->readyAutoRoutes()), ['']);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertSame([], $this->putRequests(), 'the prompt default must never write');
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Skipped widget !5', $display);
+        self::assertStringContainsString('Merged: 0', $display);
+        self::assertStringContainsString('Skipped: 1', $display);
+    }
+
     public function testQuitExitsTheLoopImmediatelyWithoutTouchingRemainingRows(): void
     {
         // Two READY-AUTO rows; quitting on the first must never prompt for

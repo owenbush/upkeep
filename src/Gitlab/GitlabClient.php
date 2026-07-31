@@ -130,6 +130,14 @@ final class GitlabClient
     /**
      * Merge requests merged (well: in merged state, updated) since a moment —
      * the release-notes source.
+     *
+     * Known limitation: GitLab's list API cannot filter on merge date, so
+     * this filters `state=merged` by `updated_after`. Every MR merged after
+     * $since is included (merging bumps updated_at), but an MR merged BEFORE
+     * $since and touched afterwards (a comment, a relabel) appears too — the
+     * result is a superset keyed on update time, not merge time. Acceptable
+     * here because the output is a release-notes DRAFT that a human reviews
+     * before publishing; pinned by GitlabClientTest's mergedSince tests.
      */
     public function mergedSince(Project $project, \DateTimeImmutable $since): MergeRequestList|ApiFailure
     {
