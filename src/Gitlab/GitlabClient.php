@@ -115,6 +115,33 @@ final class GitlabClient
      *
      * @return list<Tag>|ApiFailure
      */
+    /**
+     * Every project the token holder is a member of — for a Drupal.org
+     * maintainer, their maintained projects. Paginates until an empty page;
+     * callers filter namespaces (contrib modules live under `project/`).
+     *
+     * @return list<Project>|ApiFailure
+     */
+    public function membershipProjects(): array|ApiFailure
+    {
+        $projects = [];
+        for ($page = 1; ; ++$page) {
+            $data = $this->get(
+                $this->apiBase . '/projects?membership=true&simple=true&per_page=100&page=' . $page,
+                $this->browserBase . '/dashboard/projects',
+            );
+            if ($data instanceof ApiFailure) {
+                return $data;
+            }
+            if ($data === []) {
+                return $projects;
+            }
+            foreach (array_values($data) as $item) {
+                $projects[] = Project::fromApi($item);
+            }
+        }
+    }
+
     public function tags(Project $project): array|ApiFailure
     {
         $data = $this->get(

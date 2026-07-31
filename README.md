@@ -119,6 +119,20 @@ modules:
     core_versions: ["11"]
 ```
 
+Or skip the hand-editing: `modules:add` lists every `project/` namespace
+project your token is a member of on git.drupalcode.org — for a maintainer,
+that's your modules — and registers the ones you opt into:
+
+```bash
+upkeep modules:add                          # interactive: pick from your memberships
+upkeep modules:add token_or field_helper    # non-interactive: register by name
+upkeep modules:add --core-versions=10,11    # cores the new entries track (default: 11)
+```
+
+Already-registered modules are never offered twice, existing entries are never
+overwritten, and the command is read-only against GitLab. Note: writing
+regenerates `registry.yml`, so hand-written comments in it do not survive.
+
 Check what is registered:
 
 ```bash
@@ -289,6 +303,7 @@ are released together with the tree.
 | ------- | ----------- |
 | `upkeep init [<dir>]` | Scaffold a new cockpit: `registry.yml`, `base-artifacts/`, `fixtures/` |
 | `upkeep modules` | List the modules registered in the cockpit registry |
+| `upkeep modules:add` | Register maintained modules from your git.drupalcode.org memberships (interactive opt-in) |
 | `upkeep api:probe <module>` | Probe the GitLab API for a module: open MRs and head pipeline status |
 | `upkeep base-artifacts:build --core=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |

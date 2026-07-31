@@ -11,6 +11,7 @@ use Upkeep\Command\CheckCommand;
 use Upkeep\Command\DashboardCommand;
 use Upkeep\Command\InitCommand;
 use Upkeep\Command\MergeCommand;
+use Upkeep\Command\ModulesAddCommand;
 use Upkeep\Command\ModulesCommand;
 use Upkeep\Command\NotesCommand;
 use Upkeep\Command\PruneCommand;
@@ -34,6 +35,7 @@ $application->addCommands([
     new DashboardCommand(),
     new InitCommand(),
     new MergeCommand(),
+    new ModulesAddCommand(),
     new ModulesCommand(),
     new NotesCommand(),
     new PruneCommand(),

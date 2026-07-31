@@ -1,0 +1,132 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Upkeep\Tests\Command;
+
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Upkeep\Cockpit\ModuleRegistry;
+use Upkeep\Command\ModulesAddCommand;
+use Upkeep\Gitlab\GitlabClient;
+
+final class ModulesAddCommandTest extends TestCase
+{
+    private string $cockpit;
+
+    protected function setUp(): void
+    {
+        $this->cockpit = sys_get_temp_dir() . '/upkeep-cockpit-' . bin2hex(random_bytes(4));
+        mkdir($this->cockpit, 0o755, true);
+        file_put_contents($this->cockpit . '/registry.yml', <<<YAML
+        modules:
+          conditions_helper:
+            project: project/conditions_helper
+            core_versions: ["11"]
+        YAML);
+    }
+
+    protected function tearDown(): void
+    {
+        @unlink($this->cockpit . '/registry.yml');
+        @rmdir($this->cockpit);
+    }
+
+    /** Membership across two pages; one sandbox project and one already registered. */
+    private function client(): GitlabClient
+    {
+        $pages = [
+            new MockResponse(json_encode([
+                ['id' => 1, 'path' => 'conditions_helper', 'path_with_namespace' => 'project/conditions_helper', 'name' => 'Conditions Helper', 'web_url' => 'https://git.drupalcode.org/project/conditions_helper'],
+                ['id' => 2, 'path' => 'token_or', 'path_with_namespace' => 'project/token_or', 'name' => 'Token OR', 'web_url' => 'https://git.drupalcode.org/project/token_or'],
+                ['id' => 3, 'path' => 'playground', 'path_with_namespace' => 'sandbox/playground', 'name' => 'Playground', 'web_url' => 'https://git.drupalcode.org/sandbox/playground'],
+                ['id' => 4, 'path' => 'field_helper', 'path_with_namespace' => 'project/field_helper', 'name' => 'Field Helper', 'web_url' => 'https://git.drupalcode.org/project/field_helper'],
+            ])),
+            new MockResponse(json_encode([])),
+        ];
+
+        return new GitlabClient(new MockHttpClient(function () use (&$pages) {
+            return array_shift($pages);
+        }), 'token');
+    }
+
+    public function testInteractiveMultiSelectRegistersOnlyChosenProjects(): void
+    {
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        // Choice list must exclude the already-registered module and the
+        // sandbox namespace, leaving token_or and field_helper.
+        $tester->setInputs(['token_or']);
+        $exit = $tester->execute(['--cockpit' => $this->cockpit, '--core-versions' => '10,11']);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        $display = $tester->getDisplay();
+        self::assertStringNotContainsString('conditions_helper', $tester->getDisplay(true) ? substr($display, (int) strpos($display, '?')) : $display);
+        self::assertStringNotContainsString('playground', $display);
+
+        $modules = ModuleRegistry::fromFile($this->cockpit . '/registry.yml')->modules();
+        self::assertSame(['conditions_helper', 'token_or'], array_keys($modules));
+        self::assertSame('project/token_or', $modules['token_or']->project);
+        self::assertSame(['10', '11'], $modules['token_or']->coreVersions);
+    }
+
+    public function testExplicitModuleArgumentsRegisterWithoutPrompting(): void
+    {
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        $exit = $tester->execute([
+            'modules' => ['token_or', 'field_helper'],
+            '--cockpit' => $this->cockpit,
+        ], ['interactive' => false]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        $modules = ModuleRegistry::fromFile($this->cockpit . '/registry.yml')->modules();
+        self::assertSame(['conditions_helper', 'token_or', 'field_helper'], array_keys($modules));
+        self::assertSame(['11'], $modules['token_or']->coreVersions, 'default --core-versions is 11');
+    }
+
+    public function testUnknownExplicitModuleFailsWithoutWriting(): void
+    {
+        $before = file_get_contents($this->cockpit . '/registry.yml');
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        $exit = $tester->execute([
+            'modules' => ['not_one_of_mine'],
+            '--cockpit' => $this->cockpit,
+        ], ['interactive' => false]);
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('not_one_of_mine', $tester->getDisplay());
+        self::assertSame($before, file_get_contents($this->cockpit . '/registry.yml'));
+    }
+
+    public function testNonInteractiveWithoutArgumentsExplainsAndFails(): void
+    {
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit], ['interactive' => false]);
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('non-interactive', $tester->getDisplay());
+    }
+
+    public function testEverythingAlreadyRegisteredIsACleanNoOp(): void
+    {
+        file_put_contents($this->cockpit . '/registry.yml', <<<YAML
+        modules:
+          conditions_helper:
+            project: project/conditions_helper
+            core_versions: ["11"]
+          token_or:
+            project: project/token_or
+            core_versions: ["11"]
+          field_helper:
+            project: project/field_helper
+            core_versions: ["11"]
+        YAML);
+
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        self::assertStringContainsString('already registered', $tester->getDisplay());
+    }
+}
