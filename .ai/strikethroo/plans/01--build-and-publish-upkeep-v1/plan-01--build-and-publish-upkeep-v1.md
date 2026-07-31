@@ -362,9 +362,9 @@ graph TD
 - ✔️ Task 12: Implement the dashboard command and fast-lane gate classification (depends on: 09, 11) — `completed`
 - ✔️ Task 13: Implement the check and review commands (depends on: 09, 11) — `completed`
 
-### Phase 6: Fast-Lane Merge
+### ✅ Phase 6: Fast-Lane Merge
 **Parallel Tasks:**
-- Task 14: Implement the human-triggered fast-lane merge command (depends on: 12)
+- ✔️ Task 14: Implement the human-triggered fast-lane merge command (depends on: 12) — `completed` (live merge deferred to user's local testing; no safe target under publication hold)
 
 ### Phase 7: Consolidated Tests and Documentation
 **Parallel Tasks:**
