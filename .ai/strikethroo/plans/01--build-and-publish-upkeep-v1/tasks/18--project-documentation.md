@@ -2,7 +2,7 @@
 id: 18
 group: "release"
 dependencies: [6, 13, 14, 15, 16]
-status: "pending"
+status: "completed"
 created: 2026-07-29
 skills:
   - technical-writing
