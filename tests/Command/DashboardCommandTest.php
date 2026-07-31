@@ -13,6 +13,9 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Command\DashboardCommand;
+use Upkeep\Dashboard\DashboardCache;
+use Upkeep\Dashboard\ModuleSnapshot;
+use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Results\ResultsCache;
 
@@ -110,9 +113,14 @@ final class DashboardCommandTest extends TestCase
         ];
     }
 
+    private function noDrupalClient(): DrupalOrgClient
+    {
+        return new DrupalOrgClient(new MockHttpClient(static fn () => new MockResponse('', ['http_code' => 404])));
+    }
+
     private function runDashboard(GitlabClient $client, array $args = []): CommandTester
     {
-        $tester = new CommandTester(new DashboardCommand($client));
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
         $tester->execute(['--cockpit' => $this->cockpit, ...$args]);
 
         return $tester;
@@ -146,16 +154,16 @@ final class DashboardCommandTest extends TestCase
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
 
-        foreach (['MODULE', 'MR', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS'] as $header) {
+        foreach (['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS'] as $header) {
             self::assertStringContainsString($header, $display);
         }
         // One row per tracked core version of the module for the single MR.
         self::assertSame(2, substr_count($display, 'Automated Project Update Bot fixes'));
-        self::assertSame(2, substr_count($display, 'widget'));
-        self::assertMatchesRegularExpression('/widget\s*\|\s*5\s*\|\s*10/', $display);
-        self::assertMatchesRegularExpression('/widget\s*\|\s*5\s*\|\s*11/', $display);
-        // CI green, nothing cached locally: visible - and a review status.
-        self::assertSame(2, substr_count($display, 'REVIEW (local-missing)'));
+        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+10/', $display);
+        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11/', $display);
+        self::assertStringContainsString('cached just now', $display);
+        // CI green, nothing cached locally: visible – and a review status.
+        self::assertSame(2, substr_count($display, 'REVIEW local-missing'));
     }
 
     public function testVersionOptionFiltersToOneTargetCoreVersion(): void
@@ -166,8 +174,8 @@ final class DashboardCommandTest extends TestCase
         $display = $tester->getDisplay();
 
         self::assertSame(1, substr_count($display, 'Automated Project Update Bot fixes'));
-        self::assertMatchesRegularExpression('/widget\s*\|\s*5\s*\|\s*11/', $display);
-        self::assertDoesNotMatchRegularExpression('/widget\s*\|\s*5\s*\|\s*10/', $display);
+        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11/', $display);
+        self::assertDoesNotMatchRegularExpression('/widget\s+!5\s+–\s+10/', $display);
     }
 
     public function testFreshAllGreenLocalResultYieldsReadyAutoRow(): void
@@ -178,7 +186,7 @@ final class DashboardCommandTest extends TestCase
 
         $display = $tester->getDisplay();
         self::assertStringContainsString('READY-AUTO', $display);
-        self::assertMatchesRegularExpression('/\|\s*ok\s*\|\s*ok\s*\|\s*READY-AUTO/', $display);
+        self::assertMatchesRegularExpression('/pass\s+pass\s+READY-AUTO/', $display);
     }
 
     public function testFreshFailedLocalCheckRendersFailAndReviewNamingTheCheck(): void
@@ -188,8 +196,8 @@ final class DashboardCommandTest extends TestCase
         $tester = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11']);
 
         $display = $tester->getDisplay();
-        self::assertStringContainsString('fail (phpunit)', $display);
-        self::assertStringContainsString('REVIEW (local-failed:phpunit)', $display);
+        self::assertMatchesRegularExpression('/\bfail\b/', $display);
+        self::assertStringContainsString('REVIEW local-failed:phpunit', $display);
         self::assertStringNotContainsString('READY-AUTO', $display);
     }
 
@@ -204,7 +212,7 @@ final class DashboardCommandTest extends TestCase
 
         $display = $tester->getDisplay();
         self::assertStringContainsString('stale', $display);
-        self::assertStringContainsString('REVIEW (local-stale)', $display);
+        self::assertStringContainsString('REVIEW local-stale', $display);
         self::assertStringNotContainsString('READY-AUTO', $display);
     }
 
@@ -224,8 +232,8 @@ final class DashboardCommandTest extends TestCase
     public function testClosedSingleMrEndpointDegradesTheCiCellOnly(): void
     {
         // The MR list works but the detail fetch (pipeline source) is closed:
-        // the row still renders, CI shows the explicit failure state, and the
-        // gate conservatively denies READY-AUTO for lack of CI evidence.
+        // the row still renders with the listed data (no pipeline), CI shows
+        // "-", and the gate conservatively denies READY-AUTO for lack of CI.
         $client = $this->client([
             '/merge_requests/5' => self::json(['message' => '403 Forbidden'], 403),
             '/merge_requests?' => self::json([self::botMrPayload()]),
@@ -236,8 +244,133 @@ final class DashboardCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
-        self::assertStringContainsString('n/a (403)', $display);
         self::assertStringContainsString('ci-missing', $display);
         self::assertStringNotContainsString('READY-AUTO', $display);
+    }
+
+    public function testCachedSnapshotSkipsApiCallsOnSubsequentRun(): void
+    {
+        $snapshot = new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])],
+            [],
+        );
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $cache->save('widget', $snapshot);
+
+        // Client that would throw on any request — proving no API calls are made.
+        $client = new GitlabClient(
+            new MockHttpClient(static fn () => throw new \LogicException('No API calls expected')),
+            'glpat-test-token',
+        );
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Automated Project Update Bot fixes', $display);
+        self::assertStringContainsString('cached', $display);
+    }
+
+    public function testRefreshBypassesCacheAndFetchesFresh(): void
+    {
+        // Seed cache with old data (different MR title).
+        $snapshot = new ModuleSnapshot(
+            new \DateTimeImmutable('-1 hour'),
+            self::projectPayload(),
+            [self::botMrPayload(['title' => 'Old cached title', 'head_pipeline' => self::greenPipeline()])],
+            [],
+        );
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $cache->save('widget', $snapshot);
+
+        // Fresh fetch returns a different title.
+        $tester = $this->runDashboard(
+            $this->client($this->healthyRoutes()),
+            ['--refresh' => null],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Automated Project Update Bot fixes', $display);
+        self::assertStringNotContainsString('Old cached title', $display);
+        self::assertStringContainsString('just now', $display);
+    }
+
+    public function testRefreshSingleModuleOnlyRefetchesThatModule(): void
+    {
+        // Register a second module to verify selective refresh.
+        file_put_contents(
+            $this->cockpit . '/registry.yml',
+            "modules:\n  alpha:\n    project: project/alpha\n    core_versions: [\"11\"]\n  widget:\n    project: project/widget\n    core_versions: [\"11\"]\n",
+        );
+
+        // Cache both modules.
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $cache->save('alpha', new ModuleSnapshot(
+            new \DateTimeImmutable('-2 hours'),
+            ['id' => 1000, 'path' => 'alpha', 'path_with_namespace' => 'project/alpha', 'name' => 'Alpha', 'web_url' => 'https://git.drupalcode.org/project/alpha'],
+            [['iid' => 1, 'title' => 'Alpha MR', 'state' => 'opened', 'draft' => false, 'author' => ['username' => 'bot', 'id' => 1], 'source_branch' => 'fix', 'target_branch' => '1.x', 'detailed_merge_status' => 'mergeable', 'sha' => self::HEAD_SHA, 'web_url' => 'https://git.drupalcode.org/project/alpha/-/merge_requests/1']],
+            [],
+        ));
+        $cache->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable('-2 hours'),
+            self::projectPayload(),
+            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])],
+            [],
+        ));
+
+        // Only refresh widget — alpha should come from cache, widget from API.
+        $tester = $this->runDashboard(
+            $this->client($this->healthyRoutes()),
+            ['--refresh' => 'widget'],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Alpha MR', $display);
+        self::assertStringContainsString('Automated Project Update Bot fixes', $display);
+    }
+
+    public function testCachePersistsAfterFreshFetch(): void
+    {
+        $tester = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11']);
+        $tester->assertCommandIsSuccessful();
+
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $snapshot = $cache->load('widget');
+        self::assertNotNull($snapshot);
+        self::assertSame(4242, $snapshot->project()->id);
+        self::assertCount(1, $snapshot->mergeRequests());
+        self::assertSame(5, $snapshot->mergeRequests()[0]->iid);
+    }
+
+    public function testCachedLocalResultsAlwaysResolvedFresh(): void
+    {
+        // Cache remote data.
+        $snapshot = new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])],
+            [],
+        );
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $cache->save('widget', $snapshot);
+
+        // Store a fresh passing local result.
+        $this->storeLocal([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.2)]);
+
+        $client = new GitlabClient(
+            new MockHttpClient(static fn () => throw new \LogicException('No API calls expected')),
+            'glpat-test-token',
+        );
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('READY-AUTO', $display);
+        self::assertMatchesRegularExpression('/pass\s+pass\s+READY-AUTO/', $display);
     }
 }

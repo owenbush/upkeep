@@ -77,14 +77,14 @@ final readonly class DashboardRow
         if ($this->moduleFailure !== null) {
             $cell = self::failureCell($this->moduleFailure);
 
-            return [$this->module, '-', '-', '(merge requests unavailable)', $cell, '-', $cell];
+            return [$this->module, '–', '–', '(merge requests unavailable)', $cell, '–', $cell];
         }
 
         \assert($this->mergeRequest !== null && $this->verdict !== null);
 
         return [
             $this->module,
-            (string) $this->mergeRequest->iid,
+            '!' . $this->mergeRequest->iid,
             $this->core,
             self::truncate($this->mergeRequest->title),
             $this->ciCell(),
@@ -102,11 +102,11 @@ final readonly class DashboardRow
 
         $pipeline = $this->mergeRequest?->headPipeline;
         if ($pipeline === null) {
-            return '-';
+            return '–';
         }
 
         return match (true) {
-            $pipeline->status->isGreen() => 'ok',
+            $pipeline->status->isGreen() => 'pass',
             $pipeline->status === PipelineStatus::Failed => 'fail',
             default => $pipeline->rawStatus !== '' ? $pipeline->rawStatus : $pipeline->status->value,
         };
@@ -120,22 +120,14 @@ final readonly class DashboardRow
     public function localCell(): string
     {
         if ($this->local === null) {
-            return '-';
+            return '–';
         }
         $headSha = $this->mergeRequest?->headSha;
         if ($headSha === null || $this->local->sha !== $headSha) {
             return 'stale';
         }
-        if ($this->local->result->allPassed()) {
-            return 'ok';
-        }
 
-        $failed = array_map(
-            static fn ($failure): string => $failure->type->value,
-            $this->local->result->failures(),
-        );
-
-        return 'fail (' . implode(', ', $failed) . ')';
+        return $this->local->result->allPassed() ? 'pass' : 'fail';
     }
 
     /** STATUS cell: the gate verdict, or the module-level failure state. */

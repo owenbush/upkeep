@@ -24,10 +24,10 @@ final readonly class GateVerdict
     ) {
     }
 
-    /** Rendered form for the dashboard STATUS column: "REVIEW (draft, ci-missing)". */
+    /** Rendered form for the dashboard STATUS column: "REVIEW draft, ci-missing". */
     public function describe(): string
     {
         return $this->status->value
-            . ($this->reasons === [] ? '' : ' (' . implode(', ', $this->reasons) . ')');
+            . ($this->reasons === [] ? '' : ' ' . implode(', ', $this->reasons));
     }
 }

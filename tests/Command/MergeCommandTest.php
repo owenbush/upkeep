@@ -206,7 +206,7 @@ final class MergeCommandTest extends TestCase
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
         self::assertStringContainsString('widget !5', $display);
-        self::assertStringContainsString('REVIEW (draft, local-missing)', $display);
+        self::assertStringContainsString('REVIEW draft, local-missing', $display);
         self::assertStringContainsString('No READY-AUTO rows', $display);
         self::assertStringNotContainsString('Fast-lane action', $display, 'no prompt may be offered');
         self::assertSame([], $this->putRequests(), 'no API write may happen');
