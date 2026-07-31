@@ -357,10 +357,10 @@ graph TD
 - ✔️ Task 11: Implement adapter MR, fixture, check, and serve operations (depends on: 10, 05) — `completed`
 - ✔️ Task 16: Implement disk status and prune commands (depends on: 10, 03) — `completed`
 
-### Phase 5: Primary Workflow Commands
+### ✅ Phase 5: Primary Workflow Commands
 **Parallel Tasks:**
-- Task 12: Implement the dashboard command and fast-lane gate classification (depends on: 09, 11)
-- Task 13: Implement the check and review commands (depends on: 09, 11)
+- ✔️ Task 12: Implement the dashboard command and fast-lane gate classification (depends on: 09, 11) — `completed`
+- ✔️ Task 13: Implement the check and review commands (depends on: 09, 11) — `completed`
 
 ### Phase 6: Fast-Lane Merge
 **Parallel Tasks:**
