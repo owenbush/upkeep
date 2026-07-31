@@ -492,15 +492,24 @@ Smallest independent value first.
   less opinionated multi-module variant; the maintainer explicitly advised
   building such functionality "independent of this one, for now" with a possible
   later merger — a direct endorsement of the companion-add-on-first approach.
-- **Toolchain churn underneath the engine.** The queue shows the engine and
-  wider toolchain move (Composer 2.9 broke tests; a `gitlab_templates` upstream
-  change broke `symlink-project` until the add-on was upgraded). This is the
-  concrete argument for the adapter boundary: absorb such churn in one adapter,
-  not across the orchestrator. Pin the engine add-on version and treat upgrades
-  as deliberate adapter-maintenance events.
-- **MR application mechanics.** Use the engine's `symlink-project`/`poser` (or a
-  Composer path repository) — never `--prefer-source` — so Composer does not
-  clobber the checked-out MR branch. See section 11a.
+- **Toolchain churn underneath the engine.** *Resolved (2026-07-30): shipped
+  as designed.* The queue shows the engine and wider toolchain move (Composer
+  2.9 broke tests; a `gitlab_templates` upstream change broke
+  `symlink-project` until the add-on was upgraded). The shipped answer is the
+  adapter boundary: every engine specific lives in `src/Adapter/` behind
+  `EngineAdapterInterface` (guarded — `grep -r "ddev" src/ --exclude-dir=Adapter`
+  returns nothing), so such churn is absorbed in one adapter, not across the
+  orchestrator. The engine add-on is pinned at ddev-drupal-contrib **1.1.5**
+  (`Adapter\EngineAddOn::VERSION`); upgrading the pin is a deliberate
+  adapter-maintenance event, never an ambient `latest`.
+- **MR application mechanics.** *Resolved (2026-07-30): shipped as a Composer
+  path repository.* `Adapter\ModuleWiring` prepends a path repository for the
+  module working copy to the environment's `composer.json` and syncs the
+  composer pin to the MR branch — Composer therefore never clobbers the
+  checked-out MR branch, and `--prefer-source` is never used. Environments are
+  seeded from the native base artifact tree only (the base-vendor-copy bullet
+  below); the engine's `symlink-project`/`poser` route was not needed for this
+  path. See section 11a.
 - **ddev reclamation semantics.** *Verified empirically (2026-07-29, ddev
   v1.25.1, Docker 29.5.2/colima, macOS arm64)* on three identical throwaway
   projects, each with a 139.3MB mariadb volume, a 0B snapshots volume, a 123kB
@@ -575,7 +584,10 @@ Smallest independent value first.
   sacrificial MR was designated, and a 2xx would merge something real. Fallback
   per the plan: task 14 ships the degraded browser-link path as default until a
   maintainer designates a safe ready-to-merge compat MR and the endpoint is
-  probed interactively (DA policy permits interactive single-actions).
+  probed interactively (DA policy permits interactive single-actions). *That
+  degraded path shipped: `merge --fast-lane` treats a closed merge endpoint
+  (`EndpointClosed`) as the documented fallback — it prints the exact browser
+  merge URL for the approved MR and records the row as handled manually.*
 - **Bot-MR identification.** *Resolved (2026-07-29)* from three real bot MRs:
   `conditions_helper` !1 (merged), `field_visibility_conditions` !2 (open,
   draft), `token` !130 (open). The pattern is exact and consistent:
