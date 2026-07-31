@@ -40,6 +40,23 @@ final class GitlabClient
     }
 
     /**
+     * A copy of this client with an empty GET-memoization cache.
+     *
+     * Within one run, GETs are intentionally memoized (rate-limit
+     * friendliness) — but the freshness re-check immediately before a
+     * fast-lane merge must observe the MR as it is NOW, not as memoized at
+     * row-assembly time. That re-check goes through a fresh() copy; the
+     * original instance's cache is left untouched.
+     */
+    public function fresh(): self
+    {
+        $copy = clone $this;
+        $copy->getCache = [];
+
+        return $copy;
+    }
+
+    /**
      * Look up a project by module name ("conditions_helper") or full
      * namespaced path ("project/conditions_helper").
      */

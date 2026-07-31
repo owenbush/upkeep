@@ -226,6 +226,26 @@ final class GitlabClientTest extends TestCase
         $this->assertSame($first->id, $second->id);
     }
 
+    public function testFreshReturnsAClientThatRefetchesInsteadOfServingMemoizedData(): void
+    {
+        // The freshness re-check before a fast-lane merge must observe the
+        // MR as it is NOW, not as it was memoized at row-assembly time.
+        $client = $this->client([
+            self::json(self::projectPayload()),
+            self::json(self::projectPayload()),
+        ]);
+
+        $first = $client->project('conditions_helper');
+        $second = $client->fresh()->project('conditions_helper');
+
+        $this->assertCount(2, $this->requests, 'fresh() must bypass the original instance\'s GET memoization');
+        $this->assertInstanceOf(Project::class, $first);
+        $this->assertInstanceOf(Project::class, $second);
+        // The original instance's cache is untouched by the fresh copy.
+        $client->project('conditions_helper');
+        $this->assertCount(2, $this->requests);
+    }
+
     public function testDistinctResourcesAreNotServedFromCache(): void
     {
         $client = $this->client([
