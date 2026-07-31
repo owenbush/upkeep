@@ -366,14 +366,14 @@ graph TD
 **Parallel Tasks:**
 - ✔️ Task 14: Implement the human-triggered fast-lane merge command (depends on: 12) — `completed` (live merge deferred to user's local testing; no safe target under publication hold)
 
-### Phase 7: Consolidated Tests and Documentation
+### ✅ Phase 7: Consolidated Tests and Documentation
 **Parallel Tasks:**
-- Task 17: Consolidated tests for the orchestrator's high-consequence logic (depends on: 12, 14, 16)
-- Task 18: Write the documentation for both repositories (depends on: 06, 13, 14, 15, 16)
+- ✔️ Task 17: Consolidated tests for the orchestrator's high-consequence logic (depends on: 12, 14, 16) — `completed`
+- ✔️ Task 18: Write the documentation for both repositories (depends on: 06, 13, 14, 15, 16) — `completed`
 
-### Phase 8: Publication
+### ⛔ Phase 8: Publication — ON HOLD (user directive 2026-07-29)
 **Parallel Tasks:**
-- Task 19: Publish both artifacts and verify the installation paths (depends on: 01, 17, 18)
+- Task 19: Publish both artifacts and verify the installation paths (depends on: 01, 17, 18) — `pending`, blocked on the user's explicit approval after local testing. See the HOLD banner in the task file.
 
 ### Post-phase Actions
 - After each phase, apply the validation gates referenced above before starting the next phase.
@@ -382,3 +382,27 @@ graph TD
 ### Execution Summary
 - Total Phases: 8
 - Total Tasks: 19
+
+## Execution Checkpoint (2026-07-30) — Phases 1–7 complete, Phase 8 held
+
+**Status**: Paused by user directive before publication. All build phases (1–7, tasks 1–18) are complete and verified; task 19 (publication) is blocked on the user's explicit approval after local testing. The plan stays in `plans/` until then.
+
+**Validation gates at checkpoint**: `composer validate --strict` passes; full suite green (242 tests, 674 assertions); 18/19 task files carry `status: "completed"` (task 19 `pending` by design); both repos' working trees clean. Self-validation steps that require publication (clean-machine Composer install, Packagist API check, public `ddev add-on get`, CI-on-tag) are deferred to task 19; every other self-validation behavior was exercised live during execution (fixture round-trip, dashboard cross-checked against the GitLab UI, end-to-end check on a real MR, review URL fetch, merge zero-row walk-through, notes cross-check, prune dry-run safety and regeneration).
+
+**Noteworthy events**
+- Phase 1 verified all names free; all drupalcode read API endpoints open to the PAT; merge endpoint deliberately untested (no safe target) — degraded browser-link path shipped and tested instead. Bot-MR pattern pinned from three real samples.
+- Drupal 12 does not exist on Packagist yet; the core-version matrix was proven on D10 + D11 throughout.
+- Base-tree copy seeding verified byte-identical to a from-scratch resolve; cold provision measured at 51s (2.2s reuse) from base artifacts.
+- Colima mounts only $HOME into the Docker VM: ddev projects cannot live under /tmp; projects root defaults to `~/.upkeep/projects`.
+- The engine's `symlink-project`/`poser` assumes module-as-project-root, incompatible with the per-core matrix — module wiring uses a Composer path repository instead (design doc's sanctioned alternative).
+- `upkeep check` on the real fvc !2 bot MR caught a genuine test failure inside the MR (`Button "Continue" not found`), proving the REVIEW routing end-to-end.
+- GitHub Actions credits exhausted on the account (reset early Aug 2026): add-on CI-green verified locally, deferred to publication (public repos consume no paid minutes).
+- Two session-limit interruptions killed in-flight agents (phases 3 and 5); all were resumed from transcripts with no lost work.
+- Symfony Console's `--version` interception was neutralized app-wide so check/review/dashboard own `--version` as the target-core selector; `upkeep --version` intentionally does not print the app version.
+- `owenbush/ddev-upkeep` remains private: fresh provisioning uses `UPKEEP_ADDON_SOURCE=/Users/owen/contrib/ddev-upkeep` until publication.
+
+**Live test bed left running for the user's local testing**
+- Cockpit: `/Users/owen/.upkeep-task10-scratch/cockpit` (both modules registered; base artifacts for cores 10 and 11; fixture `task11-spot` in the library; results cache populated).
+- Projects root: `/Users/owen/.upkeep-task10-scratch/projects` with running environments `upkeep-conditions-helper-d11` and `upkeep-field-visibility-conditions-d11` (working copy on `mr-2`).
+
+**Remaining for task 19 (after user approval)**: re-verify Packagist name free; create public `owenbush/upkeep` repo and push; flip `ddev-upkeep` public; confirm tag names with the user (proposed v0.1.0); tag both; register on Packagist + webhook; clean-state install verifications; add-on CI green on the tag; live fast-lane merge demonstration with a maintainer-designated safe MR.
