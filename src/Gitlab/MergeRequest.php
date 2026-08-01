@@ -27,6 +27,7 @@ final readonly class MergeRequest
         public string $webUrl,
         public ?string $description = null,
         public ?Pipeline $headPipeline = null,
+        public ?string $updatedAt = null,
     ) {
     }
 
@@ -50,6 +51,7 @@ final readonly class MergeRequest
             headPipeline: isset($data['head_pipeline']) && \is_array($data['head_pipeline'])
                 ? Pipeline::fromApi($data['head_pipeline'])
                 : null,
+            updatedAt: isset($data['updated_at']) ? (string) $data['updated_at'] : null,
         );
     }
 
@@ -69,6 +71,7 @@ final readonly class MergeRequest
             'web_url' => $this->webUrl,
             'description' => $this->description,
             'head_pipeline' => $this->headPipeline?->toApiArray(),
+            'updated_at' => $this->updatedAt,
         ];
     }
 }

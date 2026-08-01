@@ -200,6 +200,19 @@ final class DashboardCommand extends Command
                 ? IssueReference::extract($row->mergeRequest->title, $row->mergeRequest->sourceBranch, $row->mergeRequest->description)
                 : null;
             $issueCell = $nid !== null ? (string) $nid : '–';
+
+            if ($nid !== null && $row->mergeRequest !== null) {
+                $snapshot = $snapshots[$row->module] ?? null;
+                $issue = $snapshot?->issue($nid);
+                $latestPatch = $issue?->latestPatch();
+                if ($latestPatch !== null && $latestPatch->timestamp > 0 && $row->mergeRequest->updatedAt !== null) {
+                    $mrUpdated = strtotime($row->mergeRequest->updatedAt);
+                    if ($mrUpdated !== false && $latestPatch->timestamp > $mrUpdated) {
+                        $issueCell .= ' patch↑';
+                    }
+                }
+            }
+
             array_splice($cells, 2, 0, [$issueCell]);
 
             foreach ($cells as $i => $cell) {
@@ -309,6 +322,11 @@ final class DashboardCommand extends Command
     private static function colorCells(array $cells): array
     {
         $fmt = $cells;
+
+        // ISSUE (index 2) — highlight the patch↑ flag
+        if (str_contains($cells[2], 'patch↑')) {
+            $fmt[2] = str_replace('patch↑', '<fg=yellow>patch↑</>', $cells[2]);
+        }
 
         // CI (index 5)
         $fmt[5] = match (true) {

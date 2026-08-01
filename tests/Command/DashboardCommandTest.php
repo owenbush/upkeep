@@ -346,6 +346,106 @@ final class DashboardCommandTest extends TestCase
         self::assertSame(5, $snapshot->mergeRequests()[0]->iid);
     }
 
+    public function testIssueWithNewerPatchShowsPatchFlag(): void
+    {
+        $mrUpdated = '2026-07-20T10:00:00Z';
+        $patchTimestamp = strtotime('2026-07-25T12:00:00Z');
+
+        $issueNid = 3467675;
+        $issueData = [
+            'nid' => $issueNid,
+            'title' => 'Make URL field required',
+            'url' => 'https://www.drupal.org/project/widget/issues/' . $issueNid,
+            'field_issue_status' => '8',
+            'field_issue_priority' => '200',
+            'field_project' => ['machine_name' => 'widget'],
+            'field_issue_files' => [
+                ['file' => [
+                    'filename' => $issueNid . '-42.patch',
+                    'url' => 'https://www.drupal.org/files/issues/' . $issueNid . '-42.patch',
+                    'filesize' => '1024',
+                    'timestamp' => (string) $patchTimestamp,
+                ]],
+            ],
+        ];
+
+        $mr = self::botMrPayload([
+            'title' => 'Issue #' . $issueNid . ': Make URL field required',
+            'source_branch' => $issueNid . '-make-url-required',
+            'head_pipeline' => self::greenPipeline(),
+            'updated_at' => $mrUpdated,
+        ]);
+
+        $snapshot = new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [$mr],
+            [$issueNid => $issueData],
+        );
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $cache->save('widget', $snapshot);
+
+        $client = new GitlabClient(
+            new MockHttpClient(static fn () => throw new \LogicException('No API calls expected')),
+            'glpat-test-token',
+        );
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('patch↑', $tester->getDisplay());
+    }
+
+    public function testIssueWithOlderPatchDoesNotShowFlag(): void
+    {
+        $mrUpdated = '2026-07-25T12:00:00Z';
+        $patchTimestamp = strtotime('2026-07-20T10:00:00Z');
+
+        $issueNid = 3467675;
+        $issueData = [
+            'nid' => $issueNid,
+            'title' => 'Make URL field required',
+            'url' => 'https://www.drupal.org/project/widget/issues/' . $issueNid,
+            'field_issue_status' => '8',
+            'field_issue_priority' => '200',
+            'field_project' => ['machine_name' => 'widget'],
+            'field_issue_files' => [
+                ['file' => [
+                    'filename' => $issueNid . '-42.patch',
+                    'url' => 'https://www.drupal.org/files/issues/' . $issueNid . '-42.patch',
+                    'filesize' => '1024',
+                    'timestamp' => (string) $patchTimestamp,
+                ]],
+            ],
+        ];
+
+        $mr = self::botMrPayload([
+            'title' => 'Issue #' . $issueNid . ': Make URL field required',
+            'source_branch' => $issueNid . '-make-url-required',
+            'head_pipeline' => self::greenPipeline(),
+            'updated_at' => $mrUpdated,
+        ]);
+
+        $snapshot = new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [$mr],
+            [$issueNid => $issueData],
+        );
+        $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
+        $cache->save('widget', $snapshot);
+
+        $client = new GitlabClient(
+            new MockHttpClient(static fn () => throw new \LogicException('No API calls expected')),
+            'glpat-test-token',
+        );
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringNotContainsString('patch↑', $tester->getDisplay());
+    }
+
     public function testCachedLocalResultsAlwaysResolvedFresh(): void
     {
         // Cache remote data.
