@@ -145,7 +145,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // The add-on command owns all fixture resolution and load semantics
         // (module scope, shared library, snapshot fast path) — the adapter
         // only invokes it and surfaces failure as AdapterException.
-        $this->runner->run(['ddev', 'fixture-load', $fixtureName], $environment->projectPath);
+        $this->runner->run(['ddev', 'upkeep-fixture-load', $fixtureName], $environment->projectPath);
     }
 
     public function runChecks(Environment $environment, array $checks = []): CheckRunResult
@@ -176,6 +176,17 @@ final class DdevContribAdapter implements EngineAdapterInterface
             url: $environment->primaryUrl,
             loginUrl: $login !== null && trim($login) !== '' ? trim($login) : null,
         );
+    }
+
+    public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+    {
+        $projectPath = rtrim($this->projectsRoot, '/') . '/' . ProjectName::for($moduleName, $coreMajor);
+
+        if (!is_dir($projectPath) || !is_file($projectPath . '/' . EnvironmentMeta::FILENAME)) {
+            return null;
+        }
+
+        return $projectPath;
     }
 
     public function teardown(Module $module, string $coreMajor): void

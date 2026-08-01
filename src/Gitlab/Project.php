@@ -25,4 +25,16 @@ final readonly class Project
             webUrl: (string) ($data['web_url'] ?? ''),
         );
     }
+
+    /** @return array<string, mixed> */
+    public function toApiArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'path' => $this->path,
+            'path_with_namespace' => $this->pathWithNamespace,
+            'name' => $this->name,
+            'web_url' => $this->webUrl,
+        ];
+    }
 }

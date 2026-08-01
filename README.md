@@ -167,8 +167,8 @@ upkeep dashboard
 ```
 
 shows every open MR across all registered modules and tracked core versions,
-with upstream CI state, local check results (from your cached `check` runs),
-and the fast-lane gate status:
+with the linked drupal.org issue status, upstream CI state, local check
+results (from your cached `check` runs), and the fast-lane gate status:
 
 - `READY-AUTO` — a Project Update Bot compat MR with green CI and green local
   checks; eligible for the fast-lane merge prompt.
@@ -177,6 +177,17 @@ and the fast-lane gate status:
 - `BLOCKED` — cannot proceed (e.g. merge conflicts).
 
 Filter to one core version with `upkeep dashboard --version=11`.
+
+Remote data (GitLab MRs and drupal.org issues) is cached per module. On
+subsequent runs the dashboard loads instantly from cache. To re-fetch:
+
+```bash
+upkeep dashboard --refresh            # re-fetch all modules
+upkeep dashboard --refresh=widget     # re-fetch one module only
+```
+
+Local check results and gate verdicts are always resolved fresh — only the
+remote API data is cached. The cache age is shown below the table.
 
 ### Check an MR
 
@@ -239,6 +250,52 @@ workflow, it never skips approval.
 endpoint closed to PATs), an approved row is not lost: Upkeep prints the
 exact browser merge URL for that MR and records it as handled manually. You
 perform the same single human action, just in the browser.
+
+### Interact with an environment
+
+Once a `check` or `review` has provisioned an environment, you can run
+commands in it directly without knowing the project path:
+
+```bash
+upkeep exec entity_type_access_conditions -- ddev drush cr
+upkeep exec entity_type_access_conditions -- ddev ssh
+upkeep exec entity_type_access_conditions --version=10 -- ddev logs
+```
+
+Everything after `--` is run with the environment directory as the working
+directory. The exit code is passed through, so you can script against it.
+
+To get the bare path (for `cd` or other tools):
+
+```bash
+cd $(upkeep env:path entity_type_access_conditions)
+upkeep env:path entity_type_access_conditions --version=10
+```
+
+Both commands default to the first core version tracked in the registry when
+`--version` is omitted.
+
+### Issue status
+
+Most merge requests link to a drupal.org issue (via the `Issue #NNN:` title
+convention or the branch name). To view the linked issue's details and open
+it in the browser — where you can change the status to RTBC, Needs work,
+etc.:
+
+```bash
+upkeep issue entity_type_access_conditions 2
+```
+
+This extracts the issue number from the MR, fetches the issue from
+drupal.org (title, status, priority, version), and opens the drupal.org
+issue page in your browser. Use `--no-open` to just print the details
+without launching the browser.
+
+The dashboard also shows issue status for each MR in the ISSUE column (e.g.
+`#3467675 (review)`), pulled live from the drupal.org API.
+
+> **Note:** the drupal.org API is read-only, so status changes go through
+> the browser. The `issue` command gets you there in one step.
 
 ### Release notes
 
@@ -307,9 +364,12 @@ are released together with the tree.
 | `upkeep api:probe <module>` | Probe the GitLab API for a module: open MRs and head pipeline status |
 | `upkeep base-artifacts:build --core=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
-| `upkeep dashboard [--version=N]` | All open MRs with CI, local check, and fast-lane status |
+| `upkeep dashboard [--version=N] [--refresh[=MODULE]]` | All open MRs with CI, local check, and fast-lane status (cached; `--refresh` re-fetches) |
 | `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR; exit 0/1/2 contract |
 | `upkeep review <module> <mr> [--version=N]` | Apply an MR to a running site and print its browsable URL |
+| `upkeep exec <module> [--version=N] -- <command...>` | Run a command in the module's environment directory |
+| `upkeep env:path <module> [--version=N]` | Print the absolute path of a module's environment directory |
+| `upkeep issue <module> <mr> [--no-open]` | Show the linked drupal.org issue and open it in the browser |
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |

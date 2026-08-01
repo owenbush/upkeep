@@ -6,9 +6,10 @@ namespace Upkeep\Adapter;
 
 /**
  * Identity of the ddev-upkeep add-on: the fixture commands (`ddev
- * fixture-load` etc.) the adapter shells to for loadFixture(). Installed into
- * every environment during provisioning, and lazily on first loadFixture()
- * for environments provisioned before the add-on became part of the layout.
+ * upkeep-fixture-load` etc.) the adapter shells to for loadFixture().
+ * Installed into every environment during provisioning, and lazily on first
+ * loadFixture() for environments provisioned before the add-on became part
+ * of the layout.
  */
 final readonly class FixtureAddOn
 {
@@ -25,7 +26,7 @@ final readonly class FixtureAddOn
      * A file the add-on installs into <project>/.ddev/ — its presence is the
      * "already installed" probe.
      */
-    public const string MARKER = 'commands/host/fixture-load';
+    public const string MARKER = 'commands/host/upkeep-fixture-load';
 
     public static function source(): string
     {

@@ -115,6 +115,11 @@ final class PruneCommandTest extends TestCase
                 throw new \BadMethodCallException('not used');
             }
 
+            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+            {
+                return null;
+            }
+
             public function teardown(Module $module, string $coreMajor): void
             {
                 $this->teardowns[] = [$module->name, $coreMajor];

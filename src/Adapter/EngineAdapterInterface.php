@@ -71,6 +71,15 @@ interface EngineAdapterInterface
     public function serve(Environment $environment): ServeResult;
 
     /**
+     * Returns the absolute path to the (module, core major) environment
+     * directory when it exists and was fully provisioned (completion marker
+     * present), or null when no such environment has been provisioned.
+     *
+     * Never provisions, starts, or modifies the environment.
+     */
+    public function resolveEnvPath(string $moduleName, string $coreMajor): ?string;
+
+    /**
      * Disposes the (module, core major) environment completely: engine
      * project, containers, named volumes, and the on-disk tree. A no-op when
      * the environment does not exist.

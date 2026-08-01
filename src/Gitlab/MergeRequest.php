@@ -25,6 +25,7 @@ final readonly class MergeRequest
         public ?string $detailedMergeStatus,
         public ?string $headSha,
         public string $webUrl,
+        public ?string $description = null,
         public ?Pipeline $headPipeline = null,
     ) {
     }
@@ -45,9 +46,29 @@ final readonly class MergeRequest
             detailedMergeStatus: isset($data['detailed_merge_status']) ? (string) $data['detailed_merge_status'] : null,
             headSha: isset($data['sha']) ? (string) $data['sha'] : null,
             webUrl: (string) ($data['web_url'] ?? ''),
+            description: isset($data['description']) ? (string) $data['description'] : null,
             headPipeline: isset($data['head_pipeline']) && \is_array($data['head_pipeline'])
                 ? Pipeline::fromApi($data['head_pipeline'])
                 : null,
         );
+    }
+
+    /** @return array<string, mixed> */
+    public function toApiArray(): array
+    {
+        return [
+            'iid' => $this->iid,
+            'title' => $this->title,
+            'state' => $this->state,
+            'author' => ['username' => $this->authorUsername, 'id' => $this->authorId],
+            'source_branch' => $this->sourceBranch,
+            'target_branch' => $this->targetBranch,
+            'draft' => $this->draft,
+            'detailed_merge_status' => $this->detailedMergeStatus,
+            'sha' => $this->headSha,
+            'web_url' => $this->webUrl,
+            'description' => $this->description,
+            'head_pipeline' => $this->headPipeline?->toApiArray(),
+        ];
     }
 }

@@ -27,4 +27,15 @@ final readonly class Pipeline
             webUrl: (string) ($data['web_url'] ?? ''),
         );
     }
+
+    /** @return array<string, mixed> */
+    public function toApiArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'status' => $this->rawStatus,
+            'sha' => $this->sha,
+            'web_url' => $this->webUrl,
+        ];
+    }
 }

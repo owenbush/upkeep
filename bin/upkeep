@@ -9,11 +9,16 @@ use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
 use Upkeep\Command\CheckCommand;
 use Upkeep\Command\DashboardCommand;
+use Upkeep\Command\EnvPathCommand;
+use Upkeep\Command\ExecCommand;
 use Upkeep\Command\InitCommand;
+use Upkeep\Command\IssueCommand;
 use Upkeep\Command\MergeCommand;
+use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\ModulesAddCommand;
 use Upkeep\Command\ModulesCommand;
 use Upkeep\Command\NotesCommand;
+use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StatusCommand;
@@ -33,11 +38,16 @@ $application->addCommands([
     new BaseArtifactsStatusCommand(),
     new CheckCommand(),
     new DashboardCommand(),
+    new EnvPathCommand(),
+    new ExecCommand(),
     new InitCommand(),
+    new IssueCommand(),
     new MergeCommand(),
+    new NeedsWorkCommand(),
     new ModulesAddCommand(),
     new ModulesCommand(),
     new NotesCommand(),
+    new PatchesCommand(),
     new PruneCommand(),
     new ReviewCommand(),
     new StatusCommand(),

@@ -1,0 +1,162 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Upkeep\Drupal;
+
+final readonly class Issue
+{
+    /**
+     * @param list<IssueFile> $files
+     */
+    public function __construct(
+        public int $nid,
+        public string $title,
+        public IssueStatus $status,
+        public string $url,
+        public ?string $project,
+        public ?int $priority,
+        public ?string $version,
+        public ?string $component,
+        public ?string $category,
+        public array $files = [],
+    ) {
+    }
+
+    public static function fromApi(array $data): ?self
+    {
+        $nid = $data['nid'] ?? null;
+        if ($nid === null) {
+            return null;
+        }
+
+        $statusId = $data['field_issue_status'] ?? null;
+        $status = $statusId !== null ? IssueStatus::tryFrom((int) $statusId) : null;
+        if ($status === null) {
+            return null;
+        }
+
+        $priority = isset($data['field_issue_priority']) ? (int) $data['field_issue_priority'] : null;
+
+        return new self(
+            nid: (int) $nid,
+            title: (string) ($data['title'] ?? ''),
+            status: $status,
+            url: (string) ($data['url'] ?? sprintf('https://www.drupal.org/node/%d', $nid)),
+            project: isset($data['field_project']['machine_name']) ? (string) $data['field_project']['machine_name'] : null,
+            priority: $priority,
+            version: isset($data['field_issue_version']) ? (string) $data['field_issue_version'] : null,
+            component: isset($data['field_issue_component']) ? (string) $data['field_issue_component'] : null,
+            category: self::categoryLabel(isset($data['field_issue_category']) ? (int) $data['field_issue_category'] : null),
+            files: self::parseFiles($data),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    public function toApiArray(): array
+    {
+        return [
+            'nid' => $this->nid,
+            'title' => $this->title,
+            'field_issue_status' => (string) $this->status->value,
+            'url' => $this->url,
+            'field_project' => $this->project !== null ? ['machine_name' => $this->project] : null,
+            'field_issue_priority' => $this->priority,
+            'field_issue_version' => $this->version,
+            'field_issue_component' => $this->component,
+            'field_issue_category' => self::categoryId($this->category),
+            'field_issue_files' => array_map(
+                static fn (IssueFile $f): array => $f->toApiArray(),
+                $this->files,
+            ),
+        ];
+    }
+
+    public function patchCount(): int
+    {
+        return \count(array_filter($this->files, static fn (IssueFile $f): bool => $f->isPatch()));
+    }
+
+    public function latestPatch(): ?IssueFile
+    {
+        $patches = array_filter($this->files, static fn (IssueFile $f): bool => $f->isPatch());
+        if ($patches === []) {
+            return null;
+        }
+
+        $patches = array_values($patches);
+        usort($patches, static function (IssueFile $a, IssueFile $b): int {
+            $ca = $a->commentNumber();
+            $cb = $b->commentNumber();
+            if ($ca !== null && $cb !== null) {
+                return $cb <=> $ca;
+            }
+
+            return $b->timestamp <=> $a->timestamp;
+        });
+
+        return $patches[0];
+    }
+
+    public function priorityLabel(): ?string
+    {
+        return match ($this->priority) {
+            400 => 'Critical',
+            300 => 'Major',
+            200 => 'Normal',
+            100 => 'Minor',
+            default => null,
+        };
+    }
+
+    private static function categoryLabel(?int $id): ?string
+    {
+        return match ($id) {
+            1 => 'Bug report',
+            2 => 'Task',
+            3 => 'Feature request',
+            4 => 'Support request',
+            5 => 'Plan',
+            default => null,
+        };
+    }
+
+    private static function categoryId(?string $label): ?int
+    {
+        return match ($label) {
+            'Bug report' => 1,
+            'Task' => 2,
+            'Feature request' => 3,
+            'Support request' => 4,
+            'Plan' => 5,
+            default => null,
+        };
+    }
+
+    /** @return list<IssueFile> */
+    private static function parseFiles(array $data): array
+    {
+        $raw = $data['field_issue_files'] ?? [];
+
+        if (isset($raw['und']) && \is_array($raw['und'])) {
+            $raw = $raw['und'];
+        }
+
+        if (!\is_array($raw)) {
+            return [];
+        }
+
+        $files = [];
+        foreach ($raw as $entry) {
+            if (!\is_array($entry)) {
+                continue;
+            }
+            $file = IssueFile::fromApi($entry);
+            if ($file !== null) {
+                $files[] = $file;
+            }
+        }
+
+        return $files;
+    }
+}

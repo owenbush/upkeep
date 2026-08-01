@@ -203,6 +203,21 @@ final class GitlabClient
     }
 
     /**
+     * Post a note (comment) on a merge request.
+     */
+    public function postNote(Project $project, int $iid, string $body): true|ApiFailure
+    {
+        $data = $this->request(
+            'POST',
+            $this->apiBase . '/projects/' . $project->id . '/merge_requests/' . $iid . '/notes',
+            ['json' => ['body' => $body]],
+            $this->mergeRequestBrowserUrl($project, $iid),
+        );
+
+        return $data instanceof ApiFailure ? $data : true;
+    }
+
+    /**
      * Merge exactly one merge request.
      *
      * Deliberately a single-action call: one Project, one IID, one PUT — there
