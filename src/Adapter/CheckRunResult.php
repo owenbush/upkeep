@@ -18,7 +18,12 @@ final readonly class CheckRunResult
 
     public function allPassed(): bool
     {
-        return array_all($this->results, static fn (CheckResult $result): bool => $result->passed());
+        foreach ($this->results as $result) {
+            if (!$result->passed()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

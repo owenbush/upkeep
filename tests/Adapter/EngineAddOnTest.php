@@ -15,7 +15,7 @@ final class EngineAddOnTest extends TestCase
      * the pinned engine add-on version. If the pin moves, refresh this fixture
      * and re-verify the adaptation against the new file.
      */
-    private const string SHIPPED_CONFIG = <<<'YAML'
+    private const SHIPPED_CONFIG = <<<'YAML'
         #ddev-generated
         ## Command provided by https://github.com/ddev/ddev-drupal-contrib
         web_environment:

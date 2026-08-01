@@ -19,8 +19,8 @@ use Upkeep\Maintenance\InventoryItem;
  */
 final readonly class VolumeProbe
 {
-    private const string PROJECT_LABEL = 'com.docker.compose.project';
-    private const string COMPOSE_PROJECT_PREFIX = 'ddev-';
+    private const PROJECT_LABEL = 'com.docker.compose.project';
+    private const COMPOSE_PROJECT_PREFIX = 'ddev-';
 
     /**
      * @param \Closure(list<string>): ?string $exec runs a command, returns stdout or null on failure

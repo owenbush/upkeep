@@ -34,10 +34,10 @@ use Upkeep\Cockpit\Cockpit;
  */
 final readonly class InventoryScanner
 {
-    public const string KEEP_MARKER = '.keep';
+    public const KEEP_MARKER = '.keep';
 
-    private const string PROJECT_DIR_PATTERN = '/^upkeep-[a-z0-9-]+-d\d+$/';
-    private const string MODULE_FIXTURES_DIR = 'module/tests/fixtures';
+    private const PROJECT_DIR_PATTERN = '/^upkeep-[a-z0-9-]+-d\d+$/';
+    private const MODULE_FIXTURES_DIR = 'module/tests/fixtures';
 
     /**
      * @param \Closure(string): int $sizer bytes-on-disk measure, defaults to `du -sk`
@@ -248,7 +248,7 @@ final readonly class InventoryScanner
 
         try {
             return new \DateTimeImmutable((string) $value);
-        } catch (\DateMalformedStringException) {
+        } catch (\Exception) {
             return null;
         }
     }

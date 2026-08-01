@@ -10,10 +10,10 @@ namespace Upkeep\Cockpit;
  */
 final readonly class Cockpit
 {
-    public const string REGISTRY_FILENAME = 'registry.yml';
-    public const string BASE_ARTIFACTS_DIR = 'base-artifacts';
-    public const string FIXTURES_DIR = 'fixtures';
-    public const string ENV_VAR = 'UPKEEP_COCKPIT';
+    public const REGISTRY_FILENAME = 'registry.yml';
+    public const BASE_ARTIFACTS_DIR = 'base-artifacts';
+    public const FIXTURES_DIR = 'fixtures';
+    public const ENV_VAR = 'UPKEEP_COCKPIT';
 
     public function __construct(public string $root)
     {

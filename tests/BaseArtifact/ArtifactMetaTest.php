@@ -10,7 +10,7 @@ use Upkeep\BaseArtifact\MetaException;
 
 final class ArtifactMetaTest extends TestCase
 {
-    private const string VALID_YAML = <<<'YAML'
+    private const VALID_YAML = <<<'YAML'
         core_version: 11.4.4
         core_major: '11'
         php_version: 8.3.30

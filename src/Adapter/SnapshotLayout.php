@@ -14,8 +14,8 @@ namespace Upkeep\Adapter;
  */
 final readonly class SnapshotLayout
 {
-    public const string MATERIALIZED_DIR = '.ddev/upkeep/materialized';
-    public const string META_DIR = '.ddev/upkeep/snapshots';
+    public const MATERIALIZED_DIR = '.ddev/upkeep/materialized';
+    public const META_DIR = '.ddev/upkeep/snapshots';
 
     /**
      * materialized/<name>.sql -> <project>/.ddev/upkeep/snapshots/<name>.meta,

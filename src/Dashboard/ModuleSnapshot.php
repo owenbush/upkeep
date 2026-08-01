@@ -72,7 +72,7 @@ final readonly class ModuleSnapshot
 
         try {
             $fetchedAt = new \DateTimeImmutable((string) $data['fetched_at']);
-        } catch (\DateMalformedStringException) {
+        } catch (\Exception) {
             return null;
         }
 

@@ -33,7 +33,7 @@ use Upkeep\Adapter\ThrowawaySite;
  */
 final readonly class BaseArtifactBuilder
 {
-    private const int PROCESS_TIMEOUT = 3600;
+    private const PROCESS_TIMEOUT = 3600;
 
     /**
      * @param \Closure(string): void $log receives streamed process output/progress lines

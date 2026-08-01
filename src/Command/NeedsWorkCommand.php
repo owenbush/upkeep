@@ -35,7 +35,7 @@ use Upkeep\Workflow\WorkflowException;
 )]
 final class NeedsWorkCommand extends Command
 {
-    private const int EXCERPT_BYTES = 2000;
+    private const EXCERPT_BYTES = 2000;
 
     public function __construct(
         private readonly ?GitlabClient $gitlabClient = null,

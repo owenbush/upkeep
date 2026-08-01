@@ -90,7 +90,7 @@ abstract class AbstractMrCommand extends Command
 
         $version = $input->getOption('version');
 
-        return new MrContextResolver($registry->modules(), new GitlabClient(HttpClient::create(), $token))
+        return (new MrContextResolver($registry->modules(), new GitlabClient(HttpClient::create(), $token)))
             ->resolve((string) $input->getArgument('module'), (int) $iidRaw, $version !== null ? (string) $version : null);
     }
 

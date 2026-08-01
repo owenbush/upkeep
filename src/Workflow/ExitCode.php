@@ -18,9 +18,9 @@ use Upkeep\Adapter\CheckRunResult;
  */
 final readonly class ExitCode
 {
-    public const int OK = 0;
-    public const int CHECKS_FAILED = 1;
-    public const int INFRASTRUCTURE = 2;
+    public const OK = 0;
+    public const CHECKS_FAILED = 1;
+    public const INFRASTRUCTURE = 2;
 
     public static function forRun(CheckRunResult $run): int
     {

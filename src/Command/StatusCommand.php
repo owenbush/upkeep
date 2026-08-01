@@ -50,7 +50,7 @@ final class StatusCommand extends Command
         }
 
         $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'));
-        $items = new InventoryScanner($cockpit, $projectsRoot)->scan();
+        $items = (new InventoryScanner($cockpit, $projectsRoot))->scan();
 
         $trees = [];
         foreach ($items as $item) {

@@ -35,7 +35,7 @@ final class ArtifactScannerTest extends TestCase
         file_put_contents($this->layout->canonicalMarkerPath($major), "canonical\n");
     }
 
-    private const string META_11 = <<<'YAML'
+    private const META_11 = <<<'YAML'
         core_version: 11.4.4
         core_major: '11'
         php_version: 8.3.30
@@ -48,7 +48,7 @@ final class ArtifactScannerTest extends TestCase
     {
         $this->makeCompleteVersion('11', self::META_11);
 
-        $records = new ArtifactScanner($this->layout)->scan();
+        $records = (new ArtifactScanner($this->layout))->scan();
 
         self::assertCount(1, $records);
         $record = $records[0];
@@ -66,7 +66,7 @@ final class ArtifactScannerTest extends TestCase
         mkdir($this->layout->treePath('10'), 0755, true);
         // no dump, no meta, no canonical marker
 
-        $records = new ArtifactScanner($this->layout)->scan();
+        $records = (new ArtifactScanner($this->layout))->scan();
 
         self::assertCount(1, $records);
         $record = $records[0];
@@ -82,7 +82,7 @@ final class ArtifactScannerTest extends TestCase
     {
         $this->makeCompleteVersion('11', '{{{ not yaml');
 
-        $record = new ArtifactScanner($this->layout)->scan()[0];
+        $record = (new ArtifactScanner($this->layout))->scan()[0];
 
         self::assertFalse($record->complete);
         self::assertNull($record->meta);
@@ -94,13 +94,13 @@ final class ArtifactScannerTest extends TestCase
         $this->makeCompleteVersion('11', self::META_11);
         mkdir($this->layout->treePath('10'), 0755, true);
 
-        $records = new ArtifactScanner($this->layout)->scan();
+        $records = (new ArtifactScanner($this->layout))->scan();
 
         self::assertSame(['10', '11'], array_map(static fn ($r) => $r->version, $records));
     }
 
     public function testEmptyBaseDirYieldsNoRecords(): void
     {
-        self::assertSame([], new ArtifactScanner($this->layout)->scan());
+        self::assertSame([], (new ArtifactScanner($this->layout))->scan());
     }
 }

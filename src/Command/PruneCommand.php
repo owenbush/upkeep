@@ -147,7 +147,7 @@ final class PruneCommand extends Command
             static fn (string $line) => $io->writeln($line),
         );
 
-        $outcome = new PruneExecutor($selector, $adapter, $registry->modules(), static fn (string $line) => $io->writeln($line))
+        $outcome = (new PruneExecutor($selector, $adapter, $registry->modules(), static fn (string $line) => $io->writeln($line)))
             ->execute($candidates);
 
         foreach ($outcome->skipped as [$item, $reason]) {

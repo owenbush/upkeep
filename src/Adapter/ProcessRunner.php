@@ -13,7 +13,7 @@ use Symfony\Component\Process\Process;
  */
 final readonly class ProcessRunner
 {
-    public const int DEFAULT_TIMEOUT = 3600;
+    public const DEFAULT_TIMEOUT = 3600;
 
     /**
      * @param \Closure(string): void $log

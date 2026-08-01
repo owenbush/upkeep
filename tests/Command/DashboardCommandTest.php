@@ -128,7 +128,7 @@ final class DashboardCommandTest extends TestCase
 
     private function storeLocal(array $checks, string $sha = self::HEAD_SHA): void
     {
-        new ResultsCache($this->cockpit . '/results')->store(
+        (new ResultsCache($this->cockpit . '/results'))->store(
             'widget',
             5,
             '11',
