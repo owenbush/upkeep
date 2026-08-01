@@ -17,7 +17,7 @@ namespace Upkeep\Adapter;
  */
 final readonly class ProjectsRoot
 {
-    public const string ENV_VAR = 'UPKEEP_PROJECTS_ROOT';
+    public const ENV_VAR = 'UPKEEP_PROJECTS_ROOT';
 
     public static function resolve(?string $explicit): string
     {

@@ -20,9 +20,9 @@ use Symfony\Component\Yaml\Yaml;
  */
 final readonly class EnvironmentMeta
 {
-    public const string FILENAME = '.upkeep-env.yml';
+    public const FILENAME = '.upkeep-env.yml';
 
-    private const array REQUIRED_KEYS = ['module', 'core_major', 'seed_core_version', 'addon_version', 'created_at'];
+    private const REQUIRED_KEYS = ['module', 'core_major', 'seed_core_version', 'addon_version', 'created_at'];
 
     public function __construct(
         public string $moduleName,
@@ -53,7 +53,7 @@ final readonly class EnvironmentMeta
 
         try {
             $createdAt = new \DateTimeImmutable((string) $data['created_at']);
-        } catch (\DateMalformedStringException $e) {
+        } catch (\Exception $e) {
             throw new AdapterException(sprintf('Environment meta key "created_at" is not a parseable timestamp: "%s".', $data['created_at']), previous: $e);
         }
 

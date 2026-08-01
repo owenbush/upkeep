@@ -20,7 +20,7 @@ use Upkeep\Adapter\CheckType;
 final readonly class ResultsCache
 {
     /** Cached output is an excerpt for reporting, not a full log archive. */
-    private const int OUTPUT_EXCERPT_BYTES = 4000;
+    private const OUTPUT_EXCERPT_BYTES = 4000;
 
     public function __construct(private string $resultsDir)
     {

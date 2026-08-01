@@ -127,7 +127,7 @@ final class ModulesAddCommand extends Command
         }
 
         try {
-            $added = new RegistryEditor($cockpit->registryPath())->add(array_map(
+            $added = (new RegistryEditor($cockpit->registryPath()))->add(array_map(
                 static fn (string $name): Module => new Module($name, $candidates[$name]->pathWithNamespace, $coreVersions),
                 $chosen,
             ));
@@ -154,7 +154,7 @@ final class ModulesAddCommand extends Command
             return $this->client;
         }
 
-        $token = new TokenResolver()->resolve();
+        $token = (new TokenResolver())->resolve();
         if ($token === null) {
             $io->error(sprintf('No GitLab token found. Configure one of: env var %s, config file %s.', TokenResolver::ENV_VAR, TokenResolver::CONFIG_PATH_HINT));
 

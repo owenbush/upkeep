@@ -35,7 +35,7 @@ use Upkeep\Workflow\WorkflowException;
 final class CheckCommand extends AbstractMrCommand
 {
     /** How much of a failed check's output tail is echoed in the report. */
-    private const int EXCERPT_BYTES = 2000;
+    private const EXCERPT_BYTES = 2000;
 
     protected function configure(): void
     {
@@ -132,7 +132,7 @@ final class CheckCommand extends AbstractMrCommand
         }
 
         $resultsDir = $this->cockpit($input)->root . '/results';
-        new ResultsCache($resultsDir)->store(
+        (new ResultsCache($resultsDir))->store(
             $context->module->name,
             $context->mergeRequest->iid,
             $context->coreMajor,

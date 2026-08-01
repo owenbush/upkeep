@@ -73,7 +73,7 @@ final class InventoryScannerTest extends TestCase
      */
     private function scan(): array
     {
-        return new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot)->scan();
+        return (new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot))->scan();
     }
 
     /**

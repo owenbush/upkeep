@@ -17,12 +17,12 @@ namespace Upkeep\BaseArtifact;
  */
 final readonly class ArtifactLayout
 {
-    public const string TREE_DIR = 'tree';
-    public const string DUMP_FILENAME = 'clean-install.sql.gz';
-    public const string META_FILENAME = 'meta.yml';
-    public const string CANONICAL_MARKER = 'canonical';
+    public const TREE_DIR = 'tree';
+    public const DUMP_FILENAME = 'clean-install.sql.gz';
+    public const META_FILENAME = 'meta.yml';
+    public const CANONICAL_MARKER = 'canonical';
 
-    private const string VERSION_PATTERN = '/^\d+$/';
+    private const VERSION_PATTERN = '/^\d+$/';
 
     public function __construct(public string $baseArtifactsDir)
     {

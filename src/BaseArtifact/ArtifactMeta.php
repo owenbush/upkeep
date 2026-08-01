@@ -14,7 +14,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 final readonly class ArtifactMeta
 {
-    private const array REQUIRED_KEYS = ['core_version', 'core_major', 'php_version', 'db_engine', 'built_at'];
+    private const REQUIRED_KEYS = ['core_version', 'core_major', 'php_version', 'db_engine', 'built_at'];
 
     public function __construct(
         public string $coreVersion,
@@ -45,7 +45,7 @@ final readonly class ArtifactMeta
 
         try {
             $builtAt = new \DateTimeImmutable((string) $data['built_at']);
-        } catch (\DateMalformedStringException $e) {
+        } catch (\Exception $e) {
             throw new MetaException(sprintf('Meta YAML key "built_at" is not a parseable timestamp: "%s".', $data['built_at']), previous: $e);
         }
 

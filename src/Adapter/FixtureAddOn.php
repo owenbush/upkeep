@@ -14,19 +14,19 @@ namespace Upkeep\Adapter;
 final readonly class FixtureAddOn
 {
     /** Published add-on source, as `ddev add-on get` accepts it. */
-    public const string NAME = 'owenbush/ddev-upkeep';
+    public const NAME = 'owenbush/ddev-upkeep';
 
     /**
      * Env override for the add-on source — a local checkout path during
      * add-on development, e.g. UPKEEP_ADDON_SOURCE=/path/to/ddev-upkeep.
      */
-    public const string SOURCE_ENV = 'UPKEEP_ADDON_SOURCE';
+    public const SOURCE_ENV = 'UPKEEP_ADDON_SOURCE';
 
     /**
      * A file the add-on installs into <project>/.ddev/ — its presence is the
      * "already installed" probe.
      */
-    public const string MARKER = 'commands/host/upkeep-fixture-load';
+    public const MARKER = 'commands/host/upkeep-fixture-load';
 
     public static function source(): string
     {

@@ -31,7 +31,7 @@ final class RegistryEditorTest extends TestCase
 
     public function testAddAppendsNewModulesAndPreservesExistingEntries(): void
     {
-        $added = new RegistryEditor($this->path)->add([
+        $added = (new RegistryEditor($this->path))->add([
             new Module('token_or', 'project/token_or', ['10', '11']),
         ]);
 

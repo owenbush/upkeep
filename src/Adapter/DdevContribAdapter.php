@@ -28,14 +28,14 @@ use Upkeep\Gitlab\MergeRequest;
  */
 final class DdevContribAdapter implements EngineAdapterInterface
 {
-    private const string GIT_BASE_URL = 'https://git.drupalcode.org/';
-    private const string MODULE_DIR = 'module';
+    private const GIT_BASE_URL = 'https://git.drupalcode.org/';
+    private const MODULE_DIR = 'module';
 
     /** Generous per-check timebox; a timeout is a failure with reason. */
-    private const int CHECK_TIMEOUT = 1800;
+    private const CHECK_TIMEOUT = 1800;
 
     /** The default suite: engine static/test checks, install, smoke, deprecation. */
-    private const array DEFAULT_CHECKS = [
+    private const DEFAULT_CHECKS = [
         CheckType::PhpUnit,
         CheckType::PhpStan,
         CheckType::PhpCs,
@@ -45,7 +45,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
     ];
 
     /** Checks that need the dev toolchain (phpunit/phpstan/phpcs binaries) in vendor/. */
-    private const array TOOLCHAIN_CHECKS = [CheckType::PhpUnit, CheckType::PhpStan, CheckType::PhpCs];
+    private const TOOLCHAIN_CHECKS = [CheckType::PhpUnit, CheckType::PhpStan, CheckType::PhpCs];
 
     /**
      * What check provisioning installs (container-side, --dev): the same
@@ -54,7 +54,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
      * mglaman/phpstan-drupal + extension-installer + deprecation-rules make
      * the gitlab_templates phpstan.neon work as it does in CI.
      */
-    private const array TOOLCHAIN_PACKAGES = [
+    private const TOOLCHAIN_PACKAGES = [
         'drupal/core-dev:^%s',
         'drupal/coder',
         'mglaman/phpstan-drupal',
@@ -152,7 +152,14 @@ final class DdevContribAdapter implements EngineAdapterInterface
     {
         $checks = $checks === [] ? self::DEFAULT_CHECKS : $checks;
 
-        if (array_any($checks, static fn (CheckType $check): bool => \in_array($check, self::TOOLCHAIN_CHECKS, true))) {
+        $needsToolchain = false;
+        foreach ($checks as $check) {
+            if (\in_array($check, self::TOOLCHAIN_CHECKS, true)) {
+                $needsToolchain = true;
+                break;
+            }
+        }
+        if ($needsToolchain) {
             $this->ensureCheckToolchain($environment);
         }
 
@@ -307,7 +314,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
             // leaves no marker, and the next ensure_env re-provisions.
             file_put_contents(
                 $projectPath . '/' . EnvironmentMeta::FILENAME,
-                new EnvironmentMeta($module->name, $coreMajor, $artifactMeta->coreVersion, EngineAddOn::VERSION, new \DateTimeImmutable())->toYaml(),
+                (new EnvironmentMeta($module->name, $coreMajor, $artifactMeta->coreVersion, EngineAddOn::VERSION, new \DateTimeImmutable()))->toYaml(),
             );
 
             return new Environment(
@@ -404,7 +411,14 @@ final class DdevContribAdapter implements EngineAdapterInterface
     private function ensureCheckToolchain(Environment $environment): void
     {
         $binaries = ['phpunit', 'phpstan', 'phpcs'];
-        if (array_all($binaries, static fn (string $binary): bool => is_file($environment->projectPath . '/vendor/bin/' . $binary))) {
+        $allPresent = true;
+        foreach ($binaries as $binary) {
+            if (!is_file($environment->projectPath . '/vendor/bin/' . $binary)) {
+                $allPresent = false;
+                break;
+            }
+        }
+        if ($allPresent) {
             return;
         }
 

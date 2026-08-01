@@ -11,7 +11,7 @@ namespace Upkeep\Maintenance;
  */
 final readonly class Duration
 {
-    private const array UNIT_SECONDS = [
+    private const UNIT_SECONDS = [
         'w' => 7 * 86400,
         'd' => 86400,
         'h' => 3600,

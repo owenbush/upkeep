@@ -143,7 +143,7 @@ final class IssueCommand extends Command
 
     private function buildGitlabClient(SymfonyStyle $io): ?GitlabClient
     {
-        $token = new TokenResolver()->resolve();
+        $token = (new TokenResolver())->resolve();
         if ($token === null) {
             $io->error(sprintf('No GitLab token found. Configure one of: env var %s, config file %s.', TokenResolver::DEFAULT_ENV_VAR, TokenResolver::defaultConfigFile()));
 

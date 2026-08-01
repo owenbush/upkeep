@@ -144,7 +144,7 @@ final class MergeCommandTest extends TestCase
 
     private function storePassingLocal(int $iid = 5, string $sha = self::HEAD_SHA): void
     {
-        new ResultsCache($this->cockpit . '/results')->store(
+        (new ResultsCache($this->cockpit . '/results'))->store(
             'widget',
             $iid,
             '11',

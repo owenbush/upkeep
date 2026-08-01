@@ -41,7 +41,7 @@ final class BaseArtifactsStatusCommand extends Command
             return Command::FAILURE;
         }
 
-        $records = new ArtifactScanner(new ArtifactLayout($cockpit->baseArtifactsPath()))->scan();
+        $records = (new ArtifactScanner(new ArtifactLayout($cockpit->baseArtifactsPath())))->scan();
 
         if ($records === []) {
             $io->writeln(sprintf(

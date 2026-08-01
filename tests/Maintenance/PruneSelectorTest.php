@@ -12,8 +12,8 @@ use Upkeep\Maintenance\PruneSelector;
 
 final class PruneSelectorTest extends TestCase
 {
-    private const string COCKPIT = '/cockpit';
-    private const string PROJECTS = '/projects';
+    private const COCKPIT = '/cockpit';
+    private const PROJECTS = '/projects';
 
     private \DateTimeImmutable $now;
 

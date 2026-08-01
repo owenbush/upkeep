@@ -11,7 +11,7 @@ use Upkeep\Adapter\ModuleWiring;
 final class ModuleWiringTest extends TestCase
 {
     /** Shape of drupal/recommended-project's composer.json repositories. */
-    private const string PROJECT_COMPOSER_JSON = <<<'JSON'
+    private const PROJECT_COMPOSER_JSON = <<<'JSON'
         {
             "name": "drupal/recommended-project",
             "repositories": [

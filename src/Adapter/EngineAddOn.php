@@ -23,14 +23,14 @@ use Symfony\Component\Yaml\Yaml;
  */
 final readonly class EngineAddOn
 {
-    public const string NAME = 'ddev/ddev-drupal-contrib';
-    public const string VERSION = '1.1.5';
+    public const NAME = 'ddev/ddev-drupal-contrib';
+    public const VERSION = '1.1.5';
 
     /**
      * The add-on config file it installs into <project>/.ddev/, adapted by
      * adaptContribConfig() after every `add-on get`.
      */
-    public const string CONFIG_FILENAME = 'config.contrib.yaml';
+    public const CONFIG_FILENAME = 'config.contrib.yaml';
 
     /**
      * Where the add-on's check commands look for the module, relative to the
@@ -38,7 +38,7 @@ final readonly class EngineAddOn
      * the adapter's check invocations scope themselves to
      * <PROJECTS_PATH>/<module> beneath it.
      */
-    public const string PROJECTS_PATH = 'modules/contrib';
+    public const PROJECTS_PATH = 'modules/contrib';
 
     /**
      * Adapts the shipped config.contrib.yaml to upkeep's seeded-tree layout.

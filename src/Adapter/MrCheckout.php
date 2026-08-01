@@ -17,7 +17,7 @@ use Upkeep\Gitlab\MergeRequest;
  */
 final readonly class MrCheckout
 {
-    private const string BRANCH_PREFIX = 'mr-';
+    private const BRANCH_PREFIX = 'mr-';
 
     /**
      * The refspec to fetch: force-updating (+) so re-applying an MR that

@@ -12,8 +12,8 @@ namespace Upkeep\Adapter;
  */
 final readonly class ProjectName
 {
-    private const string MODULE_PATTERN = '/^[a-z][a-z0-9_]*$/';
-    private const string CORE_PATTERN = '/^\d+$/';
+    private const MODULE_PATTERN = '/^[a-z][a-z0-9_]*$/';
+    private const CORE_PATTERN = '/^\d+$/';
 
     public static function for(string $moduleName, string $coreMajor): string
     {

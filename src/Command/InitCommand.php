@@ -18,7 +18,7 @@ use Upkeep\Cockpit\Cockpit;
 )]
 final class InitCommand extends Command
 {
-    private const string REGISTRY_TEMPLATE = <<<'YAML'
+    private const REGISTRY_TEMPLATE = <<<'YAML'
         # Upkeep cockpit module registry.
         #
         # Each key under "modules" is a module machine name. Required fields:

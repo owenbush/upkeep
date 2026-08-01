@@ -199,7 +199,7 @@ final class MergeCommand extends Command
         // Re-classify against the fresh MR and re-read local evidence: this
         // catches CI regression, a new draft marker, and stale local results
         // with the exact same conservative logic that admitted the row.
-        $verdict = new FastLaneGate()->classify($fresh, $row->core, $cache->latest($row->module, $iid, $row->core));
+        $verdict = (new FastLaneGate())->classify($fresh, $row->core, $cache->latest($row->module, $iid, $row->core));
         if ($verdict->status !== GateStatus::ReadyAuto) {
             $reasons = array_merge($reasons, $verdict->reasons);
         }

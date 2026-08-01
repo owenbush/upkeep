@@ -66,7 +66,7 @@ final class FastLaneGateTest extends TestCase
 
     public function testBotMrWithGreenCiAndFreshGreenLocalChecksIsReadyAuto(): void
     {
-        $verdict = new FastLaneGate()->classify($this->mr(), '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($this->mr(), '11', $this->local());
 
         self::assertSame(GateStatus::ReadyAuto, $verdict->status);
         self::assertSame([], $verdict->reasons);
@@ -76,7 +76,7 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['authorUsername' => 'owenbush', 'authorId' => 12345]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['not-bot-author'], $verdict->reasons);
@@ -88,7 +88,7 @@ final class FastLaneGateTest extends TestCase
         // not classify as a bot MR (BotPattern::matches contract).
         $mr = $this->mr(['sourceBranch' => 'feature/sneaky']);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['not-bot-author'], $verdict->reasons);
@@ -98,7 +98,7 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['headPipeline' => $this->pipeline(PipelineStatus::Failed)]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Blocked, $verdict->status);
         self::assertSame(['ci-red'], $verdict->reasons);
@@ -108,7 +108,7 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['headPipeline' => null]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['ci-missing'], $verdict->reasons);
@@ -118,7 +118,7 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['headPipeline' => $this->pipeline(PipelineStatus::Running)]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['ci-not-green:running'], $verdict->reasons);
@@ -130,7 +130,7 @@ final class FastLaneGateTest extends TestCase
         // raw API value must still be visible in the reason.
         $mr = $this->mr(['headPipeline' => $this->pipeline(PipelineStatus::Unknown, 'some_future_status')]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['ci-not-green:some_future_status'], $verdict->reasons);
@@ -142,7 +142,7 @@ final class FastLaneGateTest extends TestCase
         // non-green unknowns that route to review.
         $mr = $this->mr(['headPipeline' => $this->pipeline(PipelineStatus::Canceled)]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['ci-not-green:canceled'], $verdict->reasons);
@@ -152,7 +152,7 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['draft' => true, 'title' => 'Draft: Automated Project Update Bot fixes']);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['draft'], $verdict->reasons);
@@ -162,7 +162,7 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['draft' => false, 'detailedMergeStatus' => 'draft_status']);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['draft'], $verdict->reasons);
@@ -172,14 +172,14 @@ final class FastLaneGateTest extends TestCase
     {
         $mr = $this->mr(['draft' => true, 'detailedMergeStatus' => 'draft_status']);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(['draft'], $verdict->reasons);
     }
 
     public function testAbsentLocalResultsDenyReadyAutoWithLocalMissingReason(): void
     {
-        $verdict = new FastLaneGate()->classify($this->mr(), '11', null);
+        $verdict = (new FastLaneGate())->classify($this->mr(), '11', null);
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['local-missing'], $verdict->reasons);
@@ -189,7 +189,7 @@ final class FastLaneGateTest extends TestCase
     {
         $stale = $this->local(sha: 'older-sha-0000000000000000000000000000000');
 
-        $verdict = new FastLaneGate()->classify($this->mr(), '11', $stale);
+        $verdict = (new FastLaneGate())->classify($this->mr(), '11', $stale);
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['local-stale'], $verdict->reasons);
@@ -201,7 +201,7 @@ final class FastLaneGateTest extends TestCase
         // the conservative gate treats unverifiable evidence as stale.
         $mr = $this->mr(['headSha' => null]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $this->local());
+        $verdict = (new FastLaneGate())->classify($mr, '11', $this->local());
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['local-stale'], $verdict->reasons);
@@ -214,7 +214,7 @@ final class FastLaneGateTest extends TestCase
             new CheckResult(CheckType::PhpUnit, CheckStatus::Failed, 2, 'FAILURES!', 3.0),
         ]);
 
-        $verdict = new FastLaneGate()->classify($this->mr(), '11', $local);
+        $verdict = (new FastLaneGate())->classify($this->mr(), '11', $local);
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['local-failed:phpunit'], $verdict->reasons);
@@ -227,7 +227,7 @@ final class FastLaneGateTest extends TestCase
             new CheckResult(CheckType::PhpStan, CheckStatus::Failed, 1, 'errors', 2.0),
         ]);
 
-        $verdict = new FastLaneGate()->classify($this->mr(), '11', $local);
+        $verdict = (new FastLaneGate())->classify($this->mr(), '11', $local);
 
         self::assertSame(['local-failed:phpunit', 'local-failed:phpstan'], $verdict->reasons);
     }
@@ -241,7 +241,7 @@ final class FastLaneGateTest extends TestCase
             new CheckResult(CheckType::Deprecation, CheckStatus::Unavailable, null, 'not provided for this core', 0.0),
         ]);
 
-        $verdict = new FastLaneGate()->classify($this->mr(), '11', $local);
+        $verdict = (new FastLaneGate())->classify($this->mr(), '11', $local);
 
         self::assertSame(GateStatus::ReadyAuto, $verdict->status);
         self::assertSame([], $verdict->reasons);
@@ -254,7 +254,7 @@ final class FastLaneGateTest extends TestCase
         $mr = $this->mr(['headPipeline' => $this->pipeline(PipelineStatus::Failed)]);
         $local = $this->local([new CheckResult(CheckType::PhpUnit, CheckStatus::Failed, 2, 'FAILURES!', 3.0)]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', $local);
+        $verdict = (new FastLaneGate())->classify($mr, '11', $local);
 
         self::assertSame(GateStatus::Blocked, $verdict->status);
         self::assertSame(['ci-red', 'local-failed:phpunit'], $verdict->reasons);
@@ -266,7 +266,7 @@ final class FastLaneGateTest extends TestCase
         // pipeline, nothing cached — each denial is independently visible.
         $mr = $this->mr(['draft' => true, 'headPipeline' => null]);
 
-        $verdict = new FastLaneGate()->classify($mr, '11', null);
+        $verdict = (new FastLaneGate())->classify($mr, '11', null);
 
         self::assertSame(GateStatus::Review, $verdict->status);
         self::assertSame(['draft', 'ci-missing', 'local-missing'], $verdict->reasons);
@@ -294,7 +294,7 @@ final class FastLaneGateTest extends TestCase
     {
         // With no explicit provider the gate consults BotPattern::forCore(),
         // the one config point where per-core pattern differences live.
-        $verdict = new FastLaneGate()->classify($this->mr(), '12', $this->local());
+        $verdict = (new FastLaneGate())->classify($this->mr(), '12', $this->local());
 
         self::assertSame(GateStatus::ReadyAuto, $verdict->status);
     }
