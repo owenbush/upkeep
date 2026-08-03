@@ -9,10 +9,11 @@ multiple Drupal contrib projects: reviewing merge requests, testing them in
 isolation across Drupal core versions, merging the safe ones, and preparing
 releases.
 
-Status: design consensus. Nothing built yet. This document captures the
-architecture, the reasoning behind each decision, the command surface, the
-runtime lifecycles, a build sequence, and the open questions still worth
-verifying before writing code.
+Status: built. This document captures the architecture, the reasoning behind
+each decision, the command surface, the runtime lifecycles, a build sequence,
+and the questions that were open before code was written — each now closed
+with what actually shipped. Sections marked **As built** record where the
+implementation went further than, or differs from, the original sketch.
 
 ---
 
@@ -128,6 +129,74 @@ the decision to reuse it is not load-bearing: if it changes, or a different rig
 is preferable later, only the adapter is swapped, not the orchestrator. It also
 keeps the fixture commands separable — the orchestrator calls `load_fixture`,
 not a hard-coded ddev command name.
+
+**As built: the boundary is a composition root, not a convention.** The first
+implementation left five command classes constructing `DdevContribAdapter`
+themselves. The textual guard (`grep -r "ddev" src/ --exclude-dir=Adapter`)
+passed anyway — only because the class name capitalises the D — so the
+invariant was nominally satisfied and substantively breached: a swap of engine
+would have meant editing five commands. The shipped structure closes that:
+
+- Commands depend on `Adapter\EngineAdapterFactory`, injected through the
+  constructor. The adapter cannot simply be built once at startup because it
+  needs the cockpit, the projects root and the log sinks the *invocation*
+  resolved; the factory is that seam.
+- `bin/upkeep` is the composition root and the only file outside
+  `src/Adapter/` permitted to name a concrete engine. It builds one
+  `DdevContribAdapterFactory` and hands it to the commands that need it.
+- The guard is now case-insensitive (`grep -ri`), which is what makes it
+  meaningful rather than merely satisfiable.
+
+The secondary benefit is testability: a command is constructible with a fake
+factory returning a fake engine, so the whole orchestrator is exercised
+without docker.
+
+### Support layers around the boundary
+
+Three concerns turned out to belong in one place each rather than at every
+call site, and are namespaced accordingly:
+
+- **`src/Filesystem/`** — one write path. `FileWriter` writes to a temp file in
+  the target's own directory and `rename()`s it into place, so a reader sees
+  either the complete old file or the complete new one and the target never
+  stops existing (which matters for files that double as completion markers,
+  such as `.upkeep-env.yml`). Every step is checked, so a write that does not
+  land raises instead of returning `false` into a discarded value while the
+  caller prints success. `PathGuard` canonicalises paths and decides
+  containment on the resolved path, so a `..` segment or a symlink pointing
+  out of the root is caught rather than pattern-matched around.
+- **`src/Security/`** — `SecretRedactor` filters credential material out of
+  child-process output before it reaches a log, an exception message, or a
+  cached result; `CredentialEnvironment` removes the PAT from every child
+  environment, since the process layer otherwise copies the entire parent
+  environment into every subprocess this tool spawns.
+- **File modes** — caches carrying token-scoped remote data or raw check
+  output (`<cockpit>/results/`, `<cockpit>/cache/dashboard/`) are `0600` files
+  in `0700` directories. `file_put_contents` cannot take a mode and the umask
+  default is wrong for them, which is a second reason the write path is
+  centralised.
+
+### The API failure taxonomy
+
+`GitlabClient` methods do not throw for HTTP-level outcomes; they return a
+`Gitlab\ApiFailure`. The hierarchy is sealed — every subtype is final and
+enumerated — so a `match` over it needs no `default` arm, and the conditions
+are exhaustive and mutually exclusive: `Unauthorized` (401), `EndpointClosed`
+(403), `NotFound` (404), `RateLimited` (429), `RequestRejected` (any other
+status >= 400), `MalformedResponse` (a non-error status whose body is not
+usable JSON), `TransportError` (no usable response at all), `ResourceMissing`
+(the call succeeded but the asked-for item is not in the result).
+
+Two distinctions earn their keep on this instance. **401 is not 403**: on a
+block-by-default API, 403 means "that endpoint is not open to PATs, use the
+browser" — advice that is actively misleading for an expired token, where the
+only useful action is to re-check the credential. And **`ResourceMissing` is
+not `NotFound`**: asking for the MRs merged since a tag that a HTTP 200 tag
+list simply does not contain is a domain miss, so the message never claims a
+404 that never happened. Each subtype also answers `isTransient()`, which is what
+lets the client memoize stable outcomes for the rest of a run without
+poisoning a resource because of one network blip. No subtype ever carries
+credential material.
 
 ## 5. Why not the alternatives
 
@@ -379,6 +448,19 @@ reuse them warm via shared caches, snapshot-swap DB state per check, prune the
 disposable layers on a threshold — canonical and base artifacts always
 preserved.
 
+**As built: age means last use, not creation.** Each environment carries a
+`.upkeep-env.yml` recording what it was provisioned for, what it was seeded
+from, and both `created_at` and `last_used_at`. `prune --older-than` filters on
+`last_used_at`, which is stamped at provision and re-stamped on every reuse. An
+age measured from creation would make a warm, daily-driven environment a
+deletion candidate purely for being old, which is exactly backwards for a cache
+whose value is that it is warm. The key is optional, so environments written
+before it existed still parse and fall back to `created_at` until next reused.
+Because the same file doubles as the provisioning completion marker, every
+re-stamp goes through the atomic write path — a target that momentarily stopped
+existing would read as an interrupted provision and force a multi-gigabyte
+rebuild.
+
 ## 11. Packaging and distribution
 
 - **Orchestrator** → `upkeep`, a PHP CLI (Symfony Console), distributed as the
@@ -497,9 +579,12 @@ Smallest independent value first.
   2.9 broke tests; a `gitlab_templates` upstream change broke
   `symlink-project` until the add-on was upgraded). The shipped answer is the
   adapter boundary: every engine specific lives in `src/Adapter/` behind
-  `EngineAdapterInterface` (guarded — `grep -r "ddev" src/ --exclude-dir=Adapter`
-  returns nothing), so such churn is absorbed in one adapter, not across the
-  orchestrator. The engine add-on is pinned at ddev-drupal-contrib **1.1.5**
+  `EngineAdapterInterface`, reached through an injected `EngineAdapterFactory`
+  and chosen once in the `bin/upkeep` composition root (guarded —
+  `grep -ri "ddev" src/ --exclude-dir=Adapter` returns nothing; the `-i`
+  matters, see section 4), so such churn is absorbed in one adapter, not
+  across the orchestrator. The engine add-on is pinned at
+  ddev-drupal-contrib **1.1.5**
   (`Adapter\EngineAddOn::VERSION`); upgrading the pin is a deliberate
   adapter-maintenance event, never an ambient `latest`.
 - **MR application mechanics.** *Resolved (2026-07-30): shipped as a Composer

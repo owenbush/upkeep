@@ -48,7 +48,19 @@ supervised failed; **2** upkeep could not do the job.
 
 7. **Everything previously exiting 1 for an upkeep-side problem now exits 2** —
    missing or malformed cockpit or registry, unregistered module, untracked core
-   version, no provisioned environment, bad usage, API failure.
+   version, no provisioned environment, API failure.
+
+   **Correction (recorded during task 19, verified):** this item originally also
+   listed "bad usage" under exit 2. That is wrong, and the docs were written to
+   the true behaviour rather than to this claim. Symfony's `Application` handles
+   argument and option parse failures *before* `UpkeepCommand::execute()` runs,
+   so console-level usage errors exit **1**: `upkeep nosuchcommand`,
+   `upkeep issue` with missing arguments, and `upkeep base-artifacts:build
+   --core=11` were each confirmed to exit 1. Errors upkeep itself validates —
+   a malformed MR IID, a missing `--version` on `base-artifacts:build` —
+   correctly exit 2. Closing that gap would mean overriding the application's
+   exception handling, which is a code change and was out of scope for a
+   documentation task.
 
 8. **`merge` exits 1 when any merge failed** (previously exited 0
    unconditionally), and **2** when GitLab rejected the credential
