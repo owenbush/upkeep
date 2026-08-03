@@ -555,9 +555,33 @@ also stops a failed commit leaving the temp file behind).
 --version=9` would print the app version and exit 0 instead of selecting target
 core 9.
 
-### Phase 6: Command Coverage
+### ✅ Phase 6: Command Coverage — completed
 **Parallel Tasks:**
-- Task 015: Close coverage to 100% across the command namespace (depends on: 012)
+- ✔️ Task 015: Close coverage to 100% across the command namespace (depends on: 012) — `completed`
+
+**Verified**, independently re-run from a fresh report:
+
+```
+Classes: 100.00% (110/110)
+Methods: 100.00% (470/470)
+Lines:   100.00% (4035/4035)
+```
+
+834 tests / 2353 assertions; PHPStan `[OK] No errors`; phpcs clean;
+`./bin/upkeep list` exit 0. **`grep -rn "phpstan-ignore\|phpcs:ignore\|phpcs:disable\|codeCoverageIgnore" src/ tests/ bin/`
+returns nothing** — the 100% bar was met with no suppression anywhere in the
+repository.
+
+Three genuinely unreachable branches were **deleted at source rather than
+annotated**: `DashboardCommand`'s null-snapshot `continue` (unreachable because
+`fetchModule()` returns `ModuleSnapshot|ApiFailure`), a dead `match` default over
+a four-valued `localCell()`, and `ExecCommand`'s empty-argument guard, which the
+console's `REQUIRED|IS_ARRAY` argument refuses before `perform()` runs — that
+deletion is now guarded by a test asserting the refusal.
+
+`GitlabClientFactory::authenticated()` collapsed three copies of
+`new GitlabClient(HttpClient::create(), …)` into one covered site, which is how
+`AbstractMrCommand` and `PatchesCommand` were closed without a network call.
 
 ### Phase 7: Suppression Audit
 **Parallel Tasks:**
