@@ -63,4 +63,139 @@ final class TokenResolverTest extends TestCase
             unlink($file);
         }
     }
+
+    public function testDescribeSourcesNamesTheEnvVarAndPathButNoTokenMaterial(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, 'glpat-SUPERSECRETVALUE');
+        putenv(self::ENV_VAR . '=glpat-ENVSECRETVALUE');
+
+        try {
+            $resolver = new TokenResolver(self::ENV_VAR, $file);
+            // Resolve first: describeSources() must stay clean even after the
+            // resolver has seen the token.
+            $this->assertSame('glpat-ENVSECRETVALUE', $resolver->resolve());
+
+            $described = $resolver->describeSources();
+            $this->assertStringContainsString(self::ENV_VAR, $described);
+            $this->assertStringContainsString($file, $described);
+            $this->assertStringNotContainsString('glpat-ENVSECRETVALUE', $described);
+            $this->assertStringNotContainsString('glpat-SUPERSECRETVALUE', $described);
+        } finally {
+            unlink($file);
+        }
+    }
+
+    public function testGroupOrWorldReadableTokenFileWarnsWithoutEchoingTheToken(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, 'glpat-SUPERSECRETVALUE');
+        chmod($file, 0o644);
+
+        $warnings = [];
+        try {
+            $resolver = new TokenResolver(
+                self::ENV_VAR,
+                $file,
+                static function (string $message) use (&$warnings): void {
+                    $warnings[] = $message;
+                },
+            );
+
+            $this->assertSame('glpat-SUPERSECRETVALUE', $resolver->resolve());
+            $this->assertCount(1, $warnings);
+            $this->assertStringContainsString($file, $warnings[0]);
+            $this->assertStringContainsString('chmod 600', $warnings[0]);
+            $this->assertStringNotContainsString('glpat-SUPERSECRETVALUE', $warnings[0]);
+        } finally {
+            unlink($file);
+        }
+    }
+
+    public function testWarnsOnlyOnceAcrossRepeatedResolves(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, 'glpat-SUPERSECRETVALUE');
+        chmod($file, 0o640);
+
+        $warnings = [];
+        try {
+            $resolver = new TokenResolver(
+                self::ENV_VAR,
+                $file,
+                static function (string $message) use (&$warnings): void {
+                    $warnings[] = $message;
+                },
+            );
+            $resolver->resolve();
+            $resolver->resolve();
+
+            $this->assertCount(1, $warnings);
+        } finally {
+            unlink($file);
+        }
+    }
+
+    public function testPrivateTokenFileDoesNotWarn(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, 'glpat-SUPERSECRETVALUE');
+        chmod($file, 0o600);
+
+        $warnings = [];
+        try {
+            $resolver = new TokenResolver(
+                self::ENV_VAR,
+                $file,
+                static function (string $message) use (&$warnings): void {
+                    $warnings[] = $message;
+                },
+            );
+
+            $this->assertSame('glpat-SUPERSECRETVALUE', $resolver->resolve());
+            $this->assertSame([], $warnings);
+        } finally {
+            unlink($file);
+        }
+    }
+
+    /** A .netrc-style or commented file must not become a multi-line header value. */
+    public function testOnlyTheFirstNonEmptyLineOfTheConfigFileIsUsed(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, "\n\n  glpat-FIRSTLINE  \n# a trailing comment\nmore junk\n");
+        chmod($file, 0o600);
+
+        try {
+            $resolver = new TokenResolver(self::ENV_VAR, $file);
+            $this->assertSame('glpat-FIRSTLINE', $resolver->resolve());
+        } finally {
+            unlink($file);
+        }
+    }
+
+    public function testValueWithCharactersIllegalInAnHttpHeaderIsRejectedWithoutEchoingIt(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, "glpat-BAD\x07VALUE\n");
+        chmod($file, 0o600);
+
+        $warnings = [];
+        try {
+            $resolver = new TokenResolver(
+                self::ENV_VAR,
+                $file,
+                static function (string $message) use (&$warnings): void {
+                    $warnings[] = $message;
+                },
+            );
+
+            $this->assertNull($resolver->resolve());
+            $this->assertCount(1, $warnings);
+            $this->assertStringContainsString($file, $warnings[0]);
+            $this->assertStringNotContainsString('glpat-BAD', $warnings[0]);
+        } finally {
+            unlink($file);
+        }
+    }
 }

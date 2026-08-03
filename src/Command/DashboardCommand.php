@@ -5,27 +5,23 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
-use Upkeep\Cockpit\Cockpit;
 use Upkeep\Cockpit\Module;
-use Upkeep\Cockpit\RegistryException;
 use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\ModuleSnapshot;
+use Upkeep\Dashboard\RowFactory;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\IssueReference;
-use Upkeep\Gate\FastLaneGate;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
-use Upkeep\Gitlab\MergeRequest;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Results\ResultsCache;
+use Upkeep\Workflow\ExitCode;
 
 /**
  * One table of every open MR across all registered modules and tracked core
@@ -35,6 +31,10 @@ use Upkeep\Results\ResultsCache;
  * `<cockpit>/cache/dashboard/`. On repeat runs the cached snapshot is used;
  * pass `--refresh` to re-fetch all modules, or `--refresh=<module>` for one.
  * Local check results and gate verdicts are always resolved fresh.
+ *
+ * Classification is NOT done here: the rows come from Dashboard\RowFactory,
+ * the same pipeline the fast-lane merge command consumes, so the dashboard's
+ * READY-AUTO and the merge command's READY-AUTO cannot drift apart.
  *
  * NOTE for application wiring: the --version option collides with Symfony
  * Console's built-in application-level --version/-V. The hosting Application
@@ -46,7 +46,7 @@ use Upkeep\Results\ResultsCache;
     description: 'Show every open MR across registered modules and core versions with CI, local check, and '
     . 'fast-lane status.',
 )]
-final class DashboardCommand extends Command
+final class DashboardCommand extends UpkeepCommand
 {
     /**
      * @param ?GitlabClient    $client       injected in tests; built from the resolved token otherwise
@@ -61,54 +61,36 @@ final class DashboardCommand extends Command
 
     protected function configure(): void
     {
-        $this->addOption(
-            'cockpit',
-            null,
-            InputOption::VALUE_REQUIRED,
-            sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR),
-        );
-        $this->addOption(
-            'version',
-            null,
-            InputOption::VALUE_REQUIRED,
-            'Only show rows targeting this core major version (e.g. 11)',
-        );
-        $this->addOption(
-            'refresh',
-            null,
-            InputOption::VALUE_OPTIONAL,
-            'Re-fetch remote data: --refresh for all modules, --refresh=<module> for one',
-            false,
-        );
+        $this->addCockpitOption()
+            ->addCoreFilterOption()
+            ->addOption(
+                'refresh',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Re-fetch remote data: --refresh for all modules, --refresh=<module> for one',
+                false,
+            );
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    /** stdout carries the table; diagnostics stay pipe-safe on stderr. */
+    protected function diagnosticsOnStderr(): bool
     {
-        $io = new SymfonyStyle(
-            $input,
-            $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output,
-        );
+        return true;
+    }
 
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        try {
-            $registry = $cockpit->loadRegistry();
-        } catch (RegistryException $e) {
-            $io->error($e->getMessage());
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
+    {
+        $cockpit = $this->cockpit($input);
+        $modules = $this->modules($cockpit);
 
-            return Command::FAILURE;
-        }
-
-        $modules = $registry->modules();
-        $versionFilter = $input->getOption('version');
-        $versionFilter = $versionFilter === null ? null : (string) $versionFilter;
+        $versionFilter = self::stringOption($input, 'version');
 
         $refresh = $input->getOption('refresh');
         $refreshAll = $refresh === null;
         $refreshModule = \is_string($refresh) && $refresh !== '' ? $refresh : null;
 
-        $dashCache = new DashboardCache($cockpit->root . '/cache/dashboard');
-        $resultsCache = new ResultsCache($cockpit->root . '/results');
-        $gate = new FastLaneGate();
+        $dashCache = new DashboardCache($cockpit->dashboardCachePath());
+        $rowFactory = new RowFactory(new ResultsCache($cockpit->resultsPath()));
         $drupal = $this->drupalClient ?? new DrupalOrgClient(HttpClient::create());
 
         ksort($modules);
@@ -130,9 +112,11 @@ final class DashboardCommand extends Command
         $moduleFailures = [];
 
         if ($needsFetch !== []) {
-            $client = $this->client ?? $this->buildClient($io);
+            // The factory reports the missing-token guidance itself; without a
+            // credential there is nothing to fetch and no table to show.
+            $client = $this->client ?? GitlabClientFactory::forConsole($io);
             if ($client === null) {
-                return Command::FAILURE;
+                return ExitCode::INFRASTRUCTURE;
             }
 
             foreach ($needsFetch as $name => $module) {
@@ -158,29 +142,15 @@ final class DashboardCommand extends Command
                 continue;
             }
 
-            $project = $snapshot->project();
-            $mrs = $snapshot->mergeRequests();
-            usort($mrs, static fn (MergeRequest $a, MergeRequest $b): int => $a->iid <=> $b->iid);
-
-            foreach ($mrs as $mr) {
-                $cores = $versionFilter === null
-                    ? $module->coreVersions
-                    : array_values(array_filter(
-                        $module->coreVersions,
-                        static fn (string $c): bool => $c === $versionFilter,
-                    ));
-
-                foreach ($cores as $core) {
-                    $local = $resultsCache->latest($name, $mr->iid, $core);
-                    $rows[] = DashboardRow::forMergeRequest(
-                        $name,
-                        $core,
-                        $project,
-                        $mr,
-                        $local,
-                        $gate->classify($mr, $core, $local),
-                    );
-                }
+            foreach (
+                $rowFactory->rows(
+                    $module,
+                    $snapshot->project(),
+                    $snapshot->mergeRequests(),
+                    $versionFilter,
+                ) as $row
+            ) {
+                $rows[] = $row;
             }
         }
 
@@ -194,70 +164,79 @@ final class DashboardCommand extends Command
                     ),
             );
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
-        $headers = ['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS'];
-        $colWidths = array_map('mb_strlen', $headers);
+        $this->renderTable($output, $rows, $snapshots);
+        self::renderFooter($output, $rows, $snapshots);
 
-        $tableData = [];
+        return ExitCode::OK;
+    }
+
+    /**
+     * @param list<DashboardRow>            $rows
+     * @param array<string, ModuleSnapshot> $snapshots
+     */
+    private function renderTable(OutputInterface $output, array $rows, array $snapshots): void
+    {
+        $cells = [];
+        $groups = [];
         foreach ($rows as $row) {
-            $cells = $row->toTableCells();
-            $nid = $row->mergeRequest !== null
-                ? IssueReference::extract(
-                    $row->mergeRequest->title,
-                    $row->mergeRequest->sourceBranch,
-                    $row->mergeRequest->description,
-                )
-                : null;
-            $issueCell = $nid !== null ? (string) $nid : '–';
-
-            if ($nid !== null && $row->mergeRequest !== null) {
-                $snapshot = $snapshots[$row->module] ?? null;
-                $issue = $snapshot?->issue($nid);
-                $latestPatch = $issue?->latestPatch();
-                if ($latestPatch !== null && $latestPatch->timestamp > 0 && $row->mergeRequest->updatedAt !== null) {
-                    $mrUpdated = strtotime($row->mergeRequest->updatedAt);
-                    if ($mrUpdated !== false && $latestPatch->timestamp > $mrUpdated) {
-                        $issueCell .= ' patch↑';
-                    }
-                }
-            }
-
-            array_splice($cells, 2, 0, [$issueCell]);
-
-            foreach ($cells as $i => $cell) {
-                $colWidths[$i] = max($colWidths[$i], mb_strlen($cell));
-            }
-            $tableData[] = ['raw' => $cells, 'module' => $row->module];
+            $rowCells = $row->toTableCells();
+            array_splice($rowCells, 2, 0, [$this->issueCell($row, $snapshots)]);
+            $cells[] = $rowCells;
+            $groups[] = $row->module;
         }
 
-        $gap = 4;
+        ColumnTable::render(
+            $output,
+            ['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS'],
+            $cells,
+            self::colorCells(...),
+            $groups,
+        );
+    }
 
-        $headerLine = '';
-        foreach ($headers as $i => $h) {
-            $headerLine .= str_pad($h, $colWidths[$i] + $gap);
-        }
-        $output->writeln('<fg=gray>' . rtrim($headerLine) . '</>');
-        $output->writeln('');
-
-        $lastModule = null;
-        foreach ($tableData as $entry) {
-            if ($lastModule !== null && $entry['module'] !== $lastModule) {
-                $output->writeln('');
-            }
-            $lastModule = $entry['module'];
-
-            $fmt = self::colorCells($entry['raw']);
-            $line = '';
-            foreach ($fmt as $i => $fmtCell) {
-                $pad = $colWidths[$i] - mb_strlen($entry['raw'][$i]) + $gap;
-                $line .= $fmtCell . str_repeat(' ', $pad);
-            }
-            $output->writeln(rtrim($line));
+    /**
+     * The ISSUE cell: the linked drupal.org issue number, flagged when the
+     * issue carries a patch newer than the merge request's last update.
+     *
+     * @param array<string, ModuleSnapshot> $snapshots
+     */
+    private function issueCell(DashboardRow $row, array $snapshots): string
+    {
+        if ($row->mergeRequest === null) {
+            return '–';
         }
 
-        $now = new \DateTimeImmutable();
+        $mergeRequest = $row->mergeRequest;
+        $nid = IssueReference::extract(
+            $mergeRequest->title,
+            $mergeRequest->sourceBranch,
+            $mergeRequest->description,
+        );
+        if ($nid === null) {
+            return '–';
+        }
+
+        $latestPatch = ($snapshots[$row->module] ?? null)?->issue($nid)?->latestPatch();
+        if ($latestPatch === null || $latestPatch->timestamp <= 0 || $mergeRequest->updatedAt === null) {
+            return (string) $nid;
+        }
+
+        $mrUpdated = strtotime($mergeRequest->updatedAt);
+
+        return $mrUpdated !== false && $latestPatch->timestamp > $mrUpdated
+            ? $nid . ' patch↑'
+            : (string) $nid;
+    }
+
+    /**
+     * @param list<DashboardRow>            $rows
+     * @param array<string, ModuleSnapshot> $snapshots
+     */
+    private static function renderFooter(OutputInterface $output, array $rows, array $snapshots): void
+    {
         $mrKeys = [];
         foreach ($rows as $row) {
             if ($row->mergeRequest !== null) {
@@ -279,10 +258,8 @@ final class DashboardCommand extends Command
             \count($mrKeys),
             \count($moduleNames),
             \count($moduleNames) === 1 ? 'module' : 'modules',
-            $oldestSnapshot !== null ? $oldestSnapshot->ageLabel($now) : 'never',
+            $oldestSnapshot !== null ? $oldestSnapshot->ageLabel(new \DateTimeImmutable()) : 'never',
         ));
-
-        return Command::SUCCESS;
     }
 
     private function fetchModule(
@@ -367,21 +344,5 @@ final class DashboardCommand extends Command
         };
 
         return $fmt;
-    }
-
-    private function buildClient(SymfonyStyle $io): ?GitlabClient
-    {
-        $resolver = new TokenResolver();
-        $token = $resolver->resolve();
-        if ($token === null) {
-            $io->error(sprintf(
-                'No GitLab token found. Configure one of: %s. (The token is never printed or logged.)',
-                $resolver->describeSources(),
-            ));
-
-            return null;
-        }
-
-        return new GitlabClient(HttpClient::create(), $token);
     }
 }

@@ -11,6 +11,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Command\IssueCommand;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Workflow\ExitCode;
 
 final class IssueCommandTest extends TestCase
 {
@@ -145,7 +146,7 @@ final class IssueCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('No issue number found', $tester->getDisplay());
     }
 
@@ -179,7 +180,7 @@ final class IssueCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 
@@ -198,5 +199,34 @@ final class IssueCommandTest extends TestCase
 
         self::assertSame(0, $exit, $tester->getDisplay());
         self::assertStringContainsString('Reviewed & tested by the community', $tester->getDisplay());
+    }
+    /**
+     * BP-CMD-11: `upkeep issue widget abc` used to become a silent request
+     * for MR !0, because this command had no IID validation at all. There is
+     * one rule now, on the shared base, and it rejects 0 as well as garbage.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidIids')]
+    public function testANonPositiveIntegerMrArgumentIsRejectedBeforeAnyApiCall(string $iid): void
+    {
+        $tester = new CommandTester(new IssueCommand($this->gitlabClient(), $this->drupalClient()));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => $iid,
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+        ]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('positive integer', $tester->getDisplay());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function invalidIids(): iterable
+    {
+        yield 'letters' => ['abc'];
+        yield 'zero' => ['0'];
+        yield 'negative' => ['-3'];
+        yield 'decimal' => ['1.5'];
+        yield 'empty' => [''];
     }
 }

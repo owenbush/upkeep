@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Dashboard;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\ModuleSnapshot;
+use Upkeep\Filesystem\FilesystemException;
 
 final class DashboardCacheTest extends TestCase
 {
@@ -123,5 +124,74 @@ final class DashboardCacheTest extends TestCase
         $loaded = $cache->load('widget');
         self::assertNotNull($loaded);
         self::assertSame('just now', $loaded->ageLabel(new \DateTimeImmutable()));
+    }
+
+    /**
+     * The snapshot serialises complete upstream GitLab payloads fetched with
+     * the maintainer's PAT. For a limited-visibility project that is
+     * token-scoped data, and it must not land world-readable.
+     */
+    public function testCachedSnapshotsAreOwnerOnlyBecauseTheyCarryTokenScopedRemoteData(): void
+    {
+        $cache = new DashboardCache($this->cacheDir);
+        $cache->save('widget', $this->snapshot());
+
+        self::assertSame(0o600, fileperms($this->cacheDir . '/widget.json') & 0o777);
+        self::assertSame(0o700, fileperms($this->cacheDir) & 0o777);
+    }
+
+    public function testASaveIsAtomicSoAReaderNeverSeesAPartialSnapshot(): void
+    {
+        $cache = new DashboardCache($this->cacheDir);
+        $cache->save('widget', $this->snapshot(new \DateTimeImmutable('-1 hour')));
+
+        $file = $this->cacheDir . '/widget.json';
+        $handle = fopen($file, 'r');
+        self::assertNotFalse($handle);
+
+        $cache->save('widget', $this->snapshot());
+
+        self::assertTrue(is_file($file));
+        self::assertIsArray(json_decode((string) stream_get_contents($handle), true));
+        fclose($handle);
+
+        self::assertSame(
+            ['widget.json'],
+            array_values(array_diff((array) scandir($this->cacheDir), ['.', '..'])),
+        );
+    }
+
+    public function testATornCacheFileDegradesToAMissRatherThanAnUncaughtException(): void
+    {
+        $cache = new DashboardCache($this->cacheDir);
+        $cache->save('widget', $this->snapshot());
+        // A torn write from before this cache became atomic, or a truncated
+        // file from any other cause: the dashboard must re-fetch, not crash
+        // and demand a manual rm.
+        file_put_contents($this->cacheDir . '/widget.json', '{"fetched_at": "2026-0');
+
+        self::assertNull($cache->load('widget'));
+    }
+
+    public function testAFailedSaveIsReportedRatherThanSilentlyDiscarded(): void
+    {
+        $cache = new DashboardCache($this->cacheDir);
+        $cache->save('widget', $this->snapshot());
+        chmod($this->cacheDir, 0o500);
+
+        try {
+            $this->expectException(FilesystemException::class);
+            $cache->save('widget', $this->snapshot());
+        } finally {
+            chmod($this->cacheDir, 0o700);
+        }
+    }
+
+    public function testAModuleNameThatIsNotAMachineNameNeverBecomesAFilename(): void
+    {
+        $cache = new DashboardCache($this->cacheDir);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $cache->save('../../escape', $this->snapshot());
     }
 }

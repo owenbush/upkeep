@@ -14,6 +14,8 @@ use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\EnvPathCommand;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Tests\Support\StubEngineAdapterFactory;
+use Upkeep\Workflow\ExitCode;
 
 final class EnvPathCommandTest extends TestCase
 {
@@ -80,7 +82,9 @@ final class EnvPathCommandTest extends TestCase
 
     public function testPrintsPathWhenEnvironmentExists(): void
     {
-        $tester = new CommandTester(new EnvPathCommand($this->adapter('/home/user/.upkeep/projects/upkeep-token-d11')));
+        $tester = new CommandTester(new EnvPathCommand(
+            new StubEngineAdapterFactory($this->adapter('/home/user/.upkeep/projects/upkeep-token-d11')),
+        ));
         $exit = $tester->execute(['module' => 'token', '--cockpit' => $this->cockpit]);
 
         self::assertSame(0, $exit);
@@ -130,7 +134,7 @@ final class EnvPathCommandTest extends TestCase
             }
         };
 
-        $tester = new CommandTester(new EnvPathCommand($adapter));
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($adapter)));
         $tester->execute(['module' => 'token', '--cockpit' => $this->cockpit]);
 
         self::assertSame([['token', '10']], $calls, 'should default to the first core version listed (10)');
@@ -178,7 +182,7 @@ final class EnvPathCommandTest extends TestCase
             }
         };
 
-        $tester = new CommandTester(new EnvPathCommand($adapter));
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($adapter)));
         $tester->execute(['module' => 'token', '--version' => '11', '--cockpit' => $this->cockpit]);
 
         self::assertSame([['token', '11']], $calls);
@@ -186,28 +190,28 @@ final class EnvPathCommandTest extends TestCase
 
     public function testFailsForUnregisteredModule(): void
     {
-        $tester = new CommandTester(new EnvPathCommand($this->adapter('/x')));
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter('/x'))));
         $exit = $tester->execute(['module' => 'nope', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 
     public function testFailsForUntrackedCoreVersion(): void
     {
-        $tester = new CommandTester(new EnvPathCommand($this->adapter('/x')));
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter('/x'))));
         $exit = $tester->execute(['module' => 'token', '--version' => '9', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
-        self::assertStringContainsString('not tracked', $tester->getDisplay());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('does not track core version', $tester->getDisplay());
     }
 
     public function testFailsWhenEnvironmentDoesNotExist(): void
     {
-        $tester = new CommandTester(new EnvPathCommand($this->adapter(null)));
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter(null))));
         $exit = $tester->execute(['module' => 'token', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('No provisioned environment', $tester->getDisplay());
     }
 }

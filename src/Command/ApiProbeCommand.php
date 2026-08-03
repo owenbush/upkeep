@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Gitlab\ApiFailure;
-use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\MergeRequest;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Workflow\ExitCode;
+use Upkeep\Workflow\WorkflowException;
 
 /**
  * Thin debug command: probe the git.drupalcode.org API for one module.
@@ -35,7 +34,7 @@ use Upkeep\Gitlab\TokenResolver;
     name: 'api:probe',
     description: 'Probe the git.drupalcode.org GitLab API for a module: open MRs and head pipeline status.',
 )]
-final class ApiProbeCommand extends Command
+final class ApiProbeCommand extends UpkeepCommand
 {
     protected function configure(): void
     {
@@ -46,37 +45,28 @@ final class ApiProbeCommand extends Command
         );
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
-        $module = (string) $input->getArgument('module');
+        $module = self::stringArgument($input, 'module');
 
-        $resolver = new TokenResolver();
-        $token = $resolver->resolve();
-        if ($token === null) {
-            $io->error(sprintf(
-                'No GitLab token found. Configure one of: %s. (The token is never printed or logged.)',
-                $resolver->describeSources(),
-            ));
-
-            return Command::FAILURE;
+        // The factory reports the missing-token guidance itself (one wording
+        // for the whole CLI); "no credential" is an infrastructure failure.
+        $client = GitlabClientFactory::forConsole($io);
+        if ($client === null) {
+            return ExitCode::INFRASTRUCTURE;
         }
-
-        $client = new GitlabClient(HttpClient::create(), $token);
 
         $project = $client->project($module);
         if ($project instanceof ApiFailure) {
-            $io->error(sprintf('Project lookup failed [%s]: %s', $this->failureName($project), $project->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(
+                sprintf('Project lookup failed [%s]: %s', $project->shortCode(), $project->message),
+            );
         }
         $io->title(sprintf('%s (project id %d)', $project->pathWithNamespace, $project->id));
 
         $open = $client->openMergeRequests($project);
         if ($open instanceof ApiFailure) {
-            $io->error(sprintf('MR list failed [%s]: %s', $this->failureName($open), $open->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(sprintf('MR list failed [%s]: %s', $open->shortCode(), $open->message));
         }
         $io->writeln(sprintf('Open merge requests: <info>%d</info>', \count($open)));
 
@@ -84,7 +74,7 @@ final class ApiProbeCommand extends Command
         if ($first === null) {
             $io->writeln('No open MR to inspect further.');
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         // Re-fetch the single MR: only that endpoint carries head_pipeline.
@@ -106,11 +96,11 @@ final class ApiProbeCommand extends Command
         if ($detailed instanceof ApiFailure) {
             $io->warning(sprintf(
                 'Single-MR fetch failed [%s]: %s (pipeline status unavailable)',
-                $this->failureName($detailed),
+                $detailed->shortCode(),
                 $detailed->message,
             ));
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         if ($mr->headPipeline === null) {
@@ -124,11 +114,6 @@ final class ApiProbeCommand extends Command
             ));
         }
 
-        return Command::SUCCESS;
-    }
-
-    private function failureName(ApiFailure $failure): string
-    {
-        return (new \ReflectionClass($failure))->getShortName();
+        return ExitCode::OK;
     }
 }

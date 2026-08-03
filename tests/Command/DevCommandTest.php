@@ -15,6 +15,8 @@ use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\DevCommand;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Tests\Support\StubEngineAdapterFactory;
+use Upkeep\Workflow\ExitCode;
 
 final class DevCommandTest extends TestCase
 {
@@ -47,7 +49,7 @@ final class DevCommandTest extends TestCase
         );
         $adapter = $this->adapter($env);
 
-        $tester = new CommandTester(new DevCommand($adapter));
+        $tester = new CommandTester(new DevCommand(new StubEngineAdapterFactory($adapter)));
         $exit = $tester->execute(['module' => 'token', '--cockpit' => $this->cockpit]);
 
         self::assertSame(0, $exit);
@@ -60,21 +62,21 @@ final class DevCommandTest extends TestCase
     public function testUnknownModuleFails(): void
     {
         $adapter = $this->adapter(null);
-        $tester = new CommandTester(new DevCommand($adapter));
+        $tester = new CommandTester(new DevCommand(new StubEngineAdapterFactory($adapter)));
         $exit = $tester->execute(['module' => 'nonexistent', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 
     public function testBadCoreVersionFails(): void
     {
         $adapter = $this->adapter(null);
-        $tester = new CommandTester(new DevCommand($adapter));
+        $tester = new CommandTester(new DevCommand(new StubEngineAdapterFactory($adapter)));
         $exit = $tester->execute(['module' => 'token', '--version' => '9', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
-        self::assertStringContainsString('not tracked', $tester->getDisplay());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('does not track core version', $tester->getDisplay());
     }
 
     public function testBranchSwitchCallsAdapter(): void
@@ -90,7 +92,7 @@ final class DevCommandTest extends TestCase
         $branchCalls = [];
         $adapter = $this->adapterWithBranchTracking($env, $branchCalls);
 
-        $tester = new CommandTester(new DevCommand($adapter));
+        $tester = new CommandTester(new DevCommand(new StubEngineAdapterFactory($adapter)));
         $exit = $tester->execute(['module' => 'token', '--branch' => 'feature/x', '--cockpit' => $this->cockpit]);
 
         self::assertSame(0, $exit);
@@ -100,10 +102,10 @@ final class DevCommandTest extends TestCase
     public function testEnsureEnvFailureShowsError(): void
     {
         $adapter = $this->failingAdapter('Base artifacts missing');
-        $tester = new CommandTester(new DevCommand($adapter));
+        $tester = new CommandTester(new DevCommand(new StubEngineAdapterFactory($adapter)));
         $exit = $tester->execute(['module' => 'token', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('Base artifacts missing', $tester->getDisplay());
     }
 
@@ -119,10 +121,10 @@ final class DevCommandTest extends TestCase
         );
         $adapter = $this->adapterWithBranchFailure($env, 'uncommitted changes');
 
-        $tester = new CommandTester(new DevCommand($adapter));
+        $tester = new CommandTester(new DevCommand(new StubEngineAdapterFactory($adapter)));
         $exit = $tester->execute(['module' => 'token', '--branch' => 'feature/x', '--cockpit' => $this->cockpit]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('uncommitted changes', $tester->getDisplay());
     }
 

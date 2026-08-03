@@ -428,4 +428,57 @@ final class PruneSelectorTest extends TestCase
 
         self::assertEqualsCanonicalizing([$mid, $old], $candidates);
     }
+
+    /**
+     * Protection used to be a lexical string prefix on both sides. An item
+     * reaching the executor under an equivalent-but-differently-spelled path
+     * — a `..` sequence, or a symlinked component — would then not match the
+     * protected prefix and would be deleted.
+     */
+    public function testProtectionCompareUsesPathIdentityNotStringSpelling(): void
+    {
+        $world = (string) realpath(sys_get_temp_dir()) . '/upkeep-selector-paths-' . bin2hex(random_bytes(4));
+        mkdir($world . '/cockpit/base-artifacts/11', 0o700, true);
+        mkdir($world . '/cockpit/other', 0o700, true);
+        symlink($world . '/cockpit/base-artifacts', $world . '/link');
+
+        try {
+            $selector = new PruneSelector([$world . '/cockpit/base-artifacts']);
+
+            $viaTraversal = new InventoryItem(
+                path: $world . '/cockpit/other/../base-artifacts/11',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            );
+            $viaSymlink = new InventoryItem(
+                path: $world . '/link/11',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            );
+
+            self::assertNotNull($selector->protectionReason($viaTraversal));
+            self::assertNotNull($selector->protectionReason($viaSymlink));
+        } finally {
+            exec('rm -rf ' . escapeshellarg($world));
+        }
+    }
+
+    public function testASiblingSharingAStringPrefixWithAProtectedRootIsNotProtected(): void
+    {
+        $world = (string) realpath(sys_get_temp_dir()) . '/upkeep-selector-sib-' . bin2hex(random_bytes(4));
+        mkdir($world . '/base-artifacts', 0o700, true);
+        mkdir($world . '/base-artifacts-old', 0o700, true);
+
+        try {
+            $selector = new PruneSelector([$world . '/base-artifacts']);
+
+            self::assertNull($selector->protectionReason(new InventoryItem(
+                path: $world . '/base-artifacts-old',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            )));
+        } finally {
+            exec('rm -rf ' . escapeshellarg($world));
+        }
+    }
 }

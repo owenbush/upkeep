@@ -5,20 +5,17 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Cockpit\Cockpit;
 use Upkeep\Cockpit\RegistryException;
+use Upkeep\Filesystem\FilesystemException;
 use Upkeep\Gitlab\ApiFailure;
-use Upkeep\Gitlab\GitlabClient;
-use Upkeep\Gitlab\TokenResolver;
 use Upkeep\Notes\NotesGenerator;
+use Upkeep\Workflow\ExitCode;
+use Upkeep\Workflow\WorkflowException;
 
 /**
  * Draft release notes for a module: what merged since its last tag, as
@@ -42,7 +39,7 @@ use Upkeep\Notes\NotesGenerator;
     name: 'notes',
     description: 'Draft paste-ready Markdown release notes: merged MRs since the module\'s last tag.',
 )]
-final class NotesCommand extends Command
+final class NotesCommand extends UpkeepCommand
 {
     protected function configure(): void
     {
@@ -52,50 +49,37 @@ final class NotesCommand extends Command
             'Module machine name (resolved via the cockpit registry when available) or full project path (e.g. '
             . 'project/conditions_helper)',
         );
-        $this->addOption(
-            'cockpit',
-            null,
-            InputOption::VALUE_REQUIRED,
-            sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR),
-        );
+        $this->addCockpitOption();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    /** stdout carries only the paste-ready Markdown. */
+    protected function diagnosticsOnStderr(): bool
     {
-        // Route diagnostics to stderr so stdout carries only the paste-ready
-        // Markdown (safe to pipe or redirect).
-        $io = new SymfonyStyle(
-            $input,
-            $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output,
-        );
-        $module = (string) $input->getArgument('module');
-        $projectPath = $this->resolveProjectPath($module, $input->getOption('cockpit'));
+        return true;
+    }
 
-        $resolver = new TokenResolver();
-        $token = $resolver->resolve();
-        if ($token === null) {
-            $io->error(sprintf(
-                'No GitLab token found. Configure one of: %s. (The token is never printed or logged.)',
-                $resolver->describeSources(),
-            ));
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
+    {
+        $module = self::stringArgument($input, 'module');
+        $projectPath = $this->resolveProjectPath($module, self::stringOption($input, 'cockpit'));
 
-            return Command::FAILURE;
+        // The factory reports the missing-token guidance itself (one wording
+        // for the whole CLI); "no credential" is an infrastructure failure.
+        $client = GitlabClientFactory::forConsole($io);
+        if ($client === null) {
+            return ExitCode::INFRASTRUCTURE;
         }
-
-        $client = new GitlabClient(HttpClient::create(), $token);
 
         $project = $client->project($projectPath);
         if ($project instanceof ApiFailure) {
-            $io->error(sprintf('Project lookup failed [%s]: %s', $this->failureName($project), $project->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(
+                sprintf('Project lookup failed [%s]: %s', $project->shortCode(), $project->message),
+            );
         }
 
         $tags = $client->tags($project);
         if ($tags instanceof ApiFailure) {
-            $io->error(sprintf('Tag list failed [%s]: %s', $this->failureName($tags), $tags->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(sprintf('Tag list failed [%s]: %s', $tags->shortCode(), $tags->message));
         }
 
         $latestTag = NotesGenerator::latestTag($tags);
@@ -104,9 +88,9 @@ final class NotesCommand extends Command
 
         $merged = $client->mergedSince($project, $since);
         if ($merged instanceof ApiFailure) {
-            $io->error(sprintf('Merged-MR list failed [%s]: %s', $this->failureName($merged), $merged->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(
+                sprintf('Merged-MR list failed [%s]: %s', $merged->shortCode(), $merged->message),
+            );
         }
 
         $markdown = (new NotesGenerator())->generate($module, $latestTag, $merged->all());
@@ -114,7 +98,7 @@ final class NotesCommand extends Command
         // untouched by the console formatter.
         $output->writeln($markdown, OutputInterface::OUTPUT_RAW);
 
-        return Command::SUCCESS;
+        return ExitCode::OK;
     }
 
     /**
@@ -126,15 +110,13 @@ final class NotesCommand extends Command
     {
         try {
             $registry = Cockpit::resolve($cockpitOption)->loadRegistry();
-        } catch (RegistryException) {
+        } catch (RegistryException | FilesystemException) {
+            // Deliberate fallback (the one place a missing registry is not an
+            // error): `upkeep notes` accepts a bare project path, so with no
+            // usable cockpit the argument simply IS the project path.
             return $module;
         }
 
         return ($registry->modules()[$module] ?? null)?->project ?? $module;
-    }
-
-    private function failureName(ApiFailure $failure): string
-    {
-        return (new \ReflectionClass($failure))->getShortName();
     }
 }

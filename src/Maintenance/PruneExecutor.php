@@ -110,14 +110,22 @@ final readonly class PruneExecutor
             if ($item->category !== Category::Snapshot) {
                 continue;
             }
+            ($this->log)(sprintf('Removing materialized snapshot %s ...', $item->path));
+            // Accounted for only after a confirmed removal: reporting bytes as
+            // reclaimed when the unlink failed over-reports a destructive
+            // operation, which is the wrong direction to be wrong in.
+            if (is_file($item->path) && !@unlink($item->path)) {
+                $skipped[] = [$item, 'the snapshot file could not be removed — check its permissions'];
+                continue;
+            }
+
+            $metaPath = SnapshotLayout::metaPathForArtifact($item->path);
+            if ($metaPath !== null && is_file($metaPath) && !@unlink($metaPath)) {
+                ($this->log)(sprintf('Snapshot removed, but its sidecar %s could not be removed.', $metaPath));
+            }
+
             $freed += $item->sizeBytes;
             $deleted[] = $item;
-            ($this->log)(sprintf('Removing materialized snapshot %s ...', $item->path));
-            @unlink($item->path);
-            $metaPath = SnapshotLayout::metaPathForArtifact($item->path);
-            if ($metaPath !== null && is_file($metaPath)) {
-                @unlink($metaPath);
-            }
         }
 
         return new PruneOutcome($freed, $deleted, $skipped);

@@ -15,9 +15,16 @@ final class StatusCommandTest extends TestCase
     private string $cockpit;
     private string $projects;
 
+    private string|false $originalHome;
+
     protected function setUp(): void
     {
-        $this->world = sys_get_temp_dir() . '/upkeep-status-cmd-test-' . bin2hex(random_bytes(4));
+        $this->world = (string) realpath(sys_get_temp_dir()) . '/upkeep-status-cmd-test-' . bin2hex(random_bytes(4));
+        // The projects root must resolve under $HOME (Docker providers only
+        // mount the home directory). Point $HOME at the temp world so the
+        // fixture stays in sys_get_temp_dir() and the real home is untouched.
+        $this->originalHome = getenv('HOME');
+        putenv('HOME=' . $this->world);
         $this->cockpit = $this->world . '/cockpit';
         $this->projects = $this->world . '/projects';
 
@@ -41,6 +48,7 @@ final class StatusCommandTest extends TestCase
 
     protected function tearDown(): void
     {
+        putenv($this->originalHome === false ? 'HOME' : 'HOME=' . $this->originalHome);
         exec('rm -rf ' . escapeshellarg($this->world));
     }
 

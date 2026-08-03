@@ -35,6 +35,28 @@ final readonly class VolumeProbe
     }
 
     /**
+     * The volume items for a whole scanned inventory: picks out the project
+     * trees, indexes them by engine project name, and probes for their
+     * volumes. Both the status and prune surfaces need exactly this, so the
+     * indexing lives here rather than being written out at each call site.
+     *
+     * @param list<InventoryItem> $inventory everything the scanner found
+     *
+     * @return list<InventoryItem> one ProjectVolume item per matching volume
+     */
+    public function itemsForInventory(array $inventory): array
+    {
+        $trees = [];
+        foreach ($inventory as $item) {
+            if ($item->category === Category::ProjectTree && $item->projectName !== null) {
+                $trees[$item->projectName] = $item;
+            }
+        }
+
+        return $this->items($trees);
+    }
+
+    /**
      * @param array<string, InventoryItem> $treesByProjectName inventoried ProjectTree items
      *
      * @return list<InventoryItem> one ProjectVolume item per matching volume

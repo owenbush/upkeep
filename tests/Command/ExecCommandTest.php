@@ -14,6 +14,9 @@ use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\ExecCommand;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Tests\Support\StubEngineAdapterFactory;
+use Upkeep\Workflow\ExitCode;
 
 final class ExecCommandTest extends TestCase
 {
@@ -84,7 +87,7 @@ final class ExecCommandTest extends TestCase
 
     public function testRunsCommandInEnvironmentDirectoryAndStreamsOutput(): void
     {
-        $tester = new CommandTester(new ExecCommand($this->adapter($this->envDir)));
+        $tester = new CommandTester(new ExecCommand(new StubEngineAdapterFactory($this->adapter($this->envDir))));
         $exit = $tester->execute([
             'module' => 'token',
             'cmd' => ['echo', 'hello from env'],
@@ -95,21 +98,26 @@ final class ExecCommandTest extends TestCase
         self::assertStringContainsString('hello from env', $tester->getDisplay());
     }
 
-    public function testPassesThroughNonZeroExitCode(): void
+    /**
+     * The child's raw code is deliberately NOT passed through: 0/1/2 is the
+     * CLI-wide contract, so a child exiting 2 cannot be read as an upkeep
+     * infrastructure failure.
+     */
+    public function testCollapsesAnyNonZeroChildExitToTheFailedCode(): void
     {
-        $tester = new CommandTester(new ExecCommand($this->adapter($this->envDir)));
+        $tester = new CommandTester(new ExecCommand(new StubEngineAdapterFactory($this->adapter($this->envDir))));
         $exit = $tester->execute([
             'module' => 'token',
             'cmd' => ['bash', '-c', 'exit 42'],
             '--cockpit' => $this->cockpit,
         ]);
 
-        self::assertSame(42, $exit);
+        self::assertSame(ExitCode::FAILED, $exit);
     }
 
     public function testSetsWorkingDirectoryToEnvironmentPath(): void
     {
-        $tester = new CommandTester(new ExecCommand($this->adapter($this->envDir)));
+        $tester = new CommandTester(new ExecCommand(new StubEngineAdapterFactory($this->adapter($this->envDir))));
         $tester->execute([
             'module' => 'token',
             'cmd' => ['pwd'],
@@ -121,27 +129,66 @@ final class ExecCommandTest extends TestCase
 
     public function testFailsForUnregisteredModule(): void
     {
-        $tester = new CommandTester(new ExecCommand($this->adapter($this->envDir)));
+        $tester = new CommandTester(new ExecCommand(new StubEngineAdapterFactory($this->adapter($this->envDir))));
         $exit = $tester->execute([
             'module' => 'nope',
             'cmd' => ['echo', 'hi'],
             '--cockpit' => $this->cockpit,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 
     public function testFailsWhenEnvironmentDoesNotExist(): void
     {
-        $tester = new CommandTester(new ExecCommand($this->adapter(null)));
+        $tester = new CommandTester(new ExecCommand(new StubEngineAdapterFactory($this->adapter(null))));
         $exit = $tester->execute([
             'module' => 'token',
             'cmd' => ['echo', 'hi'],
             '--cockpit' => $this->cockpit,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('No provisioned environment', $tester->getDisplay());
+    }
+
+    /**
+     * `upkeep exec <module> -- printenv` used to print the operator's PAT:
+     * the child inherited the whole parent environment.
+     */
+    public function testDoesNotForwardTheGitlabCredentialToTheChild(): void
+    {
+        $name = TokenResolver::DEFAULT_ENV_VAR;
+        $previous = getenv($name);
+        $hadServer = \array_key_exists($name, $_SERVER);
+        $hadEnv = \array_key_exists($name, $_ENV);
+        putenv($name . '=glpat-EXECSECRETVALUE');
+        $_SERVER[$name] = 'glpat-EXECSECRETVALUE';
+        $_ENV[$name] = 'glpat-EXECSECRETVALUE';
+
+        try {
+            $tester = new CommandTester(new ExecCommand(new StubEngineAdapterFactory($this->adapter($this->envDir))));
+            $tester->execute([
+                'module' => 'token',
+                'cmd' => ['bash', '-c', 'echo "${' . $name . ':-ABSENT}"'],
+                '--cockpit' => $this->cockpit,
+            ]);
+
+            self::assertStringContainsString('ABSENT', $tester->getDisplay());
+            self::assertStringNotContainsString('glpat-EXECSECRETVALUE', $tester->getDisplay());
+        } finally {
+            if (\is_string($previous)) {
+                putenv($name . '=' . $previous);
+            } else {
+                putenv($name);
+            }
+            if (!$hadServer) {
+                unset($_SERVER[$name]);
+            }
+            if (!$hadEnv) {
+                unset($_ENV[$name]);
+            }
+        }
     }
 }

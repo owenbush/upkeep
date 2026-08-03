@@ -40,12 +40,7 @@ final readonly class MrContextResolver
      */
     public function resolve(string $moduleName, int $iid, ?string $requestedCore): MrContext
     {
-        $module = $this->modules[$moduleName] ?? throw new WorkflowException(sprintf(
-            'Module "%s" is not registered in the cockpit. Registered modules: %s.',
-            $moduleName,
-            implode(', ', array_keys($this->modules)) ?: '(none)',
-        ));
-
+        $module = self::requireModule($this->modules, $moduleName);
         $coreMajor = self::selectCoreVersion($module, $requestedCore);
 
         $project = $this->client->project($module->project);
@@ -61,7 +56,28 @@ final readonly class MrContextResolver
         return new MrContext($module, $project, $this->fetchOpenMr($module, $project, $iid), $coreMajor);
     }
 
-    private static function selectCoreVersion(Module $module, ?string $requestedCore): string
+    /**
+     * The one registry lookup: every command that takes a module name resolves
+     * it here, so "not registered" has a single wording — and one that lists
+     * what *is* registered.
+     *
+     * @param array<string, Module> $modules
+     *
+     * @throws WorkflowException when the name is not in the registry
+     */
+    public static function requireModule(array $modules, string $moduleName): Module
+    {
+        return $modules[$moduleName] ?? throw new WorkflowException(sprintf(
+            'Module "%s" is not registered in the cockpit. Registered modules: %s.',
+            $moduleName,
+            implode(', ', array_keys($modules)) ?: '(none)',
+        ));
+    }
+
+    /**
+     * @throws WorkflowException when the requested core version is not tracked
+     */
+    public static function selectCoreVersion(Module $module, ?string $requestedCore): string
     {
         if ($requestedCore === null || $requestedCore === '') {
             // Documented default: the first core version listed in the

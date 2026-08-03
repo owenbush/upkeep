@@ -7,6 +7,7 @@ namespace Upkeep\Tests\BaseArtifact;
 use PHPUnit\Framework\TestCase;
 use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\ArtifactScanner;
+use Upkeep\Filesystem\FilesystemException;
 
 final class ArtifactScannerTest extends TestCase
 {
@@ -102,5 +103,40 @@ final class ArtifactScannerTest extends TestCase
     public function testEmptyBaseDirYieldsNoRecords(): void
     {
         self::assertSame([], (new ArtifactScanner($this->layout))->scan());
+    }
+
+    /**
+     * An unreadable subtree must cost an accurate size, not the whole
+     * `base-artifacts:status` command.
+     */
+    public function testAnUnreadableSubdirectoryUnderCountsInsteadOfThrowing(): void
+    {
+        $this->makeCompleteVersion('11', self::META_11);
+        $locked = $this->layout->treePath('11') . '/vendor';
+        chmod($locked, 0o000);
+
+        try {
+            $records = (new ArtifactScanner($this->layout))->scan();
+
+            self::assertCount(1, $records);
+            self::assertTrue($records[0]->complete);
+            self::assertGreaterThan(0, $records[0]->treeSizeBytes);
+        } finally {
+            chmod($locked, 0o755);
+        }
+    }
+
+    public function testAnUnreadableBaseArtifactsDirectoryIsReportedRatherThanReadAsEmpty(): void
+    {
+        $this->makeCompleteVersion('11', self::META_11);
+        chmod($this->dir, 0o000);
+
+        try {
+            $this->expectException(FilesystemException::class);
+            $this->expectExceptionMessageMatches('#' . preg_quote($this->dir, '#') . '#');
+            (new ArtifactScanner($this->layout))->scan();
+        } finally {
+            chmod($this->dir, 0o755);
+        }
     }
 }

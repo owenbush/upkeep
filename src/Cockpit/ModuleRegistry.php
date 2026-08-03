@@ -6,9 +6,15 @@ namespace Upkeep\Cockpit;
 
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
+use Upkeep\Adapter\ProjectName;
 
 /**
  * Loads and validates the cockpit module registry (registry.yml).
+ *
+ * Validation is total: every key and value that later becomes a path segment
+ * or a project name is checked here, at load, so downstream consumers
+ * (results cache, dashboard cache, prune) can treat registry content as
+ * trusted and no command has to re-validate it.
  */
 final readonly class ModuleRegistry
 {
@@ -64,6 +70,21 @@ final readonly class ModuleRegistry
 
     private static function buildModule(string $path, string $name, mixed $definition): Module
     {
+        // The machine name becomes a path segment (<cockpit>/results/<module>/,
+        // <cockpit>/cache/dashboard/<module>.json) and an engine project name.
+        // Validating it here, at load, is the single point that keeps a
+        // traversal sequence out of every derived path — and keeps the
+        // failure from surfacing as an uncaught InvalidArgumentException deep
+        // inside prune, after environments have already been torn down.
+        if (!ProjectName::isModuleName($name)) {
+            throw new RegistryException(sprintf(
+                'Module key "%s" in "%s" is not a Drupal machine name ([a-z][a-z0-9_]*). Registry keys are used as '
+                    . 'directory names and engine project names, so they must be machine names.',
+                $name,
+                $path,
+            ));
+        }
+
         if (!\is_array($definition)) {
             throw new RegistryException(sprintf(
                 'Module "%s" in "%s" must be a mapping with "project" and "core_versions" keys.',
@@ -92,7 +113,22 @@ final readonly class ModuleRegistry
             ));
         }
 
-        return new Module($name, $project, array_map(strval(...), $coreVersions));
+        $versions = [];
+        foreach ($coreVersions as $version) {
+            // Core versions are path segments too (results/<module>/<mr>/<core>).
+            if (!is_scalar($version) || !ProjectName::isCoreMajor((string) $version)) {
+                throw new RegistryException(sprintf(
+                    'Module "%s" in "%s" lists a "core_versions" entry that is not a whole major version number '
+                        . '(e.g. "11"): %s',
+                    $name,
+                    $path,
+                    is_scalar($version) ? sprintf('"%s"', (string) $version) : get_debug_type($version),
+                ));
+            }
+            $versions[] = (string) $version;
+        }
+
+        return new Module($name, $project, $versions);
     }
 
     /**

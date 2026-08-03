@@ -457,12 +457,39 @@ assertions. Adapter boundary grep silent. `review-findings.md` written with
 matrix legs" criterion — there is no push access to GitHub here. Every workflow
 command was instead run locally on PHP 8.4.24 and its exit code recorded.
 
-### Phase 3: Findings Remediation
-**Parallel Tasks:**
-- Task 006: Remediate credential handling and subprocess output leakage (depends on: 005)
-- Task 007: Remediate filesystem path and result-file handling (depends on: 005)
-- Task 008: Remediate GitLab error-taxonomy consistency (depends on: 005)
-- Task 009: Remediate command-class duplication and adapter-boundary compliance (depends on: 005)
+### ✅ Phase 3: Findings Remediation — completed
+**Executed serially, not in parallel** (deviation recorded below):
+- ✔️ Task 006: Remediate credential handling and subprocess output leakage (depends on: 005) — `completed`
+- ✔️ Task 007: Remediate filesystem path and result-file handling (depends on: 005) — `completed`
+- ✔️ Task 008: Remediate GitLab error-taxonomy consistency (depends on: 005) — `completed`
+- ✔️ Task 009: Remediate command-class duplication and adapter-boundary compliance (depends on: 005) — `completed`
+
+**Deviation from the blueprint**: these four were planned as parallel. The
+maintainer's D1/D2 rulings expanded task 9 into a full DI refactor plus a
+CLI-wide exit-code contract, which put its file ownership in direct conflict
+with 6, 7, and 8 (`ResultsCache`, `GitlabClient`, `CheckCommand`, and exception
+call sites inside command classes). Running them concurrently would have
+corrupted each other's edits, so they were serialized 6 → 7 → 8 → 9. Dependency
+order was preserved throughout; only the parallelism was given up.
+
+**Verified progression** (each independently re-run, not taken from agent reports):
+
+| After task | PHPUnit | PHPStan | phpcs |
+| --- | --- | --- | --- |
+| baseline | 377 / 1015 | 302 | clean |
+| 006 | 422 / 1109 | 296 | clean |
+| 007 | 500 / 1272 | 289 | clean |
+| 008 | 533 / 1409 | 284 | clean |
+| 009 | **581 / 1525** | **243** | clean |
+
+**Adapter boundary genuinely closed**: `grep -ri "ddev" src/ --exclude-dir=Adapter`
+is now silent, where before it found ten references that the case-sensitive
+guard missed. Engine construction exists only in
+`Adapter\DdevContribAdapterFactory` and the `bin/upkeep` composition root.
+
+Operator-visible changes are recorded in `BEHAVIOUR-CHANGES.md` (15 items) and
+the binding rulings in `DECISIONS.md`. Task 019 must document all of them;
+task 012 must assert the new behaviour, not the old.
 
 ### Phase 4: Static Analysis to Level Max
 **Parallel Tasks:**

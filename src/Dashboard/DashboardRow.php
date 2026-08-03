@@ -7,15 +7,11 @@ namespace Upkeep\Dashboard;
 use Upkeep\Gate\GateStatus;
 use Upkeep\Gate\GateVerdict;
 use Upkeep\Gitlab\ApiFailure;
-use Upkeep\Gitlab\EndpointClosed;
 use Upkeep\Gitlab\MergeRequest;
-use Upkeep\Gitlab\NotFound;
-use Upkeep\Gitlab\Pipeline;
 use Upkeep\Gitlab\PipelineStatus;
 use Upkeep\Gitlab\Project;
-use Upkeep\Gitlab\RateLimited;
-use Upkeep\Gitlab\TransportError;
 use Upkeep\Results\CachedResult;
+use Upkeep\Workflow\WorkflowException;
 
 /**
  * One assembled dashboard row: either an (MR x core) row carrying the full
@@ -67,6 +63,44 @@ final readonly class DashboardRow
     }
 
     /**
+     * The merge request this row describes.
+     *
+     * A real guard, not an \assert(): assertions are compiled out under the
+     * production php.ini default, and this invariant is load-bearing — the
+     * merge command feeds the result straight into a merge call.
+     *
+     * @throws WorkflowException when this is a module-failure row
+     */
+    public function requireMergeRequest(): MergeRequest
+    {
+        return $this->mergeRequest ?? throw self::notAMergeRequestRow('merge request');
+    }
+
+    /**
+     * @throws WorkflowException when this is a module-failure row
+     */
+    public function requireProject(): Project
+    {
+        return $this->project ?? throw self::notAMergeRequestRow('project');
+    }
+
+    /**
+     * @throws WorkflowException when this is a module-failure row
+     */
+    public function requireVerdict(): GateVerdict
+    {
+        return $this->verdict ?? throw self::notAMergeRequestRow('gate verdict');
+    }
+
+    private static function notAMergeRequestRow(string $what): WorkflowException
+    {
+        return new WorkflowException(sprintf(
+            'Dashboard row has no %s: it reports a module-level failure, not a merge request.',
+            $what,
+        ));
+    }
+
+    /**
      * The row exactly as the dashboard table renders it:
      * MODULE, MR, CORE, TITLE, CI, LOCAL, STATUS.
      *
@@ -80,16 +114,16 @@ final readonly class DashboardRow
             return [$this->module, '–', '–', '(merge requests unavailable)', $cell, '–', $cell];
         }
 
-        \assert($this->mergeRequest !== null && $this->verdict !== null);
+        $mergeRequest = $this->requireMergeRequest();
 
         return [
             $this->module,
-            '!' . $this->mergeRequest->iid,
+            '!' . $mergeRequest->iid,
             $this->core,
-            self::truncate($this->mergeRequest->title),
+            self::truncate($mergeRequest->title),
             $this->ciCell(),
             $this->localCell(),
-            $this->verdict->describe(),
+            $this->requireVerdict()->describe(),
         ];
     }
 
@@ -137,21 +171,18 @@ final readonly class DashboardRow
             return self::failureCell($this->moduleFailure);
         }
 
-        \assert($this->verdict !== null);
-
-        return $this->verdict->describe();
+        return $this->requireVerdict()->describe();
     }
 
-    /** Compact, explicit cell state for a typed client failure, e.g. "n/a (403)". */
+    /**
+     * Compact, explicit cell state for a typed client failure, e.g. "n/a (403)".
+     *
+     * The discriminator lives on the failure type itself, so this cannot drift
+     * out of step with the taxonomy and needs no unreachable default arm.
+     */
     public static function failureCell(ApiFailure $failure): string
     {
-        return 'n/a (' . match (true) {
-            $failure instanceof EndpointClosed => (string) $failure->status,
-            $failure instanceof NotFound => '404',
-            $failure instanceof RateLimited => 'rate-limited',
-            $failure instanceof TransportError => $failure->status === null ? 'transport' : (string) $failure->status,
-            default => 'error',
-        } . ')';
+        return 'n/a (' . $failure->shortCode() . ')';
     }
 
     public static function truncate(string $title, int $max = 44): string

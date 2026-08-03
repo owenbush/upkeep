@@ -8,6 +8,7 @@ use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\ArtifactMeta;
 use Upkeep\BaseArtifact\MetaException;
 use Upkeep\Cockpit\Module;
+use Upkeep\Filesystem\FileWriter;
 use Upkeep\Gitlab\MergeRequest;
 
 /**
@@ -362,6 +363,11 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ));
         }
 
+        // Stamp the reuse. `prune --older-than` filters on this: without it,
+        // age is time-since-creation and prune deletes environments that are
+        // being used daily.
+        EnvironmentMeta::stampLastUsed($projectPath);
+
         return new Environment(
             moduleName: $module->name,
             coreMajor: $coreMajor,
@@ -452,17 +458,18 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ));
 
             // Written LAST: the completion marker. A crash before this line
-            // leaves no marker, and the next ensure_env re-provisions.
-            file_put_contents(
-                $projectPath . '/' . EnvironmentMeta::FILENAME,
-                (new EnvironmentMeta(
-                    $module->name,
-                    $coreMajor,
-                    $artifactMeta->coreVersion,
-                    EngineAddOn::VERSION,
-                    new \DateTimeImmutable(),
-                ))->toYaml(),
-            );
+            // leaves no marker, and the next ensure_env re-provisions. The
+            // write is checked — a silently missing marker would make every
+            // later invocation tear down and rebuild this environment.
+            $now = new \DateTimeImmutable();
+            (new EnvironmentMeta(
+                $module->name,
+                $coreMajor,
+                $artifactMeta->coreVersion,
+                EngineAddOn::VERSION,
+                $now,
+                $now,
+            ))->writeTo($projectPath);
 
             return new Environment(
                 moduleName: $module->name,
@@ -494,10 +501,17 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ($this->log)('Wiring the module working copy via a Composer path repository ...');
 
         $composerJsonPath = $projectPath . '/composer.json';
-        file_put_contents($composerJsonPath, ModuleWiring::withPathRepository(
-            (string) file_get_contents($composerJsonPath),
-            './' . self::MODULE_DIR,
-        ));
+        $composerJson = @file_get_contents($composerJsonPath);
+        if ($composerJson === false) {
+            throw new AdapterException(sprintf('Cannot read the project composer.json at "%s".', $composerJsonPath));
+        }
+        // Read-modify-write over a file the environment cannot function
+        // without: the rewrite is atomic, so a crash can never leave an
+        // unparseable composer.json behind a still-valid completion marker.
+        FileWriter::write(
+            $composerJsonPath,
+            ModuleWiring::withPathRepository($composerJson, './' . self::MODULE_DIR),
+        );
 
         // Pin the exact branch the working copy has checked out: a bare
         // "*@dev" could resolve to a different dev branch published on
@@ -600,8 +614,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // DRUPAL_PROJECTS_PATH, where composer also materializes the module's
         // real dependencies (their packaged code must not pollute results).
         // In-container path; $DRUPAL_PROJECTS_PATH expands inside the web
-        // container, moduleName is adapter-controlled.
-        $modulePath = sprintf('"$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/%s', $environment->moduleName);
+        // container. The module name is quoted rather than trusted: it is
+        // spliced into a shell script body below, so its safety must not
+        // depend on a validator two classes away.
+        $modulePath = sprintf(
+            '"$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/%s',
+            ShellArgument::quote($environment->moduleName),
+        );
 
         $command = match ($check) {
             // Engine command as shipped: an existing path argument makes it
@@ -722,7 +741,11 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 $configPath,
             ));
         }
-        file_put_contents($configPath, EngineAddOn::adaptContribConfig((string) file_get_contents($configPath)));
+        $config = @file_get_contents($configPath);
+        if ($config === false) {
+            throw new AdapterException(sprintf('Cannot read the engine add-on config at "%s".', $configPath));
+        }
+        FileWriter::write($configPath, EngineAddOn::adaptContribConfig($config));
     }
 
     /**

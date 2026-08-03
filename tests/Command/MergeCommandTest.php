@@ -17,6 +17,7 @@ use Upkeep\Adapter\CheckType;
 use Upkeep\Command\MergeCommand;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Results\ResultsCache;
+use Upkeep\Workflow\ExitCode;
 
 /**
  * CommandTester-level tests for `merge --fast-lane`.
@@ -474,7 +475,8 @@ final class MergeCommandTest extends TestCase
 
         $tester = $this->runMerge($client, ['merge', 'merge']);
 
-        $tester->assertCommandIsSuccessful();
+        // BP-CMD-04: a run in which a merge failed must not exit 0.
+        self::assertSame(ExitCode::FAILED, $tester->getStatusCode());
         $display = $tester->getDisplay();
         self::assertStringContainsString('Merge failed for widget !5', $display);
         self::assertStringContainsString('405', $display);
@@ -526,5 +528,47 @@ final class MergeCommandTest extends TestCase
         self::assertStringContainsString('interactive', $display);
         self::assertStringContainsString('Merged: 0', $display);
         self::assertStringContainsString('Skipped: 1', $display);
+    }
+    /**
+     * A rejected credential is the operator's setup, not a verdict about any
+     * one merge request: it takes the infrastructure code, which outranks a
+     * merge failure.
+     */
+    public function testARejectedCredentialExitsWithTheInfrastructureCode(): void
+    {
+        $this->storePassingLocal(5);
+        $client = $this->client([
+            '/merge_requests/5/merge' => self::json(['message' => '401 Unauthorized'], 401),
+            '/merge_requests/5' => self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
+            '/merge_requests?' => self::json([self::botMrPayload(5)]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = $this->runMerge($client, ['merge']);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $tester->getStatusCode());
+        self::assertStringContainsString('Merge failed for widget !5', $tester->getDisplay());
+    }
+
+    /** Bad usage attempts nothing, so it is an infrastructure outcome, not a verdict. */
+    public function testOmittingFastLaneIsAnInfrastructureFailure(): void
+    {
+        $tester = new CommandTester(new MergeCommand());
+        $exit = $tester->execute(['--cockpit' => $this->cockpit]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('only operates in fast-lane mode', $tester->getDisplay());
+    }
+
+    public function testACleanRunWithNothingEligibleExitsOk(): void
+    {
+        $client = $this->client([
+            '/merge_requests?' => self::json([]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = $this->runMerge($client);
+
+        self::assertSame(ExitCode::OK, $tester->getStatusCode());
     }
 }

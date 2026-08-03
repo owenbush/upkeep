@@ -14,80 +14,76 @@ final class ProjectsRootTest extends TestCase
 
     private string|false $originalHome;
 
+    /** Stands in for $HOME so no test ever touches the real home directory. */
+    private string $home;
+
     protected function setUp(): void
     {
         $this->originalEnv = getenv(ProjectsRoot::ENV_VAR);
         $this->originalHome = getenv('HOME');
+
+        $this->home = (string) realpath(sys_get_temp_dir()) . '/upkeep-projects-root-' . bin2hex(random_bytes(4));
+        mkdir($this->home, 0o700, true);
+        putenv('HOME=' . $this->home);
     }
 
     protected function tearDown(): void
     {
         putenv($this->originalEnv === false ? ProjectsRoot::ENV_VAR : ProjectsRoot::ENV_VAR . '=' . $this->originalEnv);
         putenv($this->originalHome === false ? 'HOME' : 'HOME=' . $this->originalHome);
+        exec('rm -rf ' . escapeshellarg($this->home));
     }
 
     public function testExplicitConfigurationWinsOverEverything(): void
     {
-        putenv(ProjectsRoot::ENV_VAR . '=/home/user/elsewhere');
+        putenv(ProjectsRoot::ENV_VAR . '=' . $this->home . '/elsewhere');
 
-        self::assertSame('/home/user/explicit', ProjectsRoot::resolve('/home/user/explicit'));
+        self::assertSame($this->home . '/explicit', ProjectsRoot::resolve($this->home . '/explicit'));
     }
 
     public function testEnvironmentVariableWinsOverDefault(): void
     {
-        putenv(ProjectsRoot::ENV_VAR . '=/home/user/from-env');
+        putenv(ProjectsRoot::ENV_VAR . '=' . $this->home . '/from-env');
 
-        self::assertSame('/home/user/from-env', ProjectsRoot::resolve(null));
+        self::assertSame($this->home . '/from-env', ProjectsRoot::resolve(null));
     }
 
     public function testCockpitProjectsDirUsedWhenItExists(): void
     {
         putenv(ProjectsRoot::ENV_VAR);
 
-        $cockpitRoot = sys_get_temp_dir() . '/upkeep-test-cockpit-' . getmypid();
+        $cockpitRoot = $this->home . '/cockpit';
         $projectsDir = $cockpitRoot . '/projects';
-        @mkdir($projectsDir, 0755, true);
+        mkdir($projectsDir, 0o700, true);
 
-        try {
-            self::assertSame($projectsDir, ProjectsRoot::resolve(null, $cockpitRoot));
-        } finally {
-            @rmdir($projectsDir);
-            @rmdir($cockpitRoot);
-        }
+        self::assertSame($projectsDir, ProjectsRoot::resolve(null, $cockpitRoot));
     }
 
     public function testCockpitProjectsDirSkippedWhenMissing(): void
     {
         putenv(ProjectsRoot::ENV_VAR);
-        putenv('HOME=/home/user');
 
-        $cockpitRoot = sys_get_temp_dir() . '/upkeep-test-no-projects-' . getmypid();
-
-        self::assertSame('/home/user/.upkeep/projects', ProjectsRoot::resolve(null, $cockpitRoot));
+        self::assertSame(
+            $this->home . '/.upkeep/projects',
+            ProjectsRoot::resolve(null, $this->home . '/cockpit-without-projects'),
+        );
     }
 
     public function testEnvVarStillWinsOverCockpitProjects(): void
     {
-        putenv(ProjectsRoot::ENV_VAR . '=/home/user/from-env');
+        putenv(ProjectsRoot::ENV_VAR . '=' . $this->home . '/from-env');
 
-        $cockpitRoot = sys_get_temp_dir() . '/upkeep-test-cockpit-env-' . getmypid();
-        $projectsDir = $cockpitRoot . '/projects';
-        @mkdir($projectsDir, 0755, true);
+        $projectsDir = $this->home . '/cockpit/projects';
+        mkdir($projectsDir, 0o700, true);
 
-        try {
-            self::assertSame('/home/user/from-env', ProjectsRoot::resolve(null, $cockpitRoot));
-        } finally {
-            @rmdir($projectsDir);
-            @rmdir($cockpitRoot);
-        }
+        self::assertSame($this->home . '/from-env', ProjectsRoot::resolve(null, $this->home . '/cockpit'));
     }
 
     public function testDefaultsUnderHomeBecauseDockerProvidersOnlyMountHome(): void
     {
         putenv(ProjectsRoot::ENV_VAR);
-        putenv('HOME=/home/user');
 
-        self::assertSame('/home/user/.upkeep/projects', ProjectsRoot::resolve(null));
+        self::assertSame($this->home . '/.upkeep/projects', ProjectsRoot::resolve(null));
     }
 
     public function testRefusesToFallBackToATempDirWhenHomeIsUnavailable(): void
@@ -97,5 +93,69 @@ final class ProjectsRootTest extends TestCase
 
         $this->expectException(AdapterException::class);
         ProjectsRoot::resolve(null);
+    }
+
+    public function testAnExplicitProjectsRootOutsideHomeIsRefusedWithTheDockerMountReason(): void
+    {
+        $outside = (string) realpath(sys_get_temp_dir()) . '/upkeep-outside-' . bin2hex(random_bytes(4));
+        mkdir($outside, 0o700, true);
+
+        try {
+            $this->expectException(AdapterException::class);
+            $this->expectExceptionMessageMatches('/only (share|mount)/i');
+            $this->expectExceptionMessageMatches('/home directory/i');
+            ProjectsRoot::resolve($outside);
+        } finally {
+            @rmdir($outside);
+        }
+    }
+
+    public function testTheEnvironmentVariableIsHeldToTheSameHomeContainmentRule(): void
+    {
+        putenv(ProjectsRoot::ENV_VAR . '=' . sys_get_temp_dir());
+
+        $this->expectException(AdapterException::class);
+        $this->expectExceptionMessageMatches('/home directory/i');
+        ProjectsRoot::resolve(null);
+    }
+
+    public function testATraversalEscapeOutOfHomeIsRefusedEvenThoughItStartsInsideHome(): void
+    {
+        $this->expectException(AdapterException::class);
+        $this->expectExceptionMessageMatches('/home directory/i');
+        ProjectsRoot::resolve($this->home . '/../escaped');
+    }
+
+    public function testASymlinkOutOfHomeIsRefusedThoughNoDotDotAppearsInTheSpelling(): void
+    {
+        $outside = (string) realpath(sys_get_temp_dir()) . '/upkeep-outside-' . bin2hex(random_bytes(4));
+        mkdir($outside, 0o700, true);
+        symlink($outside, $this->home . '/looks-inside');
+
+        try {
+            $this->expectException(AdapterException::class);
+            $this->expectExceptionMessageMatches('/home directory/i');
+            ProjectsRoot::resolve($this->home . '/looks-inside');
+        } finally {
+            @rmdir($outside);
+        }
+    }
+
+    public function testAResolvedRootIsCanonicalSoTwoSpellingsProduceOnePath(): void
+    {
+        mkdir($this->home . '/projects', 0o700, true);
+
+        self::assertSame(
+            ProjectsRoot::resolve($this->home . '/projects'),
+            ProjectsRoot::resolve($this->home . '/./projects/'),
+        );
+    }
+
+    public function testExplicitConfigurationIsAlsoRefusedWhenHomeIsUnknown(): void
+    {
+        putenv('HOME');
+
+        $this->expectException(AdapterException::class);
+        ProjectsRoot::resolve('/anywhere');
     }
 }

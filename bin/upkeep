@@ -4,6 +4,9 @@
 declare(strict_types=1);
 
 use Symfony\Component\Console\Application;
+use Upkeep\Adapter\DdevContribAdapterFactory;
+use Upkeep\Adapter\ProcessRunner;
+use Upkeep\Adapter\VolumeProbe;
 use Upkeep\Command\ApiProbeCommand;
 use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
@@ -15,15 +18,16 @@ use Upkeep\Command\ExecCommand;
 use Upkeep\Command\InitCommand;
 use Upkeep\Command\IssueCommand;
 use Upkeep\Command\MergeCommand;
-use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\ModulesAddCommand;
 use Upkeep\Command\ModulesCommand;
+use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\NotesCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StatusCommand;
 use Upkeep\Command\VersionOptionInput;
+use Upkeep\Security\SecretRedactor;
 
 foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
     if (file_exists($autoload)) {
@@ -32,16 +36,30 @@ foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php
     }
 }
 
+// ---------------------------------------------------------------------------
+// Composition root.
+//
+// This file is the ONLY place outside src/Adapter/ that names a concrete
+// engine. Commands receive an EngineAdapterFactory and never choose, name, or
+// construct an engine themselves — which is what makes the adapter-boundary
+// guard (`grep -ri "ddev" src/ --exclude-dir=Adapter`) meaningful rather than
+// merely satisfied by the capital D in a class name.
+// ---------------------------------------------------------------------------
+$redactor = SecretRedactor::fromEnvironment();
+$engines = new DdevContribAdapterFactory($redactor);
+$volumeProbe = VolumeProbe::withRunner(new ProcessRunner(static function (string $line): void {
+}, $redactor));
+
 $application = new Application('Upkeep', 'dev');
 $application->addCommands([
     new ApiProbeCommand(),
     new BaseArtifactsBuildCommand(),
     new BaseArtifactsStatusCommand(),
-    new CheckCommand(),
+    new CheckCommand($engines),
     new DashboardCommand(),
-    new DevCommand(),
-    new EnvPathCommand(),
-    new ExecCommand(),
+    new DevCommand($engines),
+    new EnvPathCommand($engines),
+    new ExecCommand($engines),
     new InitCommand(),
     new IssueCommand(),
     new MergeCommand(),
@@ -50,9 +68,9 @@ $application->addCommands([
     new ModulesCommand(),
     new NotesCommand(),
     new PatchesCommand(),
-    new PruneCommand(),
-    new ReviewCommand(),
-    new StatusCommand(),
+    new PruneCommand($engines, $volumeProbe),
+    new ReviewCommand($engines),
+    new StatusCommand($volumeProbe),
 ]);
 
 // The check/review/dashboard commands use --version as the target-core

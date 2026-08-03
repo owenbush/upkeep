@@ -6,6 +6,8 @@ namespace Upkeep\BaseArtifact;
 
 use Symfony\Component\Process\Process;
 use Upkeep\Adapter\ThrowawaySite;
+use Upkeep\Filesystem\FileWriter;
+use Upkeep\Security\CredentialEnvironment;
 
 /**
  * Builds the two canonical per-core-version base artifacts:
@@ -128,12 +130,17 @@ final readonly class BaseArtifactBuilder
             throw new BuildException(sprintf('DB export did not produce a non-empty dump at "%s".', $dumpPath));
         }
 
+        // Checked writes: a missing meta.yml or canonical marker makes the set
+        // read as incomplete and stops prune protecting it, while the command
+        // reports a successful build. The enclosing catch in build() removes
+        // the whole version directory if either fails.
         $meta = new ArtifactMeta($coreVersion, $coreMajor, $phpVersion, $dbEngine, new \DateTimeImmutable());
-        file_put_contents($this->layout->metaPath($coreMajor), $meta->toYaml());
-        file_put_contents(
+        FileWriter::write($this->layout->metaPath($coreMajor), $meta->toYaml(), FileWriter::MODE_SHARED);
+        FileWriter::write(
             $this->layout->canonicalMarkerPath($coreMajor),
             "This artifact set is canonical: never auto-pruned. Rebuild only via "
                 . "`upkeep base-artifacts:build --force`.\n",
+            FileWriter::MODE_SHARED,
         );
 
         return $meta;
@@ -144,7 +151,7 @@ final readonly class BaseArtifactBuilder
      */
     private function run(array $command, ?string $cwd): string
     {
-        $process = new Process($command, $cwd, timeout: self::PROCESS_TIMEOUT);
+        $process = new Process($command, $cwd, CredentialEnvironment::scrubbed(), timeout: self::PROCESS_TIMEOUT);
         $process->run(function (string $type, string $buffer): void {
             foreach (explode("\n", rtrim($buffer, "\n")) as $line) {
                 ($this->log)('  ' . $line);

@@ -10,6 +10,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Workflow\ExitCode;
 
 final class NeedsWorkCommandTest extends TestCase
 {
@@ -201,7 +202,7 @@ final class NeedsWorkCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         $display = $tester->getDisplay();
         self::assertStringContainsString('No cached check results', $display);
         self::assertStringContainsString('upkeep check', $display);
@@ -247,7 +248,7 @@ final class NeedsWorkCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('Could not post comment', $tester->getDisplay());
     }
 
@@ -297,7 +298,7 @@ final class NeedsWorkCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 }

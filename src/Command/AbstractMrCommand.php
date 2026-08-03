@@ -4,38 +4,31 @@ declare(strict_types=1);
 
 namespace Upkeep\Command;
 
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
-use Upkeep\Adapter\DdevContribAdapter;
+use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\EngineAdapterInterface;
-use Upkeep\Adapter\ProcessRunner;
-use Upkeep\Adapter\ProjectsRoot;
-use Upkeep\BaseArtifact\ArtifactLayout;
-use Upkeep\Cockpit\Cockpit;
 use Upkeep\Gitlab\GitlabClient;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Workflow\MrContext;
 use Upkeep\Workflow\MrContextResolver;
 use Upkeep\Workflow\WorkflowException;
 
 /**
  * Shared wiring for the single-MR commands (check, review): argument/option
- * surface, cockpit + registry + GitLab client construction, MrContext
- * resolution, and engine-adapter construction.
+ * surface, cockpit + registry + GitLab client construction, and MrContext
+ * resolution.
  *
  * Deliberately untested orchestration — the meaningful logic (context
  * resolution outcomes, core-version defaulting, exit-code mapping) lives in
  * Upkeep\Workflow and is unit-tested there; the adapter operations are the
  * task-11 surface. These commands are the live verification layer.
  */
-abstract class AbstractMrCommand extends Command
+abstract class AbstractMrCommand extends UpkeepCommand
 {
-    public function __construct(private readonly ?EngineAdapterInterface $adapter = null)
+    public function __construct(private readonly EngineAdapterFactory $engines)
     {
         parent::__construct();
     }
@@ -54,35 +47,11 @@ abstract class AbstractMrCommand extends Command
      */
     protected function configureMrSurface(): void
     {
-        $this
-            ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name (see `upkeep modules`)')
-            ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID on the module\'s drupalcode project')
-            ->addOption(
-                'version',
-                null,
-                InputOption::VALUE_REQUIRED,
-                'Target core major version; must be tracked by the module\'s registry entry. Defaults to the first '
-                . 'core version listed there.',
-            )
-            ->addOption(
-                'cockpit',
-                null,
-                InputOption::VALUE_REQUIRED,
-                sprintf(
-                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
-                    Cockpit::ENV_VAR,
-                ),
-            )
-            ->addOption(
-                'projects-root',
-                null,
-                InputOption::VALUE_REQUIRED,
-                sprintf(
-                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
-                    . 'exists, then ~/.upkeep/projects)',
-                    ProjectsRoot::ENV_VAR,
-                ),
-            );
+        $this->addModuleArgument()
+            ->addMrArgument()
+            ->addTargetCoreOption()
+            ->addCockpitOption()
+            ->addProjectsRootOption();
     }
 
     /**
@@ -92,63 +61,38 @@ abstract class AbstractMrCommand extends Command
      */
     protected function resolveContext(InputInterface $input, SymfonyStyle $io): MrContext
     {
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        $registry = $cockpit->loadRegistry();
+        $registry = $this->cockpit($input)->loadRegistry();
 
-        $tokens = new TokenResolver();
+        $tokens = GitlabClientFactory::resolver($io);
         $token = $tokens->resolve();
         if ($token === null) {
-            throw new WorkflowException(sprintf(
-                'No GitLab token found; MR resolution needs one. Configure one of: %s. (The token is never printed '
-                . 'or logged.)',
-                $tokens->describeSources(),
-            ));
+            throw new WorkflowException(GitlabClientFactory::missingTokenMessage($tokens));
         }
 
-        $iidRaw = (string) $input->getArgument('mr');
-        if (preg_match('/^\d+$/', $iidRaw) !== 1) {
-            throw new WorkflowException(sprintf(
-                'The <mr> argument must be a merge request IID (a positive integer), got "%s".',
-                $iidRaw,
-            ));
-        }
-
-        $io->writeln(sprintf('Resolving MR !%s of %s via GitLab ...', $iidRaw, $input->getArgument('module')));
-
-        $version = $input->getOption('version');
+        $iid = self::mrIid($input);
+        $io->writeln(sprintf('Resolving MR !%d of %s via GitLab ...', $iid, self::stringArgument($input, 'module')));
 
         return (new MrContextResolver($registry->modules(), new GitlabClient(HttpClient::create(), $token)))
             ->resolve(
-                (string) $input->getArgument('module'),
-                (int) $iidRaw,
-                $version !== null ? (string) $version : null,
+                self::stringArgument($input, 'module'),
+                $iid,
+                self::stringOption($input, 'version'),
             );
     }
 
-    protected function cockpit(InputInterface $input): Cockpit
-    {
-        return Cockpit::resolve($input->getOption('cockpit'));
-    }
-
     /**
-     * The engine adapter, logging stage lines always and streamed process
-     * output only in verbose mode (long steps still show one line per stage).
+     * The engine adapter for this invocation, logging stage lines always and
+     * streamed process output only in verbose mode (long steps still show one
+     * line per stage). The engine implementation comes from the injected
+     * factory — no command names or chooses one.
      */
     protected function adapter(InputInterface $input, OutputInterface $output): EngineAdapterInterface
     {
-        if ($this->adapter !== null) {
-            return $this->adapter;
-        }
-
-        $cockpit = $this->cockpit($input);
-        $stageLog = static fn (string $line) => $output->writeln($line);
-        $processLog = static fn (string $line) => $output->writeln($line, OutputInterface::VERBOSITY_VERBOSE);
-
-        return new DdevContribAdapter(
-            new ArtifactLayout($cockpit->baseArtifactsPath()),
-            ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root),
-            new ProcessRunner($processLog),
-            $stageLog,
+        return $this->engines->create(
+            $this->cockpit($input),
+            self::stringOption($input, 'projects-root'),
+            static fn (string $line) => $output->writeln($line),
+            static fn (string $line) => $output->writeln($line, OutputInterface::VERBOSITY_VERBOSE),
         );
     }
 

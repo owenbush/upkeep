@@ -9,6 +9,12 @@ namespace Upkeep\Adapter;
  */
 final readonly class CheckResult
 {
+    /**
+     * How much of a check's output tail is reported. Child output is
+     * unbounded; the tail is where the failure is.
+     */
+    public const EXCERPT_BYTES = 2000;
+
     public function __construct(
         public CheckType $type,
         public CheckStatus $status,
@@ -70,5 +76,17 @@ final readonly class CheckResult
     public function passed(): bool
     {
         return $this->status->passed();
+    }
+
+    /**
+     * The trailing excerpt of this check's output — what the console report
+     * echoes and what the merge-request comment quotes. One truncation rule,
+     * so the two never disagree about what "the last 2000 bytes" means.
+     */
+    public function outputExcerpt(int $maxBytes = self::EXCERPT_BYTES): string
+    {
+        $output = trim($this->output);
+
+        return \strlen($output) <= $maxBytes ? $output : trim(substr($output, -$maxBytes));
     }
 }

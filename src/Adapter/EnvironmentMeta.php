@@ -6,17 +6,25 @@ namespace Upkeep\Adapter;
 
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
+use Upkeep\Filesystem\FilesystemException;
+use Upkeep\Filesystem\FileWriter;
 
 /**
  * The `.upkeep-env.yml` dotfile written into every provisioned environment:
  * records what the environment was provisioned for (module, core major), what
- * it was seeded from (exact core version of the base artifact), and which
- * engine add-on version it carries.
+ * it was seeded from (exact core version of the base artifact), which engine
+ * add-on version it carries, and when it was last used.
+ *
+ * `last_used_at` is what `prune --older-than` filters on, so it is stamped on
+ * every reuse — without that, age falls back to creation time and prune
+ * deletes environments that are in active use.
  *
  * It doubles as the provisioning completion marker — it is written as the
  * LAST provisioning step, so a missing/unparseable dotfile means a partial
- * provision that must be torn down and rebuilt, never reused. Task 16's disk
- * attribution also reads it.
+ * provision that must be torn down and rebuilt, never reused. Every write of
+ * it therefore goes through FileWriter's rename(): the path must never stop
+ * existing, or a re-stamp would look like an interrupted provision and force
+ * a multi-gigabyte rebuild. Task 16's disk attribution also reads it.
  */
 final readonly class EnvironmentMeta
 {
@@ -30,6 +38,7 @@ final readonly class EnvironmentMeta
         public string $seedCoreVersion,
         public string $addOnVersion,
         public \DateTimeImmutable $createdAt,
+        public ?\DateTimeImmutable $lastUsedAt = null,
     ) {
     }
 
@@ -51,13 +60,9 @@ final readonly class EnvironmentMeta
             }
         }
 
-        try {
-            $createdAt = new \DateTimeImmutable((string) $data['created_at']);
-        } catch (\Exception $e) {
-            throw new AdapterException(sprintf(
-                'Environment meta key "created_at" is not a parseable timestamp: "%s".',
-                $data['created_at'],
-            ), previous: $e);
+        $lastUsedRaw = $data['last_used_at'] ?? null;
+        if ($lastUsedRaw !== null && !is_scalar($lastUsedRaw)) {
+            throw new AdapterException('Environment meta key "last_used_at" must be a timestamp.');
         }
 
         return new self(
@@ -65,19 +70,83 @@ final readonly class EnvironmentMeta
             (string) $data['core_major'],
             (string) $data['seed_core_version'],
             (string) $data['addon_version'],
-            $createdAt,
+            self::timestamp('created_at', $data['created_at']),
+            $lastUsedRaw === null ? null : self::timestamp('last_used_at', $lastUsedRaw),
         );
     }
 
     public function toYaml(): string
     {
-        return Yaml::dump([
+        $data = [
             'module' => $this->moduleName,
             'core_major' => $this->coreMajor,
             'seed_core_version' => $this->seedCoreVersion,
             'addon_version' => $this->addOnVersion,
             'created_at' => $this->createdAt->format(\DateTimeInterface::ATOM),
-        ]);
+        ];
+        if ($this->lastUsedAt !== null) {
+            $data['last_used_at'] = $this->lastUsedAt->format(\DateTimeInterface::ATOM);
+        }
+
+        return Yaml::dump($data);
+    }
+
+    public function withLastUsedAt(\DateTimeImmutable $at): self
+    {
+        return new self(
+            $this->moduleName,
+            $this->coreMajor,
+            $this->seedCoreVersion,
+            $this->addOnVersion,
+            $this->createdAt,
+            $at,
+        );
+    }
+
+    /**
+     * Writes this meta as the environment's dotfile, atomically.
+     *
+     * @throws FilesystemException when the dotfile cannot be written
+     */
+    public function writeTo(string $projectPath): void
+    {
+        FileWriter::write(
+            rtrim($projectPath, '/') . '/' . self::FILENAME,
+            $this->toYaml(),
+            FileWriter::MODE_SHARED,
+        );
+    }
+
+    /**
+     * Records that the environment at $projectPath is in use right now, so
+     * `prune --older-than` measures time since last use rather than time
+     * since creation.
+     *
+     * @throws AdapterException when the existing dotfile cannot be read
+     * @throws FilesystemException when the updated dotfile cannot be written
+     */
+    public static function stampLastUsed(string $projectPath, ?\DateTimeImmutable $at = null): void
+    {
+        $path = rtrim($projectPath, '/') . '/' . self::FILENAME;
+        $content = @file_get_contents($path);
+        if ($content === false) {
+            throw new AdapterException(sprintf('Cannot read the environment meta at "%s".', $path));
+        }
+
+        self::fromYaml($content)->withLastUsedAt($at ?? new \DateTimeImmutable())->writeTo($projectPath);
+    }
+
+    private static function timestamp(string $key, mixed $value): \DateTimeImmutable
+    {
+        try {
+            return new \DateTimeImmutable((string) (is_scalar($value) ? $value : ''));
+        } catch (\Exception $e) {
+            throw new AdapterException(sprintf(
+                'Environment meta key "%s" is not a parseable timestamp: "%s".',
+                $key,
+                is_scalar($value) ? (string) $value : get_debug_type($value),
+            ), previous: $e);
+        }
     }
 
     /**

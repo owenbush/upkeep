@@ -68,11 +68,22 @@ final readonly class ArtifactScanner
         );
     }
 
+    /**
+     * Symlinked directories are deliberately NOT followed: FOLLOW_SYMLINKS is
+     * unset and RecursiveDirectoryIterator::hasChildren() defaults to
+     * $allowLinks = false, so the measure stays inside the artifact tree.
+     *
+     * CATCH_GET_CHILD makes an unreadable subtree an under-count rather than
+     * an UnexpectedValueException out of `base-artifacts:status` — a size
+     * report is not worth failing the command over.
+     */
     private static function directorySize(string $dir): int
     {
         $bytes = 0;
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::LEAVES_ONLY,
+            \RecursiveIteratorIterator::CATCH_GET_CHILD,
         );
         foreach ($iterator as $file) {
             if ($file->isFile()) {

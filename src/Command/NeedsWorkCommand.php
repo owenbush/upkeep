@@ -5,23 +5,18 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\HttpClient\HttpClient;
-use Symfony\Component\Process\Process;
-use Upkeep\Adapter\CheckResult;
 use Upkeep\Adapter\CheckStatus;
-use Upkeep\Cockpit\Cockpit;
 use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Results\CachedResult;
 use Upkeep\Results\ResultsCache;
+use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\MrContextResolver;
 use Upkeep\Workflow\WorkflowException;
 
@@ -33,10 +28,8 @@ use Upkeep\Workflow\WorkflowException;
     name: 'needs-work',
     description: 'Post local check results as a comment on the merge request.',
 )]
-final class NeedsWorkCommand extends Command
+final class NeedsWorkCommand extends UpkeepCommand
 {
-    private const EXCERPT_BYTES = 2000;
-
     public function __construct(
         private readonly ?GitlabClient $gitlabClient = null,
     ) {
@@ -45,65 +38,36 @@ final class NeedsWorkCommand extends Command
 
     protected function configure(): void
     {
-        $this
-            ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
-            ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID')
-            ->addOption(
-                'version',
-                null,
-                InputOption::VALUE_REQUIRED,
-                'Target core major version (defaults to first tracked version)',
-            )
-            ->addOption(
-                'cockpit',
-                null,
-                InputOption::VALUE_REQUIRED,
-                sprintf(
-                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
-                    Cockpit::ENV_VAR,
-                ),
-            )
-            ->addOption('no-open', null, InputOption::VALUE_NONE, 'Do not open the drupal.org issue in the browser')
+        $this->addModuleArgument()
+            ->addMrArgument()
+            ->addTargetCoreOption()
+            ->addCockpitOption()
+            ->addNoOpenOption()
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Print the comment without posting it');
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
+        $cockpit = $this->cockpit($input);
+        $modules = $this->modules($cockpit);
+        $iid = self::mrIid($input);
 
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        $modules = $cockpit->loadRegistry()->modules();
-
-        $gitlab = $this->gitlabClient ?? $this->buildGitlabClient($io);
+        $gitlab = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);
         if ($gitlab === null) {
-            return Command::FAILURE;
+            return ExitCode::INFRASTRUCTURE;
         }
 
-        $iidRaw = (string) $input->getArgument('mr');
-        if (!preg_match('/^\d+$/', $iidRaw) || (int) $iidRaw < 1) {
-            $io->error(sprintf('"%s" is not a valid merge request IID.', $iidRaw));
-
-            return Command::FAILURE;
-        }
-
-        try {
-            $resolver = new MrContextResolver($modules, $gitlab);
-            $context = $resolver->resolve(
-                (string) $input->getArgument('module'),
-                (int) $iidRaw,
-                $input->getOption('version'),
-            );
-        } catch (WorkflowException $e) {
-            $io->error($e->getMessage());
-
-            return Command::FAILURE;
-        }
+        $context = (new MrContextResolver($modules, $gitlab))->resolve(
+            self::stringArgument($input, 'module'),
+            $iid,
+            self::stringOption($input, 'version'),
+        );
 
         $mr = $context->mergeRequest;
         $module = $context->module;
         $coreMajor = $context->coreMajor;
 
-        $cache = new ResultsCache($cockpit->root . '/results');
+        $cache = new ResultsCache($cockpit->resultsPath());
         $cached = $mr->headSha !== null
             ? $cache->find($module->name, $mr->iid, $coreMajor, $mr->headSha)
             : null;
@@ -117,7 +81,7 @@ final class NeedsWorkCommand extends Command
         }
 
         if ($cached === null) {
-            $io->error(sprintf(
+            throw new WorkflowException(sprintf(
                 'No cached check results for %s !%d (core %s). Run `upkeep check %s %d --version=%s` first.',
                 $module->name,
                 $mr->iid,
@@ -126,8 +90,6 @@ final class NeedsWorkCommand extends Command
                 $mr->iid,
                 $coreMajor,
             ));
-
-            return Command::FAILURE;
         }
 
         if ($stale) {
@@ -144,14 +106,17 @@ final class NeedsWorkCommand extends Command
             $io->section('Comment preview');
             $io->writeln($comment);
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         $result = $gitlab->postNote($context->project, $mr->iid, $comment);
         if ($result instanceof ApiFailure) {
-            $io->error(sprintf('Could not post comment on !%d: %s', $mr->iid, $result->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(sprintf(
+                'Could not post comment on !%d [%s]: %s',
+                $mr->iid,
+                $result->shortCode(),
+                $result->message,
+            ));
         }
 
         $io->success(sprintf('Comment posted on !%d — %s', $mr->iid, $mr->webUrl));
@@ -159,18 +124,14 @@ final class NeedsWorkCommand extends Command
         $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
         if ($nid !== null && !$input->getOption('no-open')) {
             $issueUrl = IssueReference::issueUrl($nid);
-            $opener = \PHP_OS_FAMILY === 'Darwin' ? 'open' : 'xdg-open';
-            $process = new Process([$opener, $issueUrl]);
-            $process->run();
-
-            if ($process->isSuccessful()) {
+            if (BrowserOpener::open($issueUrl)) {
                 $io->writeln(sprintf('Opened drupal.org issue #%d — set the status to Needs work.', $nid));
             } else {
                 $io->writeln(sprintf('Set the issue status at: %s', $issueUrl));
             }
         }
 
-        return Command::SUCCESS;
+        return ExitCode::OK;
     }
 
     private function formatComment(CachedResult $cached, string $coreMajor): string
@@ -205,7 +166,7 @@ final class NeedsWorkCommand extends Command
         }
 
         foreach ($failedChecks as $check) {
-            $excerpt = $this->excerptOutput($check->output);
+            $excerpt = $check->outputExcerpt();
             if ($excerpt !== '') {
                 $lines[] = '';
                 $lines[] = sprintf('<details><summary>%s output</summary>', $check->type->value);
@@ -223,35 +184,5 @@ final class NeedsWorkCommand extends Command
         $lines[] = '*Posted via [upkeep](https://github.com/owenbush/upkeep)*';
 
         return implode("\n", $lines);
-    }
-
-    private function excerptOutput(string $output): string
-    {
-        $output = trim($output);
-        if ($output === '') {
-            return '';
-        }
-
-        if (\strlen($output) > self::EXCERPT_BYTES) {
-            return substr($output, -self::EXCERPT_BYTES);
-        }
-
-        return $output;
-    }
-
-    private function buildGitlabClient(SymfonyStyle $io): ?GitlabClient
-    {
-        $token = (new TokenResolver())->resolve();
-        if ($token === null) {
-            $io->error(sprintf(
-                'No GitLab token found. Configure one of: env var %s, config file %s.',
-                TokenResolver::DEFAULT_ENV_VAR,
-                TokenResolver::defaultConfigFile(),
-            ));
-
-            return null;
-        }
-
-        return new GitlabClient(HttpClient::create(), $token);
     }
 }

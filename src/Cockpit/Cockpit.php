@@ -4,9 +4,17 @@ declare(strict_types=1);
 
 namespace Upkeep\Cockpit;
 
+use Upkeep\Filesystem\FilesystemException;
+use Upkeep\Filesystem\PathGuard;
+
 /**
  * The cockpit: a control-project directory holding the module registry,
  * base artifacts, and the shared fixture library.
+ *
+ * The root is canonicalised on construction, so `..` sequences and symlinked
+ * spellings are resolved once here instead of surviving into every derived
+ * path — which also means two spellings of one cockpit compare equal, which
+ * the prune surface's protected-root check depends on.
  */
 final readonly class Cockpit
 {
@@ -14,21 +22,53 @@ final readonly class Cockpit
     public const BASE_ARTIFACTS_DIR = 'base-artifacts';
     public const FIXTURES_DIR = 'fixtures';
     public const PROJECTS_DIR = 'projects';
+    public const RESULTS_DIR = 'results';
+    public const DASHBOARD_CACHE_DIR = 'cache/dashboard';
     public const ENV_VAR = 'UPKEEP_COCKPIT';
 
-    public function __construct(public string $root)
+    public string $root;
+
+    /**
+     * @throws FilesystemException when the path is empty or unresolvable
+     */
+    public function __construct(string $root)
     {
+        $this->root = rtrim(PathGuard::canonicalize($root), '/');
     }
 
     /**
      * Resolves the cockpit directory: explicit --cockpit flag first, then the
      * UPKEEP_COCKPIT environment variable, then the current working directory.
+     *
+     * @throws FilesystemException when the resulting path is empty or unresolvable
      */
     public static function resolve(?string $option): self
     {
-        $env = getenv(self::ENV_VAR);
+        if ($option !== null) {
+            if ($option === '') {
+                throw new FilesystemException(
+                    'An empty --cockpit was given. Pass the path to a cockpit directory, or omit --cockpit to use '
+                    . '$' . self::ENV_VAR . ' or the current directory.',
+                );
+            }
 
-        return new self($option ?? ($env !== false && $env !== '' ? $env : getcwd()));
+            return new self($option);
+        }
+
+        $env = getenv(self::ENV_VAR);
+        if ($env !== false && $env !== '') {
+            return new self($env);
+        }
+
+        $cwd = getcwd();
+        if ($cwd === false) {
+            throw new FilesystemException(
+                'Cannot use the current directory as the cockpit: it is unavailable (it may have been deleted). '
+                . 'Re-run from an existing directory, or pass --cockpit / $' . self::ENV_VAR . '.',
+            );
+        }
+
+        return new self($cwd);
     }
 
     public function registryPath(): string
@@ -49,6 +89,18 @@ final readonly class Cockpit
     public function projectsPath(): string
     {
         return $this->root . '/' . self::PROJECTS_DIR;
+    }
+
+    /** Where `check` persists per-run results and the dashboard/gate read them. */
+    public function resultsPath(): string
+    {
+        return $this->root . '/' . self::RESULTS_DIR;
+    }
+
+    /** Where the dashboard caches remote GitLab/drupal.org state per module. */
+    public function dashboardCachePath(): string
+    {
+        return $this->root . '/' . self::DASHBOARD_CACHE_DIR;
     }
 
     public function loadRegistry(): ModuleRegistry

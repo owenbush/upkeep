@@ -15,6 +15,8 @@ use Upkeep\Adapter\VolumeProbe;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Tests\Support\StubEngineAdapterFactory;
+use Upkeep\Workflow\ExitCode;
 
 final class PruneCommandTest extends TestCase
 {
@@ -25,10 +27,17 @@ final class PruneCommandTest extends TestCase
     /** @var list<array{string, string}> */
     private array $teardowns = [];
 
+    private string|false $originalHome;
+
     protected function setUp(): void
     {
         $this->teardowns = [];
-        $this->world = sys_get_temp_dir() . '/upkeep-prune-cmd-test-' . bin2hex(random_bytes(4));
+        $this->world = (string) realpath(sys_get_temp_dir()) . '/upkeep-prune-cmd-test-' . bin2hex(random_bytes(4));
+        // The projects root must resolve under $HOME (Docker providers only
+        // mount the home directory). Point $HOME at the temp world so the
+        // fixture stays in sys_get_temp_dir() and the real home is untouched.
+        $this->originalHome = getenv('HOME');
+        putenv('HOME=' . $this->world);
         $this->cockpit = $this->world . '/cockpit';
         $this->projects = $this->world . '/projects';
 
@@ -82,6 +91,7 @@ final class PruneCommandTest extends TestCase
 
     protected function tearDown(): void
     {
+        putenv($this->originalHome === false ? 'HOME' : 'HOME=' . $this->originalHome);
         exec('rm -rf ' . escapeshellarg($this->world));
     }
 
@@ -134,7 +144,10 @@ final class PruneCommandTest extends TestCase
             }
         };
 
-        $tester = new CommandTester(new PruneCommand($adapter, new VolumeProbe(static fn (array $c): ?string => null)));
+        $tester = new CommandTester(new PruneCommand(
+            new StubEngineAdapterFactory($adapter),
+            new VolumeProbe(static fn (array $c): ?string => null),
+        ));
         $tester->execute([
             '--cockpit' => $this->cockpit,
             '--projects-root' => $this->projects,
@@ -240,16 +253,16 @@ final class PruneCommandTest extends TestCase
     {
         $tester = $this->runPrune(['--trees' => true, '--older-than' => '30']);
 
-        self::assertSame(1, $tester->getStatusCode());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $tester->getStatusCode());
         self::assertStringContainsString('Invalid duration', $tester->getDisplay());
     }
 
     public function testRequiresExactlyOneScopeFlag(): void
     {
         $none = $this->runPrune([]);
-        self::assertSame(1, $none->getStatusCode());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $none->getStatusCode());
 
         $two = $this->runPrune(['--trees' => true, '--snapshots' => true]);
-        self::assertSame(1, $two->getStatusCode());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $two->getStatusCode());
     }
 }

@@ -10,12 +10,15 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Gitlab\EndpointClosed;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\MalformedResponse;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\NotFound;
 use Upkeep\Gitlab\Pipeline;
 use Upkeep\Gitlab\PipelineStatus;
 use Upkeep\Gitlab\Project;
 use Upkeep\Gitlab\RateLimited;
+use Upkeep\Gitlab\RequestRejected;
+use Upkeep\Gitlab\ResourceMissing;
 use Upkeep\Gitlab\Tag;
 use Upkeep\Gitlab\TransportError;
 
@@ -260,13 +263,16 @@ final class GitlabClientTest extends TestCase
         $this->assertCount(2, $this->requests);
     }
 
-    public function testMalformedJsonBodyReturnsTransportError(): void
+    public function testMalformedJsonBodyReturnsMalformedResponse(): void
     {
+        // A response DID arrive — it is just unusable — so this is not a
+        // transport failure. See ApiFailure's condition table.
         $client = $this->client([new MockResponse('<html>gateway timeout</html>', ['http_code' => 200])]);
 
         $result = $client->project('conditions_helper');
 
-        $this->assertInstanceOf(TransportError::class, $result);
+        $this->assertInstanceOf(MalformedResponse::class, $result);
+        $this->assertSame(200, $result->status);
         $this->assertStringNotContainsString(self::TOKEN, $result->message);
     }
 
@@ -389,14 +395,27 @@ final class GitlabClientTest extends TestCase
         $this->assertStringContainsString('updated_after=2026-05-01T10%3A00%3A00', $this->requests[1]['url']);
     }
 
-    public function testMergedSinceUnknownTagIsTypedNotFound(): void
+    public function testMergedSinceUnknownTagIsTypedResourceMissing(): void
     {
+        // The tags() request succeeded; the tag is simply absent from it. That
+        // is a domain-level miss, not the HTTP 404 the old NotFound claimed.
         $client = $this->client([self::json(self::tagsPayload())]);
 
         $result = $client->mergedSinceTag($this->projectModel(), '9.9.9');
 
-        $this->assertInstanceOf(NotFound::class, $result);
+        $this->assertInstanceOf(ResourceMissing::class, $result);
+        $this->assertNull($result->status);
         $this->assertSame('https://git.drupalcode.org/project/conditions_helper/-/tags', $result->browserUrl);
+    }
+
+    public function testMergedSinceTagWithoutACommitDateIsTypedMalformedResponse(): void
+    {
+        $client = $this->client([self::json([['name' => '1.0.1', 'target' => 'aaa111', 'commit' => ['id' => 'a']]])]);
+
+        $result = $client->mergedSinceTag($this->projectModel(), '1.0.1');
+
+        $this->assertInstanceOf(MalformedResponse::class, $result);
+        $this->assertStringContainsString('no commit date', $result->message);
     }
 
     public function testMergeSendsSinglePutWithShaGuard(): void
@@ -456,7 +475,7 @@ final class GitlabClientTest extends TestCase
         );
     }
 
-    public function testMergeRejectionIsTypedTransportErrorWithStatus(): void
+    public function testMergeRejectionIsTypedRequestRejectedWithStatusAndTheServersOwnDetail(): void
     {
         $client = $this->client([
             self::json(['message' => '405 Method Not Allowed: MR is a draft'], 405),
@@ -464,10 +483,33 @@ final class GitlabClientTest extends TestCase
 
         $result = $client->merge($this->projectModel(), 2);
 
-        $this->assertInstanceOf(TransportError::class, $result);
+        $this->assertInstanceOf(RequestRejected::class, $result);
         $this->assertSame(405, $result->status);
+        $this->assertSame('405', $result->shortCode());
         $this->assertStringContainsString('HTTP 405', $result->message);
+        $this->assertStringContainsString('MR is a draft', $result->message);
         $this->assertStringNotContainsString(self::TOKEN, $result->message);
+    }
+
+    public function testRejectionWithANonJsonErrorBodyReportsTheStatusOnly(): void
+    {
+        $client = $this->client([new MockResponse('<html>502 Bad Gateway</html>', ['http_code' => 502])]);
+
+        $result = $client->merge($this->projectModel(), 2);
+
+        $this->assertInstanceOf(RequestRejected::class, $result);
+        $this->assertSame(502, $result->status);
+        $this->assertStringContainsString('HTTP 502', $result->message);
+    }
+
+    public function testRejectionWithAnArrayValuedErrorFieldJoinsTheEntries(): void
+    {
+        $client = $this->client([self::json(['message' => ['branch missing', 'sha mismatch']], 400)]);
+
+        $result = $client->merge($this->projectModel(), 2);
+
+        $this->assertInstanceOf(RequestRejected::class, $result);
+        $this->assertStringContainsString('branch missing; sha mismatch', $result->message);
     }
 
     #[DataProvider('pipelineStatusProvider')]

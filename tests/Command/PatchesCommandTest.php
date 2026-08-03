@@ -11,6 +11,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Workflow\ExitCode;
 
 final class PatchesCommandTest extends TestCase
 {
@@ -223,7 +224,7 @@ final class PatchesCommandTest extends TestCase
         $tester = new CommandTester(new PatchesCommand($drupal, $gitlab));
         $exit = $tester->execute(['--cockpit' => $this->cockpit, '--module' => 'nope']);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 

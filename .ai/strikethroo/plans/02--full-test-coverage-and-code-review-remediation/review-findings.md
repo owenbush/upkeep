@@ -36,10 +36,10 @@ remediation task.
 
 | Owning task | Count | IDs |
 | --- | --- | --- |
-| Task 6 — credential handling and subprocess output leakage | 9 | SEC-CRED-01…04, SEC-PROC-01…05 |
+| Task 6 — credential handling and subprocess output leakage | 9 | SEC-CRED-01…04, SEC-PROC-01…05 — **all resolved 2026-08-03** |
 | Task 7 — filesystem path and result-file handling | 16 | SEC-FS-01…16 |
 | Task 8 — GitLab error-taxonomy consistency | 9 | BP-GL-01…09 |
-| Task 9 — command-class duplication and adapter-boundary compliance | 16 | BP-CMD-01…16 |
+| Task 9 — command-class duplication and adapter-boundary compliance | 16 | BP-CMD-01…16 — **all resolved 2026-08-03** |
 | OUT OF SCOPE (with stated reason) | 5 | OOS-01…05 |
 
 Severity definitions used here: **Critical** = fatal at runtime on a reachable
@@ -194,6 +194,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Replace with the single shared token-guard helper
   introduced by SEC-CRED-03, which uses `$resolver->describeSources()`.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** `ModulesAddCommand::buildClient()` no longer
+  references the undefined `TokenResolver::ENV_VAR` / `::CONFIG_PATH_HINT`; it
+  delegates to the new shared seam `Gitlab\GitlabClientFactory` (SEC-CRED-03).
+  The command gained an optional `?TokenResolver` constructor argument so the
+  no-token path is testable without touching the real `~/.config/upkeep/`.
+  Covered by `ModulesAddCommandTest::testMissingTokenExplainsTheSourcesInsteadOfFatallyErroring()`.
 
 ---
 
@@ -230,6 +236,16 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   (`chmod 600 <path>`) and must never include token material. Do **not** refuse
   and do **not** add a strict mode. Cover both branches with tests.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** `TokenResolver` gained an injected warning
+  sink (`?\Closure(string): void`, defaulting to a no-op). After a successful
+  read it `stat()`s the file and, when `($mode & 0o077) !== 0`, emits **one**
+  warning per resolver naming the path, the octal mode, and `chmod 600 <path>`.
+  It does **not** refuse. The message contains no token material.
+  `GitlabClientFactory::resolver()` wires the sink to `SymfonyStyle::warning()`
+  so the warning actually reaches the operator. Covered by
+  `TokenResolverTest::testGroupOrWorldReadableTokenFileWarnsWithoutEchoingTheToken()`,
+  `::testWarnsOnlyOnceAcrossRepeatedResolves()`, `::testPrivateTokenFileDoesNotWarn()`
+  and `GitlabClientFactoryTest::testForConsoleSurfacesTheTokenFilePermissionWarning()`.
 
 ---
 
@@ -258,6 +274,18 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `describeSources()` and returning one exit code. Fixing this also removes
   the SEC-CRED-01 line. Coordinate with BP-CMD-03 (exit-code contract).
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** New `Gitlab\GitlabClientFactory` is the one
+  seam: `missingTokenMessage()` produces the single wording from
+  `describeSources()`, `fromResolvedToken()` reports it and returns null, and
+  `forConsole()` does both with the warning sink wired. All nine sites now route
+  through it — `AbstractMrCommand::resolveContext()` (throws `WorkflowException`
+  carrying the shared message), `ApiProbeCommand`, `NotesCommand`,
+  `DashboardCommand`, `MergeCommand`, `IssueCommand`, `NeedsWorkCommand`,
+  `ModulesAddCommand`, and `PatchesCommand` (V4's silent path now emits the
+  message as a **warning**, once, since missing-token there is a documented
+  degraded mode rather than a failure). Exit codes were left as they are: D2
+  assigns the 0/1/2 unification to task 9, which now has one message site to
+  work from. Covered by `GitlabClientFactoryTest`.
 
 ---
 
@@ -275,6 +303,13 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   (returning null with a specific message) a value containing characters
   invalid in an HTTP header value. Never echo the value in the diagnostic.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** `TokenResolver::resolve()` now takes the
+  **first non-empty line** of either source (`firstLine()`), and refuses a value
+  containing characters illegal in an HTTP header value
+  (`/[\x00-\x1F\x7F]/`), returning null and warning through the injected sink.
+  The diagnostic names the source (env var or file path), never the value.
+  Covered by `TokenResolverTest::testOnlyTheFirstNonEmptyLineOfTheConfigFileIsUsed()`
+  and `::testValueWithCharactersIllegalInAnHttpHeaderIsRejectedWithoutEchoingIt()`.
 
 ---
 
@@ -322,6 +357,27 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
      sentinel token and asserts it appears in none of the four sinks (this is
      also self-validation step 10 of the plan).
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** Both layers implemented.
+  **Layer 1 (unreachable):** new `Security\CredentialEnvironment::scrubbed()`
+  returns `[TokenResolver::DEFAULT_ENV_VAR => false]`, passed as Process's `$env`
+  at **every** construction site in `src/` — `ProcessRunner::start()` and
+  `::capture()`, `ExecCommand`, `DiskUsage`, `BaseArtifactBuilder`,
+  `IssueCommand`, `NeedsWorkCommand`. Verified against Symfony 7's
+  `Process::start()` filter `if (false !== $v && ...)`.
+  **Layer 2 (redacted):** new `Security\SecretRedactor` (literal replacement of
+  the secret values in play, longest first, values under 8 bytes ignored) is
+  injected into `ProcessRunner` — defaulting to `SecretRedactor::fromEnvironment()`
+  — and applied at every exit: the `run()` failure and timeout messages, the log
+  closures in both `start()` and `capture()`, and the combined output returned in
+  `CapturedProcess`. Because `CapturedProcess::$output` is redacted at source,
+  `CheckCommand::renderSummary()`'s excerpt and `ResultsCache::store()`'s
+  persisted `'output'` field inherit the guarantee with no change to either file.
+  Covered by `ProcessRunnerTest` (sentinel in argv *and* output → present in
+  neither the exception message nor the log stream; child-environment absence
+  with a non-scrubbed control process; redaction surviving into the cached
+  results JSON), `SecretRedactorTest`, and the structural
+  `ProcessEnvironmentInvariantTest`, which asserts the scrub at every
+  `new Process(` in `src/` so a future site cannot silently reopen the hole.
 
 ---
 
@@ -341,6 +397,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   (mirroring `CheckCommand::EXCERPT_BYTES`), run it through the SEC-PROC-01
   redactor, and state the truncation in the message.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** `ProcessRunner::run()` now bounds the
+  interpolated child output to the last `ProcessRunner::FAILURE_OUTPUT_BYTES`
+  (4000, mirroring `ResultsCache::OUTPUT_EXCERPT_BYTES`) and states the
+  truncation in the message (`[output truncated to the last N bytes]`). The
+  whole message is passed through the redactor. Covered by
+  `ProcessRunnerTest::testFailureMessageBoundsUnboundedChildOutput()`.
 
 ---
 
@@ -367,6 +429,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   convert it to `AdapterException` naming the command and the elapsed timeout;
   `tryRun()` should return `null`. Cover both.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** `ProcessRunner::start()` now catches
+  `ProcessTimedOutException` and reports it through a by-reference `$timedOut`
+  flag. `run()` converts it to an `AdapterException` naming the elapsed timeout
+  and the command line (redacted); `tryRun()` returns null. `capture()` keeps
+  reporting the timeout as data. Covered by
+  `ProcessRunnerTest::testRunConvertsATimeoutIntoAnAdapterException()`,
+  `::testTryRunReturnsNullOnTimeoutInsteadOfThrowing()` and
+  `::testCaptureStillReportsATimeoutAsData()`.
 
 ---
 
@@ -395,6 +465,13 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   script (`['bash', '-c', $script, '--', $modulePath]`, referenced as `"$1"`) so
   the value never enters the script text, or apply `escapeshellarg()`.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** New `Adapter\ShellArgument::quote()` applies
+  deterministic POSIX single-quoting (not `escapeshellarg()`, whose output is
+  platform-dependent, while the script always runs in a Linux container), and
+  `DdevContribAdapter::checkCommand()` quotes `$environment->moduleName` before
+  splicing it into the `bash -c` script body. The safety no longer depends on
+  `ProjectName::for()` two classes away. Covered by `ShellArgumentTest`, which
+  round-trips metacharacters through a real `bash -c`.
 
 ---
 
@@ -413,6 +490,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Covered by SEC-PROC-01 layer 1 — scrub the credential
   variable here as well, and document that `upkeep exec` does not forward it.
 - **Owning task:** **Task 6 — credential handling and subprocess output leakage**
+- **RESOLVED (task 6, 2026-08-03):** Covered by SEC-PROC-01 layer 1 —
+  `ExecCommand::execute()` passes `CredentialEnvironment::scrubbed()`, so
+  `upkeep exec <module> -- printenv` no longer prints the PAT. Covered by
+  `ExecCommandTest::testDoesNotForwardTheGitlabCredentialToTheChild()`.
+  **Follow-up for task 19 (documentation):** this is an operator-visible
+  behaviour change — `upkeep exec` no longer forwards `UPKEEP_GITLAB_TOKEN` to
+  the child — and should be noted in `README.md` alongside D2's exec exit-code
+  change.
 
 ---
 
@@ -457,6 +542,21 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   unenforced promise. If an escape hatch is wanted, make it an explicit opt-out
   flag rather than silence.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** New `Adapter\MountablePath::requireUnderHome()`
+  canonicalises a candidate path and asserts it is under `$HOME`, throwing
+  `AdapterException` whose message states the reason (environments are
+  bind-mounted into the Docker VM; macOS providers only share the home
+  directory), names the resolved path, and points at the default.
+  `ProjectsRoot::resolve()` routes all four sources — `--projects-root`,
+  `$UPKEEP_PROJECTS_ROOT`, the cockpit `projects/` dir, and the `~/.upkeep`
+  default — through it, and `BaseArtifactsBuildCommand` holds `--scratch-dir`
+  to the same rule its help text promises. Covered by `ProjectsRootTest`
+  (`testAnExplicitProjectsRootOutsideHomeIsRefusedWithTheDockerMountReason`,
+  `testTheEnvironmentVariableIsHeldToTheSameHomeContainmentRule`,
+  `testATraversalEscapeOutOfHomeIsRefusedEvenThoughItStartsInsideHome`,
+  `testASymlinkOutOfHomeIsRefusedThoughNoDotDotAppearsInTheSpelling`).
+  **Note:** no escape hatch was added — the constraint is enforced with no
+  opt-out.
 
 ---
 
@@ -491,6 +591,20 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `PruneSelector::protectionReason()`. Add an `is_link()` guard on the
   `materialized/` directory in `InventoryScanner::snapshots()`.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** New `Filesystem\PathGuard` provides
+  `canonicalize()` (realpath, falling back to canonicalising the deepest
+  existing ancestor for a path being created, and refusing an unresolvable
+  `..` in the not-yet-existing tail) and `isWithin()`. `Cockpit::__construct()`
+  canonicalises the root once, so `..` and symlinked spellings no longer
+  survive into any derived path and two spellings of one cockpit compare
+  equal. `PruneSelector::protectionReason()` now compares protected roots by
+  path identity via `PathGuard::isWithin()` (lexical prefix only as a
+  last-resort fallback for an uncanonicalisable path, which can only protect
+  more). `InventoryScanner::snapshots()` skips a symlinked `materialized/`
+  directory and records a warning. Covered by `PathGuardTest`, `CockpitTest`,
+  `PruneSelectorTest::testProtectionCompareUsesPathIdentityNotStringSpelling`,
+  `…::testASiblingSharingAStringPrefixWithAProtectedRootIsNotProtected`, and
+  `InventoryScannerTest::testASymlinkedMaterializedDirectoryIsNotEnumerated`.
 
 ---
 
@@ -532,6 +646,18 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   assert `$sha` is `/^[0-9a-f]{7,64}$/` in `ResultsCache` before it becomes a
   filename.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `ProjectName` gained public predicates
+  `isModuleName()` / `isCoreMajor()`; `ModuleRegistry::buildModule()` validates
+  the registry key and every `core_versions` entry with them at load, raising
+  `RegistryException` naming the offending key. `ResultsCache::entryDir()`
+  re-asserts both (it is a public API) and `store()`/`find()` require the SHA
+  to match `/^[0-9a-f]{7,64}$/` before it becomes a filename — `store()`
+  throws, `find()`/`latest()` treat an impossible identity as a miss. Covered
+  by `ModuleRegistryTest::testRejectsAModuleNameThatIsNotADrupalMachineName`
+  (8 cases), `…::testRejectsACoreVersionThatIsNotAWholeMajorVersion`, and
+  `ResultsCacheTest::testAShaThatIsNotAShaIsRefusedBeforeItBecomesAFilename`
+  (6 cases), `…::testAModuleNameThatIsNotAMachineNameNeverBecomesAPathSegment`,
+  `…::testAReadWithAnInvalidShaIsAMissRatherThanACrash`.
 
 ---
 
@@ -545,6 +671,9 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `DashboardCommand::execute()` and `PatchesCommand::collectMrIssueNids()`.
 - **Proposed resolution:** Closed by the SEC-FS-03 fix at `ModuleRegistry`.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** Closed at `ModuleRegistry` per SEC-FS-03,
+  and `DashboardCache::path()` re-asserts the machine name itself. Covered by
+  `DashboardCacheTest::testAModuleNameThatIsNotAMachineNameNeverBecomesAFilename`.
 
 ---
 
@@ -572,6 +701,17 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   take a mode). Note in the plan's documentation task that a cockpit under
   version control should exclude `results/` and `cache/`.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `ResultsCache` and `DashboardCache` now
+  create their directories `0700` and their files `0600` via
+  `Filesystem\FileWriter` (which takes an explicit mode and chmods the temp
+  file before the rename, since `file_put_contents` cannot take one). Covered
+  by `ResultsCacheTest::testStoredResultsAreOwnerOnlyOnDiskBecauseTheyCarryRawCheckOutput`
+  and `DashboardCacheTest::testCachedSnapshotsAreOwnerOnlyBecauseTheyCarryTokenScopedRemoteData`.
+  **On-disk impact:** files already written keep their old mode; an existing
+  cockpit needs a one-off
+  `chmod -R go-rwx <cockpit>/results <cockpit>/cache`. Still open for the
+  documentation task: telling users to exclude `results/` and `cache/` from
+  version control.
 
 ---
 
@@ -605,6 +745,17 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   name so concurrent `modules:add` runs cannot collide and a same-user symlink
   plant on that name cannot redirect the probe write.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `RegistryEditor::add()` now writes the
+  exact final bytes to a `tempnam()`-created sibling (unpredictable name, so
+  concurrent `modules:add` runs cannot collide and a same-user symlink plant
+  on `registry.yml.probe` has nothing to redirect), validates *that file*
+  through `ModuleRegistry::fromFile()`, and `rename()`s it into place —
+  unlinking it only on the rejection path. A `RegistryException` from the
+  probe is rethrown with the temp path rewritten to the real registry path so
+  the message names the file the user asked to change. Covered by
+  `RegistryEditorTest::testTheValidatedBytesAreRenamedIntoPlaceSoACrashCannotDestroyTheRegistry`,
+  `…::testAFailedWriteIsReportedRatherThanReturningTheNamesAsAdded`,
+  `…::testAValidationFailureNamesTheRealRegistryNotTheTemporaryFile`.
 
 ---
 
@@ -645,6 +796,26 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   the path; route all 11 sites through it. Also fix `DashboardCache::save()`'s
   unchecked `mkdir` to the race-tolerant idiom used everywhere else.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** New `Filesystem\FileWriter::write()` /
+  `writeTemporary()` / `commit()` / `ensureDirectory()` check every step and
+  throw `Filesystem\FilesystemException` naming the path. All 11 sites now
+  route through it — `grep -rn file_put_contents src/ bin/` matches only the
+  one call inside the helper. The five false-success paths:
+  `InitCommand` reports the scaffold failure and returns FAILURE instead of
+  "Cockpit created" (also `is_file()` per SEC-FS-14);
+  `ModulesAddCommand` catches `FilesystemException` alongside
+  `RegistryException` so it cannot print "Registered N module(s)" over an
+  unmodified registry; `DdevContribAdapter::provision()`'s `.upkeep-env.yml`
+  completion marker write is checked, so a missing marker can no longer make
+  the tool re-provision forever; `BaseArtifactBuilder::doBuild()`'s `meta.yml`
+  and `canonical` writes are checked (the enclosing catch then removes the
+  partial set); `ResultsCache::store()` throws before `CheckCommand` prints
+  "Results cached". `DashboardCache::save()`'s unchecked `mkdir` is now
+  `FileWriter::ensureDirectory()`. Covered by `FileWriterTest` (14 tests),
+  `InitCommandTest`, `RegistryEditorTest`, `ResultsCacheTest`,
+  `DashboardCacheTest`. Not directly covered by a test: the
+  `DdevContribAdapter` and `BaseArtifactBuilder` sites, which need a live
+  engine / network; they inherit the helper's guarantee.
 
 ---
 
@@ -681,6 +852,23 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   from SEC-FS-07. Separately, make `DashboardCache::load()` lenient in the same
   documented way as `ResultsCache::read()`.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** Every write in `src/` is now
+  temp-file-plus-`rename()` through `FileWriter`, including both
+  read-modify-write cycles (`wireModule()`'s `composer.json`,
+  `adaptAddOnConfig()`'s `config.contrib.yaml`), whose reads no longer cast a
+  possible `false` to `''` but raise `AdapterException`. `DashboardCache::load()`
+  is now lenient in the same documented way as `ResultsCache::read()`. The
+  favourable behaviours recorded in this finding were left alone:
+  `ResultsCache::read()` stays lenient, `.upkeep-env.yml` stays the
+  last-written completion marker (and is now *rewritten* by rename, so the
+  path never stops existing during a `last_used_at` stamp), and
+  `BaseArtifactBuilder`'s catch → `rm -rf` → rethrow is untouched. Covered by
+  `FileWriterTest::testWriteIsAtomicSoAReaderNeverObservesAPartialFile`,
+  `…::testWriteReplacesTheTargetInPlaceRatherThanUnlinkingItFirst`,
+  `ResultsCacheTest::testAStoreIsAtomicSoAReaderNeverSeesAPartialResultFile`,
+  `DashboardCacheTest::testASaveIsAtomicSoAReaderNeverSeesAPartialSnapshot`,
+  `…::testATornCacheFileDegradesToAMissRatherThanAnUncaughtException`,
+  `EnvironmentMetaTest::testStampingLastUseRewritesTheDotfileWithoutEverRemovingIt`.
 
 ---
 
@@ -706,6 +894,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `$freed`/`$deleted` accounting after a confirmed deletion; route failures into
   the existing `$skipped` list with the error reason.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `PruneExecutor::execute()` drops the `@`,
+  checks the `unlink` return, and only then adds to `$freed`/`$deleted`; a
+  failed removal goes into `$skipped` with the reason. A sidecar `.meta` that
+  cannot be removed is logged but does not fail the snapshot's accounting.
+  Covered by
+  `PruneExecutorTest::testASnapshotThatCannotBeRemovedIsSkippedNotReportedAsFreedSpace`.
 
 ---
 
@@ -733,6 +927,25 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   the CLI help does not promise last-use semantics it cannot deliver. The first
   is preferable; record the choice in the commit message.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** Took the first option — the field is now
+  written, matching the comment and the CLI help's last-use semantics. Chosen
+  over deleting the branch because `--older-than` on a destructive command
+  should mean "not used since", and creation-time semantics let prune delete
+  an environment reused yesterday; renaming the concept would have made the
+  command permanently less useful rather than fixing it.
+  `EnvironmentMeta` gained an optional `lastUsedAt`, emitted as `last_used_at`
+  by `toYaml()` and read (optionally, with a real timestamp parse) by
+  `fromYaml()`, plus `withLastUsedAt()`, `writeTo()` and
+  `stampLastUsed()`. `DdevContribAdapter::provision()` stamps it at creation
+  and `::reuse()` re-stamps it on every reuse, atomically, so the completion
+  marker never disappears mid-stamp. Covered by `EnvironmentMetaTest`
+  (`testLastUsedAtRoundTripsSoAgeFilteringHasSomethingToRead`,
+  `testAMetaWithoutLastUsedAtStillParses`,
+  `testAnUnparseableLastUsedAtIsRefusedRatherThanSilentlyIgnored`,
+  `testStampingLastUseRewritesTheDotfileWithoutEverRemovingIt`).
+  **On-disk impact:** `.upkeep-env.yml` gains a key; existing environments
+  parse unchanged and fall back to `created_at` until next reused, so no
+  rebuild is required.
 
 ---
 
@@ -756,6 +969,13 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   both true and statically visible. Flagged to tasks 10/11 as a
   do-not-blindly-suppress case.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** The false `@var` assertion is gone.
+  `ResultsCache::read()` narrows the decoded value with real runtime checks
+  (`is_array`, `is_string`, `is_int`, `is_numeric` per field), so the guards
+  are both true and statically visible; PHPStan no longer reports
+  `booleanNot.alwaysFalse` there. Covered by
+  `ResultsCacheTest::testAResultFileWhoseShapeIsWrongDegradesToAMiss` (three
+  wrong shapes) and `…::testMissesAndMalformedFilesReadAsNull`.
 
 ---
 
@@ -780,6 +1000,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   key — the same exception every command already handles. This also closes
   SEC-FS-03 and SEC-FS-04.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** Closed by the `ModuleRegistry::buildModule()`
+  validation described under SEC-FS-03: an invalid machine name is now a
+  `RegistryException` at load — the exception every command already handles —
+  rather than an uncaught `InvalidArgumentException` from
+  `PruneExecutor::resolveEnvironment()` after environments have been torn
+  down.
 
 ---
 
@@ -805,6 +1031,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   (`$option !== null && $option !== ''`), `rtrim` the result, and fail
   explicitly when `getcwd()` returns `false`.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `Cockpit::resolve()` now refuses an empty
+  `--cockpit` with a message naming the flag, falls through an empty env var
+  to the working directory, and fails explicitly when `getcwd()` returns
+  false. The root is canonicalised and `rtrim`ed in the constructor, so
+  `--cockpit=/foo/` and `/foo` produce one path. Covered by `CockpitTest`
+  (`testAnEmptyCockpitOptionIsRefusedRatherThanRootingEveryPathAtTheFilesystemRoot`,
+  `testAnEmptyEnvironmentVariableFallsThroughToTheWorkingDirectory`,
+  `testATrailingSlashDoesNotProduceADoubleSlashInDerivedPaths`).
 
 ---
 
@@ -821,6 +1055,10 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Use `is_file()`, and let the SEC-FS-07 write helper
   surface the failure.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `InitCommand` uses `is_file()`, and the
+  SEC-FS-07 write helper surfaces a directory at that path as the real
+  failure. Covered by
+  `InitCommandTest::testADirectoryNamedRegistryYmlIsNotReportedAsAnExistingCockpit`.
 
 ---
 
@@ -845,6 +1083,13 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   (or catch and skip), so an unreadable subtree degrades to an
   under-count rather than a crash.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `ArtifactScanner::directorySize()` passes
+  `\RecursiveIteratorIterator::CATCH_GET_CHILD`, so an unreadable subtree
+  under-counts instead of throwing `UnexpectedValueException` out of
+  `base-artifacts:status`. The verified-favourable symlink behaviour was left
+  intact and is now stated in the method's docblock so it is not "fixed" away
+  later. Covered by
+  `ArtifactScannerTest::testAnUnreadableSubdirectoryUnderCountsInsteadOfThrowing`.
 
 ---
 
@@ -867,6 +1112,21 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Distinguish `false` from `[]` and surface a warning
   (not an exception) naming the unreadable directory.
 - **Owning task:** **Task 7 — filesystem path and result-file handling**
+- **RESOLVED (task 7, 2026-08-03):** `false`/unreadable is now distinguished
+  from empty at every site, with the direction chosen per consumer:
+  `InventoryScanner` records a warning naming the directory and carries on
+  (under-reporting fails safe for prune) and exposes `warnings()`, which
+  `status` and `prune` print; `ArtifactLayout::versionsOnDisk()` throws
+  `FilesystemException` on an unreadable base-artifacts directory, which
+  `ArtifactScanner`/`base-artifacts:status` surfaces and `InventoryScanner`
+  catches into a warning; `ResultsCache::latest()` throws rather than
+  reporting "never checked", since that was the one site failing in the
+  misleading direction. Covered by
+  `InventoryScannerTest::testAnUnreadableDirectoryIsWarnedAboutRatherThanReportedAsEmpty`,
+  `…::testACleanScanReportsNoWarnings`,
+  `…::testAnUnreadableBaseArtifactsDirectoryDegradesToAWarningRatherThanFailingThePruneScan`,
+  `ArtifactScannerTest::testAnUnreadableBaseArtifactsDirectoryIsReportedRatherThanReadAsEmpty`,
+  `ResultsCacheTest::testAnUnreadableResultsDirectoryIsReportedRatherThanReadAsNeverChecked`.
 
 ---
 
@@ -897,6 +1157,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
 - **File contention note:** Task 6 (SEC-CRED-01) and task 9 (BP-CMD-*) also
   touch `ModulesAddCommand`. See "Coordination notes" below.
+- **RESOLVED (task 8, 2026-08-03):** No `message()` method was introduced; the
+  uniform accessor surface is the public promoted property `ApiFailure::$message`
+  (now on the sealed base alongside `?int $status` and `?string $browserUrl`),
+  plus two abstract methods `shortCode()` and `isTransient()`. Task 6 had already
+  corrected the call site to `$projects->message`, and that remains correct —
+  every consumer in `src/` now reaches message text the same way. Verified by
+  `ModulesAddCommandTest` plus PHPStan, which no longer reports
+  `method.notFound` for `ApiFailure`.
 
 ---
 
@@ -919,6 +1187,16 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   resource description and drop the hardcoded "HTTP 404" from its message).
   Decide once and apply consistently.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** Decided in favour of a distinct type. New
+  `Gitlab\ResourceMissing` covers "the call succeeded, the collection just does
+  not contain what you asked for": `status` is null, `shortCode()` is `missing`,
+  and the message reads `No tag "9.9.9" in project/foo. Check in the browser: …`
+  — it never claims an HTTP status that did not occur. `NotFound` is now strictly
+  HTTP 404, so its "HTTP 404" wording is always true. A tag that IS present but
+  carries no commit date (so the date cannot be resolved) is `MalformedResponse`
+  rather than being silently reported as absent. Covered by
+  `ErrorTaxonomyTest::testDomainLevelTagMissIsResourceMissingAndNeverClaimsAnHttpStatus`
+  and two `GitlabClientTest` cases.
 
 ---
 
@@ -949,6 +1227,18 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `TokenResolver::describeSources()` and must not echo the token). Update
   `DashboardRow::failureCell()` and `MergeCommand::mergeOne()`.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** Split as proposed. `EndpointClosed` is now
+  403-only and keeps the browser fallback; new `Gitlab\Unauthorized` handles 401
+  and advises re-checking the credential, naming the sources via the new
+  `TokenResolver::describeDefaultSources()` (a static twin of `describeSources()`
+  so a failure raised deep in the client needs no resolver instance). The advice
+  contains no token material, and a regression test asserts the message does not
+  say "Use the browser instead". `DashboardRow::failureCell()` needed no
+  per-type edit (see BP-GL-04). `MergeCommand::mergeOne()`'s
+  "GitLab refuses API merges here" branch is now unreachable for a bad token —
+  `Unauthorized` falls through to the failure branch whose message names the
+  credential. Covered by `ErrorTaxonomyTest` (401 vs 403 data sets and
+  `testUnauthorizedAdvisesTheCredentialAndNotTheBrowser`).
 
 ---
 
@@ -985,6 +1275,16 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   that needs no `default`. Reflection-based naming in production code is a smell
   in its own right.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** `ApiFailure` gained `abstract public
+  shortCode(): string`, implemented by all eight concrete types (`401`, `403`,
+  `404`, `missing`, `rate-limited`, the status for `RequestRejected`,
+  `malformed`, `transport`). Both byte-identical `failureName()` copies are
+  deleted from `NotesCommand` and `ApiProbeCommand` — no reflection remains in
+  production code — and `DashboardRow::failureCell()` is now
+  `'n/a (' . $failure->shortCode() . ')'`, so the `match (true)` and its
+  unreachable `default` arm are gone (nothing left for task 13/16 to fail to
+  cover). Existing dashboard output is unchanged: `n/a (403)` still renders as
+  `n/a (403)`.
 
 ---
 
@@ -1005,6 +1305,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   fallback uniformly. Backwards compatibility is waived, so change the
   constructors freely.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** `?int $status` and `?string $browserUrl`
+  are lifted onto `ApiFailure` and populated by every subtype the client can
+  raise, so `browserUrl` is available for a rate limit and a transport failure
+  too. `status` is now honest rather than merely present: it is the received
+  status where a response arrived (401/403/404/429/4xx/5xx, and the 2xx of a
+  `MalformedResponse`) and null where none did (`TransportError`,
+  `ResourceMissing`). `MergeCommand::mergeOne()`'s failure branch now prints the
+  browser URL for ANY failure type carrying one, not only `EndpointClosed`.
 
 ---
 
@@ -1026,6 +1334,16 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   do not memoize `RateLimited`/`TransportError`. The `fresh()` escape hatch
   already exists for the merge re-check and is unaffected.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** `ApiFailure::isTransient()` is abstract, so
+  each type states its own answer, and `GitlabClient::get()` stores a result only
+  when it is a success or a non-transient failure. `RateLimited`,
+  `TransportError`, `MalformedResponse` and `RequestRejected` are transient and
+  are never memoized; `Unauthorized`, `EndpointClosed` and `NotFound` are stable
+  and still are (rate-limit friendliness preserved). The lookup moved from
+  `??=` to `array_key_exists()` so the two concerns stay separable. Covered by
+  `ErrorTaxonomyTest::testTransientFailuresAreNotMemoized` (four data sets, each
+  proving a second attempt re-hits the transport and succeeds) and
+  `testStableFailuresStayMemoized`.
 
 ---
 
@@ -1050,6 +1368,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Cap the page count with a named constant, and treat a
   non-list response as `TransportError` rather than as data.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** `GitlabClient::MAX_PAGES = 50` caps the
+  loop, and a page that is not a list (`array_is_list()`) is now
+  `MalformedResponse` rather than being fed to `Project::fromApi()` or spun on.
+  Exhausting the cap is also `MalformedResponse`. The RED run for this finding
+  hung the suite on the real unbounded loop before the fix, which is the
+  strongest evidence the defect was live. Covered by
+  `ErrorTaxonomyTest::testMembershipPaginationTreatsANonListResponseAsMalformedRatherThanLoopingForever`
+  and `testMembershipPaginationIsCapped`.
 
 ---
 
@@ -1078,6 +1404,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   missing annotation, and task 10 would otherwise "fix" the symptom by adding a
   second `@return` while leaving the misplaced block in place.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** The orphaned block was moved back onto
+  `tags()` — the documentation defect itself, not the symptom. Nothing was
+  suppressed and no second `@return` was added, so the note to tasks 10/11
+  stands satisfied: PHPStan's `Cannot access property $createdAt/$name on mixed`
+  inside `mergedSinceTag()` is gone at source. Total PHPStan errors fell 289 →
+  284 across this task with no new baseline entries.
 
 ---
 
@@ -1098,6 +1430,18 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `\Symfony\Contracts\HttpClient\Exception\ExceptionInterface` and map to
   `TransportError`, so the documented "never throws" contract is actually true.
 - **Owning task:** **Task 8 — GitLab error-taxonomy consistency**
+- **RESOLVED (task 8, 2026-08-03):** `GitlabClient::request()` now catches
+  `Symfony\Contracts\HttpClient\Exception\ExceptionInterface` — the root of
+  every symfony/http-client contract exception, transport and otherwise — and
+  maps it to `TransportError`, making the documented "never throws for
+  HTTP-level outcomes" contract true. The `\JsonException` catch was removed as
+  dead weight rather than widened: body decoding no longer uses
+  `JSON_THROW_ON_ERROR`, and an undecodable or non-array body is
+  `MalformedResponse` carrying `json_last_error_msg()`. Covered by
+  `ErrorTaxonomyTest::testNoRawSymfonyHttpClientExceptionEscapes`, a data
+  provider over `TransportException`, `TimeoutException` and `ServerException`
+  (a non-transport contract exception the old code let escape), plus the same
+  proof on a write path via `merge()`.
 
 ---
 
@@ -1138,6 +1482,18 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   message and a single exit code. `NotesCommand`'s deliberate fallback stays,
   documented.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** One seam on the new `Command\UpkeepCommand`
+  base: `cockpit()` (the documented `--cockpit` > `$UPKEEP_COCKPIT` > cwd
+  order), `modules()` (loads and validates the registry) and
+  `requireCockpit()` (both, for commands needing a cockpit but not its
+  contents). Policies B, C and D collapse into it: nothing catches
+  `RegistryException`/`FilesystemException` locally any more — `execute()` is
+  final on the base and maps every domain exception to
+  `ExitCode::INFRASTRUCTURE` with the exception's own message, so
+  `ModuleRegistry::fromFile()`'s wording ("Run `upkeep init` ...") is what the
+  operator sees everywhere. The four verbatim `file_exists()` pre-checks are
+  deleted. `NotesCommand::resolveProjectPath()`'s deliberate fallback stays
+  and now also tolerates `FilesystemException`, with the reason in a comment.
 
 ---
 
@@ -1156,6 +1512,10 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Load and validate the registry once, up front, through
   the BP-CMD-01 shared seam.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `PruneCommand::perform()` calls
+  `$this->modules($cockpit)` before the inventory scan, so the registry is
+  parsed before any reclaim plan is rendered. The modules are then handed
+  straight to `PruneExecutor`; the late `$cockpit->loadRegistry()` is gone.
 
 ---
 
@@ -1179,6 +1539,19 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   BC constraint applies. Must be settled before task 12 writes the e2e
   exit-code assertions.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** Extended to the whole CLI per D2. The
+  three codes now read 0 the command did what was asked / 1 the work it
+  supervised reported failure / 2 upkeep could not do the job, and
+  `CHECKS_FAILED` was renamed `FAILED` to be honest about covering merges and
+  `exec` as well as checks. The mapping lives in exactly one place:
+  `UpkeepCommand::execute()` is final and catches `WorkflowException`,
+  `AdapterException`, `RegistryException`, `FilesystemException`,
+  `BuildException` and `MetaException`. All 19 commands extend the base
+  (asserted by `CommandSurfaceTest::testEveryCommandExtendsTheSharedBase`) and
+  no `Command::SUCCESS/FAILURE/INVALID` remains in `src/`. **"No token" is now
+  2 everywhere**, matching `ExitCode`'s stated meaning — no credential means
+  no verdict was produced. The exception: `patches` without a token is a
+  documented degraded mode, warns once and still exits 0.
 
 ---
 
@@ -1200,6 +1573,16 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Return a failure code when `$tally['failed'] > 0`,
   and resolve the `INVALID` collision as part of BP-CMD-03.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `MergeCommand::perform()` ends with
+  `self::outcome($tally)`: `INFRASTRUCTURE` when a merge was refused with
+  `Unauthorized` (the operator's credential, not a verdict on any MR),
+  `FAILED` when `$tally['failed'] > 0`, else `OK`. The `Command::INVALID`
+  collision is gone — the missing-`--fast-lane` guard throws a
+  `WorkflowException` and so maps to `INFRASTRUCTURE`, which now means one
+  thing. Covered by `MergeCommandTest`'s
+  `::testMergeFailureIsReportedPerMrAndTheLoopContinues`,
+  `::testARejectedCredentialExitsWithTheInfrastructureCode` and
+  `::testOmittingFastLaneIsAnInfrastructureFailure`.
 
 ---
 
@@ -1220,6 +1603,15 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   **Recommendation: (a).** Recorded rather than decided unilaterally because it
   changes a documented contract's scope.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** Decided by D2 against the recorded
+  recommendation: **no exemption**. `ExecCommand` returns
+  `ExitCode::forChildProcess($process->getExitCode())` — 0 stays 0, every
+  non-zero child code collapses to 1, and a child that produced no exit code
+  at all is 2. This is an operator-visible behaviour change for anyone
+  scripting `upkeep exec`; task 19 documents it in `README.md`. Covered by
+  `ExitCodeTest::testEveryNonZeroChildCodeCollapsesToFailed` and
+  `ExitCodeContractTest::testWrappedCommandFailureCollapsesToTheFailedCode`
+  (child codes 1, 2, 42, 127 through the console).
 
 ---
 
@@ -1251,6 +1643,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Route `DashboardCommand` through `RowAssembler`,
   deleting the inline pipeline. Highest-value best-practice fix in the set.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** The pipeline is now
+  `Dashboard\RowFactory` — (module, project, merge requests) → rows, expanded
+  across tracked core versions and classified by `FastLaneGate`. It takes MRs
+  it did not fetch, which is what lets both consumers share it:
+  `RowAssembler` feeds it live client data (so `MergeCommand` is unchanged)
+  and `DashboardCommand` feeds it its cached `ModuleSnapshot`. The dashboard's
+  inline project → MRs → gate loop and its inline `--version` filtering are
+  deleted. Covered by `RowFactoryTest`.
 
 ---
 
@@ -1291,6 +1691,19 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   it actually tests what it claims. Recorded rather than decided unilaterally
   because it changes a documented project invariant and `CLAUDE.md`.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** Decided by D1 as reading (a), stronger
+  than the recorded recommendation (c): a **full DI refactor**. New
+  `Adapter\EngineAdapterFactory` interface with the single production
+  implementation `Adapter\DdevContribAdapterFactory`; commands receive the
+  factory by constructor injection and call
+  `create($cockpit, $projectsRootOption, $stageLog, $processLog)`. All five
+  `new DdevContribAdapter(...)` sites are gone; `grep -rn "new DdevContribAdapter" src/`
+  now matches only inside `src/Adapter/`. `bin/upkeep` is the composition root
+  and the only place outside `src/Adapter/` that names an engine — it also
+  builds the `SecretRedactor` and the `VolumeProbe` and injects both.
+  **`grep -ri "ddev" src/ --exclude-dir=Adapter` is silent**, so the guard now
+  tests what it claims; task 19 updates `CLAUDE.md` to the `-i` form.
+  `src/Maintenance/`'s documented "volume" vocabulary is untouched, per (c).
 
 ---
 
@@ -1317,6 +1730,15 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   (a trait or a shared base's `configureCockpitSurface()` /
   `configureEnvSurface()`), so a description change cannot drift again.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `UpkeepCommand` defines them once:
+  `addCockpitOption()`, `addProjectsRootOption()`, `addModuleArgument()`,
+  `addMrArgument()`, `addNoOpenOption()`, and — because `--version` genuinely
+  carries two meanings — `addTargetCoreOption()` (the selector) and
+  `addCoreFilterOption()` (the dashboard's row filter), each with one
+  canonical wording. `PatchesCommand` keeps `--module` as an option because it
+  filters a whole-registry scan rather than naming a subject, which is a
+  different thing from the positional argument. `CommandSurfaceTest` fails if
+  any of these descriptions drift apart again.
 
 ---
 
@@ -1338,6 +1760,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** One lookup helper returning the `MrContextResolver`
   wording (the most useful of the six), emitted through `SymfonyStyle` uniformly.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `MrContextResolver::requireModule()` is
+  now public and is the only registry lookup: `resolve()` uses it, and
+  `UpkeepCommand::requireModule()` delegates to it for `dev`, `env:path`,
+  `exec`, `issue`, `patches` (`--module`) and `needs-work`. All six sites emit
+  the chosen wording — the one that lists the registered modules — through the
+  base's error path, so the raw `<error>` writelns are gone too.
 
 ---
 
@@ -1361,6 +1789,11 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Use `MrContextResolver::selectCoreVersion()` (or
   extract it to a small shared value resolver) in all three.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `MrContextResolver::selectCoreVersion()`
+  is public and reached through `UpkeepCommand::targetCore()`; the three
+  verbatim copies in `DevCommand`, `EnvPathCommand` and `ExecCommand` are
+  deleted. The message is the resolver's ("does not track core version ...
+  Add it to core_versions in registry.yml"), which names the fix.
 
 ---
 
@@ -1379,6 +1812,13 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   adopts it. Note `AbstractMrCommand`'s `/^\d+$/` also accepts `0`, which
   `NeedsWorkCommand` correctly rejects — take the stricter rule.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** One validator,
+  `UpkeepCommand::mrIid()`, taking the stricter rule (`/^\d+$/` **and**
+  `>= 1`), used by `AbstractMrCommand`, `NeedsWorkCommand` and — for the first
+  time — `IssueCommand`, so `upkeep issue widget abc` no longer silently
+  becomes a request for `!0`. Covered by
+  `IssueCommandTest::testANonPositiveIntegerMrArgumentIsRejectedBeforeAnyApiCall`
+  over letters, 0, a negative, a decimal and the empty string.
 
 ---
 
@@ -1418,6 +1858,18 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   BP-CMD-07 factory; 3–6 and 8 move to the existing service classes that already
   own those concepts.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** (1) and (7) fall out of the BP-CMD-07
+  factory and the injected `VolumeProbe`; the three divergent logging
+  policies are replaced by the factory's two explicit sinks, so `exec` and
+  `env:path` discard engine output deliberately and by one decision.
+  (2) `Command\BrowserOpener::open()`. (3) `Command\ColumnTable::render()`,
+  used by both wide tables. (4) `PatchesCommand::truncate()` deleted in favour
+  of `DashboardRow::truncate()`. (5) `BaseArtifactsStatusCommand::formatBytes()`
+  deleted in favour of `Maintenance\ByteFormat::human()`. (6) one
+  `CheckResult::EXCERPT_BYTES` and one `CheckResult::outputExcerpt()`, used by
+  `check` and `needs-work` (`CheckResultExcerptTest`). (8)
+  `VolumeProbe::itemsForInventory()` (`VolumeProbeInventoryTest`).
+  (9) already removed by task 8.
 
 ---
 
@@ -1437,6 +1889,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   constants, matching the existing pattern. Coordinate with SEC-FS-05, which must
   set the mode on those directories.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `Cockpit::RESULTS_DIR`,
+  `Cockpit::DASHBOARD_CACHE_DIR`, `Cockpit::resultsPath()` and
+  `Cockpit::dashboardCachePath()` added, matching the existing pattern; all
+  six literal call sites now use them, and `grep -rn "'/results'" src/` is
+  silent. The on-disk layout is unchanged, so existing cockpits are unaffected
+  (asserted explicitly in `CockpitTest`).
 
 ---
 
@@ -1457,6 +1915,14 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   `DashboardRow` subtypes for the failure and merge-request cases). The latter
   also removes the nullable-property `?->` noise.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** Real guards:
+  `DashboardRow::requireMergeRequest()`, `::requireProject()` and
+  `::requireVerdict()` throw a `WorkflowException` naming the row state, which
+  the base maps to exit 2 instead of a `TypeError` from inside the GitLab
+  client. Every `\assert()` in `MergeCommand` and `DashboardRow` is gone
+  (`grep -rn "\\assert(" src/` matches only a docblock). Covered by
+  `DashboardRowGuardTest`, which is meaningful precisely because it does not
+  depend on `zend.assertions`.
 
 ---
 
@@ -1473,6 +1939,10 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
 - **Proposed resolution:** Non-nullable return, delete the guard. Resolved for
   free by the BP-CMD-07 factory.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** `DevCommand::buildAdapter()` and its
+  unreachable `if ($adapter === null)` guard are both gone — the command now
+  takes an `EngineAdapterFactory` whose `create()` is non-nullable. The
+  PHPStan `return.unusedType` error for it no longer appears.
 
 ---
 
@@ -1495,6 +1965,12 @@ cooperating child), but the mitigation is cheap and complete — see SEC-PROC-01
   constraint) or keep `--core` and rewrite the comment to state the real reason.
   Either way the stale claim must go, and `README.md` must match.
 - **Owning task:** **Task 9 — command-class duplication and adapter-boundary compliance**
+- **RESOLVED (task 9, 2026-08-03):** Renamed `--core` to `--version` and the
+  stale comment is replaced by one stating the real reason the flag arrives
+  intact (`VersionOptionInput` plus the `bin/upkeep` definition filter). The
+  "no artifacts yet" hint now says `--version=N`. Operator-visible CLI change;
+  task 19 updates `README.md`. Guarded by
+  `CommandSurfaceTest::testBaseArtifactsBuildSelectsItsCoreVersionLikeEveryOtherCommand`.
 
 ---
 
@@ -1639,6 +2115,19 @@ until next reused, so no rebuild is required.
    across all 19 commands, or narrow the documented contract to check/review
    only? Recommendation: extend, since `ExitCode`'s docblock says it exists
    "so scripting can rely on it".
+
+**All three were decided by the maintainer on 2026-08-03 and recorded in
+`DECISIONS.md`; task 9 implemented the decisions:**
+
+1. **BP-CMD-05** → decided **against** the recommendation (D2): no exemption.
+   `upkeep exec` collapses every non-zero child code to 1 and no longer passes
+   the child's raw code through.
+2. **BP-CMD-07** → decided **beyond** the recommendation (D1): the full DI
+   refactor of reading (a), not the middle path (c). Nothing outside
+   `bin/upkeep` and `src/Adapter/` names an engine, and
+   `grep -ri "ddev" src/ --exclude-dir=Adapter` is silent.
+3. **BP-CMD-03** → decided **as** recommended (D2): the contract extends to
+   the whole CLI surface, with "no token" resolved to 2 uniformly.
 
 Everything else in this record has a single defensible resolution and needs no
 further input.

@@ -15,6 +15,23 @@ final readonly class ProjectName
     private const MODULE_PATTERN = '/^[a-z][a-z0-9_]*$/';
     private const CORE_PATTERN = '/^\d+$/';
 
+    /**
+     * Whether a string is a Drupal machine name. Public because the same rule
+     * has to hold wherever a module name becomes a path segment or a project
+     * name — the registry validates with it at load so the failure never
+     * surfaces mid-prune.
+     */
+    public static function isModuleName(string $moduleName): bool
+    {
+        return preg_match(self::MODULE_PATTERN, $moduleName) === 1;
+    }
+
+    /** Whether a string is a whole core major version number. */
+    public static function isCoreMajor(string $coreMajor): bool
+    {
+        return preg_match(self::CORE_PATTERN, $coreMajor) === 1;
+    }
+
     public static function for(string $moduleName, string $coreMajor): string
     {
         if (preg_match(self::MODULE_PATTERN, $moduleName) !== 1) {

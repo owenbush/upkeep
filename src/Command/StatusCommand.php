@@ -5,92 +5,66 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Upkeep\Adapter\ProcessRunner;
 use Upkeep\Adapter\ProjectsRoot;
 use Upkeep\Adapter\VolumeProbe;
-use Upkeep\Cockpit\Cockpit;
 use Upkeep\Maintenance\ByteFormat;
 use Upkeep\Maintenance\Category;
 use Upkeep\Maintenance\InventoryItem;
 use Upkeep\Maintenance\InventoryScanner;
+use Upkeep\Workflow\ExitCode;
 
 #[AsCommand(
     name: 'status',
     description: 'Report cockpit state; --disk itemizes real measured disk usage per module, core version, and '
     . 'category.',
 )]
-final class StatusCommand extends Command
+final class StatusCommand extends UpkeepCommand
 {
-    public function __construct(private readonly ?VolumeProbe $volumeProbe = null)
+    public function __construct(private readonly VolumeProbe $volumeProbe)
     {
         parent::__construct();
     }
 
     protected function configure(): void
     {
-        $this
-            ->addOption(
-                'disk',
-                null,
-                InputOption::VALUE_NONE,
-                'Itemize disk usage (project trees, materialized snapshots, docker volumes, base artifacts, '
-                . 'fixture dumps) with totals',
-            )
-            ->addOption(
-                'cockpit',
-                null,
-                InputOption::VALUE_REQUIRED,
-                sprintf(
-                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
-                    Cockpit::ENV_VAR,
-                ),
-            )
-            ->addOption(
-                'projects-root',
-                null,
-                InputOption::VALUE_REQUIRED,
-                sprintf(
-                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
-                    . 'exists, then ~/.upkeep/projects)',
-                    ProjectsRoot::ENV_VAR,
-                ),
-            );
+        $this->addOption(
+            'disk',
+            null,
+            InputOption::VALUE_NONE,
+            'Itemize disk usage (project trees, materialized snapshots, docker volumes, base artifacts, fixture '
+            . 'dumps) with totals',
+        );
+        $this->addCockpitOption()->addProjectsRootOption();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
+        $cockpit = $this->cockpit($input);
+        // Loaded, not merely stat()ed: a registry that exists but does not
+        // parse is reported here, with the reason, rather than further down.
+        $modules = $this->modules($cockpit);
 
-        if (!file_exists($cockpit->registryPath())) {
-            $io->error(sprintf(
-                'No cockpit found at "%s" (missing %s). Run `upkeep init` first.',
-                $cockpit->root,
-                Cockpit::REGISTRY_FILENAME,
-            ));
-
-            return Command::FAILURE;
+        $projectsRoot = ProjectsRoot::resolve(self::stringOption($input, 'projects-root'), $cockpit->root);
+        $scanner = new InventoryScanner($cockpit, $projectsRoot);
+        $items = $scanner->scan();
+        // A directory that could not be read is reported as such, not folded
+        // into the totals as if it were empty.
+        foreach ($scanner->warnings() as $warning) {
+            $io->warning($warning);
         }
 
-        $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root);
-        $items = (new InventoryScanner($cockpit, $projectsRoot))->scan();
-
-        $trees = [];
-        foreach ($items as $item) {
-            if ($item->category === Category::ProjectTree && $item->projectName !== null) {
-                $trees[$item->projectName] = $item;
-            }
-        }
-        $probe = $this->volumeProbe ?? self::defaultVolumeProbe();
-        $items = [...$items, ...$probe->items($trees)];
+        $trees = array_filter(
+            $items,
+            static fn (InventoryItem $i): bool => $i->category === Category::ProjectTree,
+        );
+        $items = [...$items, ...$this->volumeProbe->itemsForInventory($items)];
 
         if (!$input->getOption('disk')) {
-            $io->writeln(sprintf('Cockpit: %s', $cockpit->root));
+            $io->writeln(sprintf('Cockpit: %s (%d registered module(s))', $cockpit->root, \count($modules)));
             $io->writeln(sprintf('Projects root: %s (%d environment(s))', $projectsRoot, \count($trees)));
             $io->writeln(sprintf(
                 'Total tracked disk usage: %s across %d item(s). Use --disk for the breakdown.',
@@ -98,12 +72,12 @@ final class StatusCommand extends Command
                 \count($items),
             ));
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         self::renderDiskTable($io, $items);
 
-        return Command::SUCCESS;
+        return ExitCode::OK;
     }
 
     /**
@@ -156,11 +130,5 @@ final class StatusCommand extends Command
         }
 
         return sprintf('%dh', intdiv($seconds, 3600));
-    }
-
-    private static function defaultVolumeProbe(): VolumeProbe
-    {
-        return VolumeProbe::withRunner(new ProcessRunner(static function (string $line): void {
-        }));
     }
 }

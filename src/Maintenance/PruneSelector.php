@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Upkeep\Maintenance;
 
+use Upkeep\Filesystem\FilesystemException;
+use Upkeep\Filesystem\PathGuard;
+
 /**
  * Pure candidate selection over an inventory snapshot. This is the safety
  * boundary of the prune surface: whatever flags are passed, an item is only
@@ -89,9 +92,11 @@ final readonly class PruneSelector
             return 'keep-marked (.keep)';
         }
         foreach ($this->protectedRoots as $root) {
-            $prefix = rtrim($root, '/');
-            if ($item->path === $prefix || str_starts_with($item->path, $prefix . '/')) {
-                return sprintf('under protected root %s', $prefix);
+            // Path identity, not string equality: an item reaching here under
+            // an equivalent-but-differently-spelled path (a `..` sequence, a
+            // symlinked component) is the same file and must be as protected.
+            if (self::samePath($root, $item->path)) {
+                return sprintf('under protected root %s', rtrim($root, '/'));
             }
         }
         if (str_contains($item->path, '/tests/fixtures/')) {
@@ -99,6 +104,22 @@ final readonly class PruneSelector
         }
 
         return null;
+    }
+
+    /**
+     * Whether $path is $root or lies under it, compared on canonical paths.
+     * A path so malformed that it cannot be canonicalised at all falls back to
+     * the lexical prefix test, which can only ever protect more, never less.
+     */
+    private static function samePath(string $root, string $path): bool
+    {
+        try {
+            return PathGuard::isWithin($root, $path);
+        } catch (FilesystemException) {
+            $prefix = rtrim($root, '/');
+
+            return $path === $prefix || str_starts_with($path, $prefix . '/');
+        }
     }
 
     /**

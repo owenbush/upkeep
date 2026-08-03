@@ -11,6 +11,8 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Cockpit\ModuleRegistry;
 use Upkeep\Command\ModulesAddCommand;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Workflow\ExitCode;
 
 final class ModulesAddCommandTest extends TestCase
 {
@@ -121,7 +123,7 @@ final class ModulesAddCommandTest extends TestCase
             '--cockpit' => $this->cockpit,
         ], ['interactive' => false]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not_one_of_mine', $tester->getDisplay());
         self::assertSame($before, file_get_contents($this->cockpit . '/registry.yml'));
     }
@@ -131,7 +133,7 @@ final class ModulesAddCommandTest extends TestCase
         $tester = new CommandTester(new ModulesAddCommand($this->client()));
         $exit = $tester->execute(['--cockpit' => $this->cockpit], ['interactive' => false]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('non-interactive', $tester->getDisplay());
     }
 
@@ -155,5 +157,43 @@ final class ModulesAddCommandTest extends TestCase
 
         self::assertSame(0, $exit, $tester->getDisplay());
         self::assertStringContainsString('already registered', $tester->getDisplay());
+    }
+
+    /**
+     * Regression: the no-token branch referenced two constants that do not
+     * exist on TokenResolver, so first-run without a token died with a fatal
+     * Error instead of printing guidance.
+     */
+    public function testMissingTokenExplainsTheSourcesInsteadOfFatallyErroring(): void
+    {
+        $tester = new CommandTester(new ModulesAddCommand(
+            null,
+            new TokenResolver('UPKEEP_TEST_ABSENT_TOKEN', '/nonexistent/upkeep/drupal-pat'),
+        ));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit], ['interactive' => false]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('No GitLab token found', $display);
+        self::assertStringContainsString('UPKEEP_TEST_ABSENT_TOKEN', $display);
+        self::assertStringContainsString('/nonexistent/upkeep/drupal-pat', $display);
+    }
+
+    /**
+     * Regression: ApiFailure exposes a public promoted $message property, not
+     * a message() method; calling it turned any GitLab failure into a fatal.
+     */
+    public function testApiFailureIsReportedInsteadOfFatallyErroring(): void
+    {
+        $client = new GitlabClient(
+            new MockHttpClient(new MockResponse('{"message":"Internal Server Error"}', ['http_code' => 500])),
+            'token',
+        );
+
+        $tester = new CommandTester(new ModulesAddCommand($client));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit], ['interactive' => false]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('Could not list your project memberships', $tester->getDisplay());
     }
 }

@@ -288,6 +288,37 @@ final class PruneExecutorTest extends TestCase
         self::assertStringContainsString('local work detected', $outcome->skipped[0][1]);
     }
 
+    /**
+     * prune is the only destructive command and its report is the operator's
+     * only feedback. Over-reporting reclaimed space on a deletion that did not
+     * happen is the wrong direction for a defect.
+     */
+    public function testASnapshotThatCannotBeRemovedIsSkippedNotReportedAsFreedSpace(): void
+    {
+        $dir = $this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized';
+        $artifact = $dir . '/alpha.sql';
+        $snapshot = new InventoryItem(
+            path: $artifact,
+            category: Category::Snapshot,
+            sizeBytes: 8,
+            module: 'conditions_helper',
+            projectName: 'upkeep-conditions-helper-d11',
+        );
+        chmod($dir, 0o500);
+
+        try {
+            $outcome = $this->executor()->execute([$snapshot]);
+
+            self::assertFileExists($artifact);
+            self::assertSame(0, $outcome->freedBytes, 'Bytes that were not reclaimed must not be reported as freed.');
+            self::assertSame([], $outcome->deleted);
+            self::assertCount(1, $outcome->skipped);
+            self::assertStringContainsString('could not be removed', $outcome->skipped[0][1]);
+        } finally {
+            chmod($dir, 0o700);
+        }
+    }
+
     public function testExecutorRefusesProtectedItemsEvenIfHandedThemDirectly(): void
     {
         // Defense in depth: even a candidate list that bypassed the selector

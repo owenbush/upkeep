@@ -5,36 +5,40 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Cockpit\Cockpit;
 use Upkeep\Cockpit\Module;
-use Upkeep\Cockpit\RegistryException;
 use Upkeep\Dashboard\DashboardCache;
+use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\Issue;
 use Upkeep\Drupal\IssueReference;
 use Upkeep\Drupal\IssueStatus;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\MergeRequest;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Workflow\ExitCode;
 
 /**
  * Surface drupal.org issues in Needs Review / RTBC status that have no
  * corresponding GitLab merge request — the patch-only contributions that
  * aren't visible in the MR-centric dashboard.
+ *
+ * Running without a GitLab token is a documented degraded mode, not a
+ * failure: the scan proceeds without cross-referencing merge requests, says
+ * so once, and still exits 0. Only a missing cockpit, an unreadable registry
+ * or an unregistered --module is an infrastructure failure.
  */
 #[AsCommand(
     name: 'patches',
     description: 'Show drupal.org issues with patches but no merge request.',
 )]
-final class PatchesCommand extends Command
+final class PatchesCommand extends UpkeepCommand
 {
     public function __construct(
         private readonly ?DrupalOrgClient $drupalClient = null,
@@ -45,12 +49,7 @@ final class PatchesCommand extends Command
 
     protected function configure(): void
     {
-        $this->addOption(
-            'cockpit',
-            null,
-            InputOption::VALUE_REQUIRED,
-            sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR),
-        );
+        $this->addCockpitOption();
         $this->addOption(
             'module',
             null,
@@ -59,32 +58,20 @@ final class PatchesCommand extends Command
         );
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    /** stdout carries the table; diagnostics stay pipe-safe on stderr. */
+    protected function diagnosticsOnStderr(): bool
     {
-        $io = new SymfonyStyle(
-            $input,
-            $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output,
-        );
+        return true;
+    }
 
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        try {
-            $registry = $cockpit->loadRegistry();
-        } catch (RegistryException $e) {
-            $io->error($e->getMessage());
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
+    {
+        $cockpit = $this->cockpit($input);
+        $modules = $this->modules($cockpit);
 
-            return Command::FAILURE;
-        }
-
-        $modules = $registry->modules();
-        $moduleFilter = $input->getOption('module');
+        $moduleFilter = self::stringOption($input, 'module');
         if ($moduleFilter !== null) {
-            $moduleFilter = (string) $moduleFilter;
-            if (!isset($modules[$moduleFilter])) {
-                $io->error(sprintf('Module "%s" is not registered.', $moduleFilter));
-
-                return Command::FAILURE;
-            }
-            $modules = [$moduleFilter => $modules[$moduleFilter]];
+            $modules = [$moduleFilter => self::requireModule($modules, $moduleFilter)];
         }
 
         $drupal = $this->drupalClient ?? new DrupalOrgClient(HttpClient::create());
@@ -108,7 +95,7 @@ final class PatchesCommand extends Command
         if ($orphans === []) {
             $io->success('No orphan issues found — all Needs Review / RTBC issues have corresponding MRs.');
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         $this->renderTable($orphans, $output);
@@ -124,7 +111,7 @@ final class PatchesCommand extends Command
             implode(', ', array_map(static fn (IssueStatus $s): string => $s->shortLabel(), $scannedStatuses)),
         ));
 
-        return Command::SUCCESS;
+        return ExitCode::OK;
     }
 
     /**
@@ -132,46 +119,26 @@ final class PatchesCommand extends Command
      */
     private function renderTable(array $orphans, OutputInterface $output): void
     {
-        $headers = ['MODULE', 'ISSUE', 'STATUS', 'PATCHES', 'LATEST PATCH', 'TITLE'];
-        $colWidths = array_map('mb_strlen', $headers);
-
         $rows = [];
         foreach ($orphans as $entry) {
             $issue = $entry['issue'];
             $latest = $issue->latestPatch();
-            $cells = [
+            $rows[] = [
                 $entry['module'],
                 '#' . $issue->nid,
                 $issue->status->shortLabel(),
                 $issue->patchCount() > 0 ? (string) $issue->patchCount() : '–',
-                $latest !== null ? self::truncate($latest->name, 30) : '–',
-                self::truncate($issue->title, 44),
+                $latest !== null ? DashboardRow::truncate($latest->name, 30) : '–',
+                DashboardRow::truncate($issue->title),
             ];
-
-            foreach ($cells as $i => $cell) {
-                $colWidths[$i] = max($colWidths[$i], mb_strlen($cell));
-            }
-            $rows[] = $cells;
         }
 
-        $gap = 4;
-
-        $headerLine = '';
-        foreach ($headers as $i => $h) {
-            $headerLine .= str_pad($h, $colWidths[$i] + $gap);
-        }
-        $output->writeln('<fg=gray>' . rtrim($headerLine) . '</>');
-        $output->writeln('');
-
-        foreach ($rows as $cells) {
-            $fmt = self::colorCells($cells);
-            $line = '';
-            foreach ($fmt as $i => $fmtCell) {
-                $pad = $colWidths[$i] - mb_strlen($cells[$i]) + $gap;
-                $line .= $fmtCell . str_repeat(' ', $pad);
-            }
-            $output->writeln(rtrim($line));
-        }
+        ColumnTable::render(
+            $output,
+            ['MODULE', 'ISSUE', 'STATUS', 'PATCHES', 'LATEST PATCH', 'TITLE'],
+            $rows,
+            self::colorCells(...),
+        );
     }
 
     /**
@@ -205,9 +172,10 @@ final class PatchesCommand extends Command
      */
     private function collectMrIssueNids(array $modules, Cockpit $cockpit, SymfonyStyle $io): array
     {
-        $dashCache = new DashboardCache($cockpit->root . '/cache/dashboard');
+        $dashCache = new DashboardCache($cockpit->dashboardCachePath());
         $nids = [];
         $gitlabClient = null;
+        $gitlabAttempted = false;
 
         foreach ($modules as $name => $module) {
             $snapshot = $dashCache->load($name);
@@ -216,7 +184,10 @@ final class PatchesCommand extends Command
                 continue;
             }
 
-            $gitlabClient ??= $this->gitlabClient ?? $this->buildGitlabClient($io);
+            if ($gitlabClient === null && !$gitlabAttempted) {
+                $gitlabAttempted = true;
+                $gitlabClient = $this->gitlabClient ?? $this->buildGitlabClient($io);
+            }
             if ($gitlabClient === null) {
                 $io->note(
                     'No dashboard cache and no GitLab token — showing all matching issues without '
@@ -261,15 +232,13 @@ final class PatchesCommand extends Command
         return $nids;
     }
 
-    private static function truncate(string $text, int $max): string
-    {
-        return mb_strlen($text) <= $max ? $text : mb_substr($text, 0, $max - 1) . '…';
-    }
-
     private function buildGitlabClient(SymfonyStyle $io): ?GitlabClient
     {
-        $token = (new TokenResolver())->resolve();
+        $resolver = GitlabClientFactory::resolver($io);
+        $token = $resolver->resolve();
         if ($token === null) {
+            $io->warning(GitlabClientFactory::missingTokenMessage($resolver));
+
             return null;
         }
 

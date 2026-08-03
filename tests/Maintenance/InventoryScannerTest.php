@@ -188,4 +188,62 @@ final class InventoryScannerTest extends TestCase
 
         self::assertSame([], $scanner->scan());
     }
+
+    /**
+     * glob() resolves through symlinked path components, so a symlinked
+     * materialized/ directory would enumerate files outside the environment
+     * tree — and prune would then unlink them.
+     */
+    public function testASymlinkedMaterializedDirectoryIsNotEnumerated(): void
+    {
+        $elsewhere = $this->world . '/elsewhere';
+        mkdir($elsewhere, 0o700, true);
+        file_put_contents($elsewhere . '/not-ours.sql', 'someone else\'s data');
+
+        $project = $this->projectsRoot . '/upkeep-symlinked-d11';
+        mkdir($project . '/.ddev/upkeep', 0o700, true);
+        symlink($elsewhere, $project . '/.ddev/upkeep/materialized');
+
+        foreach ($this->scan() as $item) {
+            self::assertStringNotContainsString('not-ours.sql', $item->path);
+        }
+    }
+
+    public function testAnUnreadableDirectoryIsWarnedAboutRatherThanReportedAsEmpty(): void
+    {
+        chmod($this->cockpitRoot . '/fixtures', 0o000);
+
+        try {
+            $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+            $scanner->scan();
+
+            self::assertNotSame([], $scanner->warnings());
+            self::assertStringContainsString('/fixtures', implode("\n", $scanner->warnings()));
+        } finally {
+            chmod($this->cockpitRoot . '/fixtures', 0o755);
+        }
+    }
+
+    public function testACleanScanReportsNoWarnings(): void
+    {
+        $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+        $scanner->scan();
+
+        self::assertSame([], $scanner->warnings());
+    }
+
+    public function testAnUnreadableBaseArtifactsDirectoryDegradesToAWarningRatherThanFailingThePruneScan(): void
+    {
+        chmod($this->cockpitRoot . '/base-artifacts', 0o000);
+
+        try {
+            $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+            $items = $scanner->scan();
+
+            self::assertNotSame([], $items, 'The rest of the inventory must still be reported.');
+            self::assertStringContainsString('/base-artifacts', implode("\n", $scanner->warnings()));
+        } finally {
+            chmod($this->cockpitRoot . '/base-artifacts', 0o755);
+        }
+    }
 }

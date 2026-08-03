@@ -8,10 +8,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Upkeep\Adapter\AdapterException;
-use Upkeep\Cockpit\RegistryException;
 use Upkeep\Workflow\ExitCode;
-use Upkeep\Workflow\WorkflowException;
 
 /**
  * Put a merge request onto a browsable site: resolve context, ensure the
@@ -33,29 +30,21 @@ final class ReviewCommand extends AbstractMrCommand
         $this->configureMrSurface();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
+        $context = $this->resolveContext($input, $io);
+        self::describeContext($io, $context, self::stringOption($input, 'version'));
 
-        try {
-            $context = $this->resolveContext($input, $io);
-            self::describeContext($io, $context, $input->getOption('version'));
+        $adapter = $this->adapter($input, $output);
 
-            $adapter = $this->adapter($input, $output);
+        $io->section('Environment');
+        $environment = $adapter->ensureEnv($context->module, $context->coreMajor);
 
-            $io->section('Environment');
-            $environment = $adapter->ensureEnv($context->module, $context->coreMajor);
+        $io->section('Merge request');
+        $adapter->applyMr($environment, $context->mergeRequest);
 
-            $io->section('Merge request');
-            $adapter->applyMr($environment, $context->mergeRequest);
-
-            $io->section('Serve');
-            $serve = $adapter->serve($environment);
-        } catch (WorkflowException | AdapterException | RegistryException $e) {
-            $io->error($e->getMessage());
-
-            return ExitCode::INFRASTRUCTURE;
-        }
+        $io->section('Serve');
+        $serve = $adapter->serve($environment);
 
         $io->success(sprintf(
             'MR !%d ("%s") is live for review on Drupal core %s.',
