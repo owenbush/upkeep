@@ -194,4 +194,28 @@ final class DashboardCacheTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $cache->save('../../escape', $this->snapshot());
     }
+
+    public function testAnUnusableCacheEntryIsAMissOnLoadRatherThanACrashOrAWarning(): void
+    {
+        // Every way a cached entry can be unusable — an identity that could
+        // never have been written, a file that cannot be read — is the same
+        // documented miss: the dashboard re-fetches. oldestFetchedAt() reads
+        // through the same path, so it must skip such modules rather than
+        // reporting them as infinitely old.
+        $cache = new DashboardCache($this->cacheDir);
+        $cache->save('widget', $this->snapshot(new \DateTimeImmutable('2026-07-01T00:00:00+00:00')));
+        $cache->save('gadget', $this->snapshot(new \DateTimeImmutable('2026-07-02T00:00:00+00:00')));
+        chmod($this->cacheDir . '/widget.json', 0o000);
+
+        try {
+            self::assertNull($cache->load('../../escape'));
+            self::assertNull($cache->load('widget'));
+            self::assertSame(
+                '2026-07-02T00:00:00+00:00',
+                $cache->oldestFetchedAt(['widget', 'gadget'])?->format(\DateTimeInterface::ATOM),
+            );
+        } finally {
+            chmod($this->cacheDir . '/widget.json', 0o600);
+        }
+    }
 }

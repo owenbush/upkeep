@@ -42,6 +42,51 @@ final class VolumeProbeInventoryTest extends TestCase
         ]));
     }
 
+    /**
+     * Built over a CommandRunner, the probe must stay tolerant: docker being
+     * unavailable is a normal state (the probe is best-effort), so a failing
+     * `docker volume ls` yields no volumes rather than an exception. It must
+     * also stay quick — a stuck docker daemon cannot be allowed to hold up a
+     * status listing for the runner's hour-long default.
+     */
+    public function testOverARunnerAFailingDockerProbeYieldsNothingAndStaysTimeboxed(): void
+    {
+        $runner = new ScriptedCommandRunner(static fn (): ?string => null);
+
+        self::assertSame([], VolumeProbe::withRunner($runner)->items([
+            'upkeep-widget-d11' => self::item('/p/upkeep-widget-d11', Category::ProjectTree, 'upkeep-widget-d11'),
+        ]));
+        self::assertSame(
+            ['docker volume ls --format {{.Name}}\t{{.Label "com.docker.compose.project"}}'],
+            $runner->commandLines()
+        );
+        self::assertSame(120, $runner->invocations[0]['timeout']);
+    }
+
+    public function testOverARunnerVolumeSizesAreReadFromDockerSystemDf(): void
+    {
+        $runner = new ScriptedCommandRunner(static function (array $command): string {
+            if (($command[1] ?? '') === 'volume') {
+                return "upkeep-widget-d11-mariadb\tddev-upkeep-widget-d11\n";
+            }
+
+            return implode("\n", [
+                'Local Volumes space usage:',
+                '',
+                'VOLUME NAME                 LINKS     SIZE',
+                'upkeep-widget-d11-mariadb   1         2.5GB',
+                'unrelated-volume            0         400MB',
+            ]);
+        });
+
+        $items = VolumeProbe::withRunner($runner)->items([
+            'upkeep-widget-d11' => self::item('/p/upkeep-widget-d11', Category::ProjectTree, 'upkeep-widget-d11'),
+        ]);
+
+        self::assertCount(1, $items);
+        self::assertSame(2500000000, $items[0]->sizeBytes);
+    }
+
     /** @param array<string, string> $volumes volume name => compose project label */
     private static function probe(array $volumes): VolumeProbe
     {

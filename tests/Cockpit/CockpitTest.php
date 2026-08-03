@@ -78,6 +78,47 @@ final class CockpitTest extends TestCase
         }
     }
 
+    public function testResolutionOrderIsExplicitOptionThenEnvironmentVariableThenWorkingDirectory(): void
+    {
+        putenv(Cockpit::ENV_VAR . '=' . $this->world . '/elsewhere');
+        $original = getcwd();
+        self::assertNotFalse($original);
+        chdir($this->world . '/cockpit/nested');
+
+        try {
+            self::assertSame($this->world . '/cockpit', Cockpit::resolve($this->world . '/cockpit')->root);
+            self::assertSame($this->world . '/elsewhere', Cockpit::resolve(null)->root);
+
+            putenv(Cockpit::ENV_VAR);
+            self::assertSame($this->world . '/cockpit/nested', Cockpit::resolve(null)->root);
+        } finally {
+            chdir($original);
+        }
+    }
+
+    public function testADeletedWorkingDirectoryIsRefusedRatherThanResolvingToNothing(): void
+    {
+        // Falling back to the cwd is only meaningful while the cwd exists. A
+        // shell left sitting in a directory that has since been removed must
+        // get an explanation, not a cockpit rooted at an empty path.
+        putenv(Cockpit::ENV_VAR);
+        $original = getcwd();
+        self::assertNotFalse($original);
+        $doomed = $this->world . '/doomed';
+        mkdir($doomed, 0o700);
+        chdir($doomed);
+        rmdir($doomed);
+
+        try {
+            $this->expectException(FilesystemException::class);
+            $this->expectExceptionMessageMatches('/current directory/');
+
+            Cockpit::resolve(null);
+        } finally {
+            chdir($original);
+        }
+    }
+
     public function testAnUnresolvableTraversalSegmentIsRefused(): void
     {
         $this->expectException(FilesystemException::class);

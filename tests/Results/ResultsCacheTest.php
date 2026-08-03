@@ -225,5 +225,37 @@ final class ResultsCacheTest extends TestCase
             'results' => [],
         ]));
         self::assertNull($cache->find('m', 1, '11', self::SHA));
+
+        // A list, but of scalars rather than check mappings.
+        file_put_contents($file, json_encode([
+            'sha' => self::SHA,
+            'recorded_at' => '2026-07-01T00:00:00+00:00',
+            'results' => ['phpunit', 'phpstan'],
+        ]));
+        self::assertNull($cache->find('m', 1, '11', self::SHA));
+    }
+
+    public function testACoreVersionThatIsNotAMajorVersionNumberNeverBecomesAPathSegment(): void
+    {
+        // The core major is the last component of results/<module>/<mr>/<core>.
+        // It comes from the registry, which validates it — this is the
+        // re-assertion that keeps that true for every other caller too.
+        $cache = new ResultsCache($this->dir);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/core major version/');
+        $cache->store('m', 1, '../../etc', self::SHA, new CheckRunResult([]));
+    }
+
+    public function testAnImpossibleIdentityReadsAsNeverCheckedRatherThanCrashingTheDashboard(): void
+    {
+        // Reads answer one question — "was this checked?" — so an identity that
+        // could never have been stored is a miss on every read path, not an
+        // exception surfacing out of a dashboard row.
+        $cache = new ResultsCache($this->dir);
+
+        self::assertNull($cache->find('../../escape', 1, '11', self::SHA));
+        self::assertNull($cache->latest('../../escape', 1, '11'));
+        self::assertNull($cache->latest('m', 1, '../../etc'));
     }
 }

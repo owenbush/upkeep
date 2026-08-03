@@ -69,7 +69,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
     public function __construct(
         private readonly ArtifactLayout $layout,
         private readonly string $projectsRoot,
-        private readonly ProcessRunner $runner,
+        private readonly CommandRunner $runner,
         private readonly \Closure $log,
     ) {
     }
@@ -392,7 +392,10 @@ final class DdevContribAdapter implements EngineAdapterInterface
             $coreMajor,
         ));
 
-        if (!is_dir($this->projectsRoot) && !mkdir($this->projectsRoot, 0755, true) && !is_dir($this->projectsRoot)) {
+        // Warning suppressed, not the failure: the reason a projects root
+        // cannot be created belongs in the AdapterException naming the path,
+        // not in a PHP notice on stderr ahead of it.
+        if (!is_dir($this->projectsRoot) && !@mkdir($this->projectsRoot, 0755, true) && !is_dir($this->projectsRoot)) {
             throw new AdapterException(sprintf('Could not create projects root "%s".', $this->projectsRoot));
         }
 
@@ -602,74 +605,82 @@ final class DdevContribAdapter implements EngineAdapterInterface
     }
 
     /**
-     * The one dispatch point for every check type. Exhaustive over CheckType
-     * with no default arm on purpose: adding a case to the enum then fails
-     * here, at the place that has to decide how to run it, rather than
-     * silently falling through to a command line that does not exist.
+     * The one dispatch point for every check type: each arm names both how the
+     * check is run and, for the command checks, the exact command line.
+     * Exhaustive over CheckType with no default arm on purpose — adding a case
+     * to the enum then fails here, at the place that has to decide how to run
+     * it, rather than silently falling through to a command that does not
+     * exist. Keeping the command lines in the arms is what makes that possible
+     * without a second, partial match somewhere downstream.
      */
     private function runCheck(Environment $environment, CheckType $check): CheckResult
     {
         return match ($check) {
             CheckType::Deprecation => $this->runDeprecationCheck($environment),
             CheckType::FunctionalSmoke => $this->runSmokeCheck($environment),
-            CheckType::PhpUnit,
-            CheckType::PhpCs,
-            CheckType::PhpStan,
-            CheckType::EsLint,
-            CheckType::StyleLint,
-            CheckType::ModuleInstall => $this->runCommandCheck($environment, $check),
+            // Engine command as shipped: an existing path argument makes it
+            // run exactly that directory (host-side path, container cwd is
+            // the project root).
+            CheckType::PhpUnit => $this->runCommandCheck($environment, $check, [
+                'ddev', 'phpunit', sprintf('web/%s/%s', EngineAddOn::PROJECTS_PATH, $environment->moduleName),
+            ]),
+            CheckType::EsLint, CheckType::StyleLint
+                => $this->runCommandCheck($environment, $check, ['ddev', $check->value]),
+            CheckType::PhpCs => $this->runCommandCheck($environment, $check, [
+                'ddev', 'exec', 'bash', '-c', implode("\n", [
+                    'set -eu',
+                    'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/'
+                    . 'gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
+                    sprintf(
+                        'phpcs -s --report-full --report-summary --report-source %s --ignore=*/.ddev/*',
+                        self::containerModulePath($environment),
+                    ),
+                ]),
+            ]),
+            CheckType::PhpStan => $this->runCommandCheck($environment, $check, [
+                'ddev', 'exec', 'bash', '-c', implode("\n", [
+                    'set -eu',
+                    'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/'
+                    . 'gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
+                    "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
+                    'test -e phpstan-baseline.neon || touch phpstan-baseline.neon',
+                    'phpstan analyze ' . self::containerModulePath($environment),
+                ]),
+            ]),
+            CheckType::ModuleInstall => $this->runCommandCheck($environment, $check, [
+                'ddev', 'drush', 'pm:install', $environment->moduleName, '-y',
+            ]),
         };
     }
 
     /**
-     * The checks that are just a command line run inside the environment.
+     * The in-container path of the module under maintenance, for the phpcs and
+     * phpstan invocations.
+     *
+     * Checks target exactly that module — never all of DRUPAL_PROJECTS_PATH,
+     * where composer also materializes the module's real dependencies (their
+     * packaged code must not pollute results). $DDEV_DOCROOT and
+     * $DRUPAL_PROJECTS_PATH expand inside the web container. The module name is
+     * quoted rather than trusted: it is spliced into a shell script body, so
+     * its safety must not depend on a validator two classes away.
      */
-    private function runCommandCheck(Environment $environment, CheckType $check): CheckResult
+    private static function containerModulePath(Environment $environment): string
     {
-        // Checks target exactly the module under maintenance — never all of
-        // DRUPAL_PROJECTS_PATH, where composer also materializes the module's
-        // real dependencies (their packaged code must not pollute results).
-        // In-container path; $DRUPAL_PROJECTS_PATH expands inside the web
-        // container. The module name is quoted rather than trusted: it is
-        // spliced into a shell script body below, so its safety must not
-        // depend on a validator two classes away.
-        $modulePath = sprintf(
+        return sprintf(
             '"$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/%s',
             ShellArgument::quote($environment->moduleName),
         );
+    }
 
-        $command = match ($check) {
-            // Engine command as shipped: an existing path argument makes it
-            // run exactly that directory (host-side path, container cwd is
-            // the project root).
-            CheckType::PhpUnit => [
-                'ddev', 'phpunit', sprintf('web/%s/%s', EngineAddOn::PROJECTS_PATH, $environment->moduleName),
-            ],
-            CheckType::EsLint, CheckType::StyleLint => ['ddev', $check->value],
-            // The engine's phpcs/phpstan commands derive the target directory
-            // from the ddev site name (module-as-project-root assumption),
-            // which does not exist in the seeded-tree layout. Run the same
-            // CI-aligned invocations (gitlab_templates configs) scoped to the
-            // module instead.
-            CheckType::PhpCs => ['ddev', 'exec', 'bash', '-c', implode("\n", [
-                'set -eu',
-                'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/'
-                . 'gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
-                sprintf('phpcs -s --report-full --report-summary --report-source %s --ignore=*/.ddev/*', $modulePath),
-            ])],
-            CheckType::PhpStan => ['ddev', 'exec', 'bash', '-c', implode("\n", [
-                'set -eu',
-                'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/'
-                . 'gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
-                "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
-                'test -e phpstan-baseline.neon || touch phpstan-baseline.neon',
-                'phpstan analyze ' . $modulePath,
-            ])],
-            CheckType::ModuleInstall => ['ddev', 'drush', 'pm:install', $environment->moduleName, '-y'],
-            CheckType::FunctionalSmoke, CheckType::Deprecation
-                => throw new \LogicException('Dispatched to their own method by runCheck().'),
-        };
-
+    /**
+     * A check that is just a command line run inside the environment: the
+     * outcome is data, so a non-zero exit becomes a failed CheckResult rather
+     * than an exception, and a timeout becomes a timed-out one.
+     *
+     * @param list<string> $command
+     */
+    private function runCommandCheck(Environment $environment, CheckType $check, array $command): CheckResult
+    {
         $process = $this->runner->capture($command, $environment->projectPath, self::CHECK_TIMEOUT);
         if ($process->timedOut) {
             return CheckResult::timedOut($check, $process->output, $process->durationSeconds, self::CHECK_TIMEOUT);
@@ -752,15 +763,15 @@ final class DdevContribAdapter implements EngineAdapterInterface
     private function adaptAddOnConfig(string $projectPath): void
     {
         $configPath = $projectPath . '/.ddev/' . EngineAddOn::CONFIG_FILENAME;
-        if (!is_file($configPath)) {
+        // One read decides it: the add-on either installed a readable config
+        // or it did not, and both spellings of "it did not" are the same
+        // problem for the caller — the adaptation cannot proceed.
+        $config = is_file($configPath) ? @file_get_contents($configPath) : false;
+        if ($config === false) {
             throw new AdapterException(sprintf(
-                'Engine add-on did not install its config at "%s" — cannot adapt it.',
+                'Cannot read the engine add-on config at "%s" — the add-on did not install it, or it is unreadable.',
                 $configPath,
             ));
-        }
-        $config = @file_get_contents($configPath);
-        if ($config === false) {
-            throw new AdapterException(sprintf('Cannot read the engine add-on config at "%s".', $configPath));
         }
         FileWriter::write($configPath, EngineAddOn::adaptContribConfig($config));
     }

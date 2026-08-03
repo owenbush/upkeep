@@ -21,15 +21,24 @@ use Upkeep\Workflow\WorkflowException;
  * surface, cockpit + registry + GitLab client construction, and MrContext
  * resolution.
  *
- * Deliberately untested orchestration — the meaningful logic (context
- * resolution outcomes, core-version defaulting, exit-code mapping) lives in
- * Upkeep\Workflow and is unit-tested there; the adapter operations are the
- * task-11 surface. These commands are the live verification layer.
+ * The meaningful logic (context resolution outcomes, core-version defaulting,
+ * exit-code mapping) lives in Upkeep\Workflow and is unit-tested there, and
+ * the adapter operations are the task-11 surface; what is verified here is
+ * the orchestration itself, end-to-end through the console against an
+ * injected GitLab client and a fake engine.
  */
 abstract class AbstractMrCommand extends UpkeepCommand
 {
-    public function __construct(private readonly EngineAdapterFactory $engines)
-    {
+    /**
+     * @param ?GitlabClient $gitlabClient injected in tests; built from the
+     *                                    resolved token otherwise (the same
+     *                                    seam every other GitLab-using
+     *                                    command already exposes)
+     */
+    public function __construct(
+        private readonly EngineAdapterFactory $engines,
+        private readonly ?GitlabClient $gitlabClient = null,
+    ) {
         parent::__construct();
     }
 
@@ -62,22 +71,34 @@ abstract class AbstractMrCommand extends UpkeepCommand
     protected function resolveContext(InputInterface $input, SymfonyStyle $io): MrContext
     {
         $registry = $this->cockpit($input)->loadRegistry();
+        $client = $this->gitlabClient ?? $this->clientFromToken($io);
 
+        $iid = self::mrIid($input);
+        $io->writeln(sprintf('Resolving MR !%d of %s via GitLab ...', $iid, self::stringArgument($input, 'module')));
+
+        return (new MrContextResolver($registry->modules(), $client))
+            ->resolve(
+                self::stringArgument($input, 'module'),
+                $iid,
+                self::stringOption($input, 'version'),
+            );
+    }
+
+    /**
+     * No credential means no verdict can be produced, which is the
+     * infrastructure outcome — reported here with the one shared wording.
+     *
+     * @throws WorkflowException when no token is configured
+     */
+    private function clientFromToken(SymfonyStyle $io): GitlabClient
+    {
         $tokens = GitlabClientFactory::resolver($io);
         $token = $tokens->resolve();
         if ($token === null) {
             throw new WorkflowException(GitlabClientFactory::missingTokenMessage($tokens));
         }
 
-        $iid = self::mrIid($input);
-        $io->writeln(sprintf('Resolving MR !%d of %s via GitLab ...', $iid, self::stringArgument($input, 'module')));
-
-        return (new MrContextResolver($registry->modules(), new GitlabClient(HttpClient::create(), $token)))
-            ->resolve(
-                self::stringArgument($input, 'module'),
-                $iid,
-                self::stringOption($input, 'version'),
-            );
+        return new GitlabClient(HttpClient::create(), $token);
     }
 
     /**

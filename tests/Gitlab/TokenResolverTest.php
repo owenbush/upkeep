@@ -11,9 +11,30 @@ final class TokenResolverTest extends TestCase
 {
     private const ENV_VAR = 'UPKEEP_TEST_GITLAB_TOKEN';
 
+    /** Original values, so XDG_CONFIG_HOME/HOME manipulation never leaks into other tests. */
+    private bool|string $originalXdgConfigHome = false;
+    private bool|string $originalHome = false;
+
+    protected function setUp(): void
+    {
+        $this->originalXdgConfigHome = getenv('XDG_CONFIG_HOME');
+        $this->originalHome = getenv('HOME');
+    }
+
     protected function tearDown(): void
     {
         putenv(self::ENV_VAR);
+        self::restoreEnv('XDG_CONFIG_HOME', $this->originalXdgConfigHome);
+        self::restoreEnv('HOME', $this->originalHome);
+    }
+
+    private static function restoreEnv(string $name, bool|string $original): void
+    {
+        if ($original === false) {
+            putenv($name);
+        } else {
+            putenv($name . '=' . $original);
+        }
     }
 
     public function testEnvironmentVariableWinsOverConfigFile(): void
@@ -62,6 +83,69 @@ final class TokenResolverTest extends TestCase
         } finally {
             unlink($file);
         }
+    }
+
+    /**
+     * A blank config file (readable, zero non-empty lines) must fall through
+     * to null rather than being treated as "content found".
+     */
+    public function testConfigFileThatIsReadableButBlankResolvesToNull(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'upkeep-pat-');
+        file_put_contents($file, "\n   \n\n");
+
+        try {
+            $resolver = new TokenResolver(self::ENV_VAR, $file);
+            $this->assertNull($resolver->resolve());
+        } finally {
+            unlink($file);
+        }
+    }
+
+    /**
+     * An env var can be non-empty by PHP's trim() (which does not strip a
+     * form feed) yet carry no real line content once split into lines — the
+     * same "blank" a human would call it. It must resolve to null, not
+     * travel forward as a one-character token.
+     */
+    public function testEnvVarThatIsWhitespaceOnlyByLineSplittingResolvesToNull(): void
+    {
+        putenv(self::ENV_VAR . "=\x0C");
+
+        $resolver = new TokenResolver(self::ENV_VAR, '/nonexistent/path/to/pat');
+
+        $this->assertNull($resolver->resolve());
+    }
+
+    public function testDefaultConfigFileUsesXdgConfigHomeWhenSet(): void
+    {
+        putenv('XDG_CONFIG_HOME=/xdg/custom/config');
+
+        $this->assertSame('/xdg/custom/config/upkeep/drupal-pat', TokenResolver::defaultConfigFile());
+    }
+
+    public function testDefaultConfigFileFallsBackToHomeConfigWhenXdgConfigHomeIsUnset(): void
+    {
+        putenv('XDG_CONFIG_HOME');
+        putenv('HOME=/home/example-user');
+
+        $this->assertSame('/home/example-user/.config/upkeep/drupal-pat', TokenResolver::defaultConfigFile());
+    }
+
+    public function testDefaultConfigFileFallsBackToHomeConfigWhenXdgConfigHomeIsEmptyString(): void
+    {
+        putenv('XDG_CONFIG_HOME=');
+        putenv('HOME=/home/example-user');
+
+        $this->assertSame('/home/example-user/.config/upkeep/drupal-pat', TokenResolver::defaultConfigFile());
+    }
+
+    public function testDefaultConfigFileFallsBackToLiteralTildeWhenNeitherXdgConfigHomeNorHomeIsSet(): void
+    {
+        putenv('XDG_CONFIG_HOME');
+        putenv('HOME');
+
+        $this->assertSame('~/.config/upkeep/drupal-pat', TokenResolver::defaultConfigFile());
     }
 
     public function testDescribeSourcesNamesTheEnvVarAndPathButNoTokenMaterial(): void

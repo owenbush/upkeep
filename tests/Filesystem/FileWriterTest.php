@@ -126,6 +126,88 @@ final class FileWriterTest extends TestCase
         }
     }
 
+    public function testAShortWriteIsReportedAndLeavesNeitherTargetNorTempFileBehind(): void
+    {
+        // The whole point of this class: `file_put_contents` returning fewer
+        // bytes than were handed to it used to flow into a discarded return
+        // value while the caller reported success.
+        $path = $this->world . '/short.json';
+
+        try {
+            ShortWritingFileWriter::write($path, '{"a":1}', FileWriter::MODE_PRIVATE);
+            self::fail('Expected a FilesystemException.');
+        } catch (FilesystemException $e) {
+            self::assertStringContainsString('7 byte(s)', $e->getMessage());
+            self::assertStringContainsString($path, $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($path);
+        self::assertSame([], $this->siblings(), 'A failed write must not leave a temp file behind.');
+    }
+
+    public function testAWriteThatProducesNoBytesAtAllIsReportedAsNothingWritten(): void
+    {
+        $path = $this->world . '/nothing.json';
+
+        try {
+            RefusingFileWriter::write($path, 'payload', FileWriter::MODE_PRIVATE);
+            self::fail('Expected a FilesystemException.');
+        } catch (FilesystemException $e) {
+            self::assertStringContainsString('wrote nothing', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($path);
+        self::assertSame([], $this->siblings());
+    }
+
+    public function testAModeThatCannotBeAppliedFailsTheWriteRatherThanPublishingAWorldReadableFile(): void
+    {
+        // These files carry token-scoped remote data and raw check output. A
+        // write whose 0600 did not take must not be published at whatever mode
+        // the temp file happened to have.
+        $path = $this->world . '/mode.json';
+
+        try {
+            UnchmodableFileWriter::write($path, 'secret', FileWriter::MODE_PRIVATE);
+            self::fail('Expected a FilesystemException.');
+        } catch (FilesystemException $e) {
+            self::assertStringContainsString('Cannot set mode 600', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($path);
+        self::assertSame([], $this->siblings());
+    }
+
+    public function testCommitFailsLoudlyAndDiscardsTheTempFileWhenTheRenameCannotHappen(): void
+    {
+        // commit() is public so callers can validate the exact final bytes
+        // first. A rename it cannot perform must not leave the caller believing
+        // the file was published, nor the temp file sitting next to the target.
+        $temp = FileWriter::writeTemporary($this->world . '/target.txt', 'bytes', FileWriter::MODE_SHARED);
+        mkdir($this->world . '/target.txt');
+
+        try {
+            FileWriter::commit($temp, $this->world . '/target.txt');
+            self::fail('Expected a FilesystemException.');
+        } catch (FilesystemException $e) {
+            self::assertStringContainsString('into place at', $e->getMessage());
+        }
+
+        self::assertFileDoesNotExist($temp);
+        self::assertSame(['target.txt'], $this->siblings());
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function siblings(): array
+    {
+        $entries = scandir($this->world);
+        self::assertNotFalse($entries);
+
+        return array_values(array_diff($entries, ['.', '..']));
+    }
+
     public function testEnsureDirectoryCreatesTheTreeWithTheRequestedMode(): void
     {
         $dir = $this->world . '/a/b/c';

@@ -165,6 +165,61 @@ final class DrupalOrgClientTest extends TestCase
         self::assertCount(1, $issues);
     }
 
+    /**
+     * The api-d7 endpoint is public, unversioned and outside this project's
+     * control. Anything that is valid JSON but not the documented object shape
+     * — an error string, a bare null, an interstitial — must read as "no
+     * issue" on both endpoints rather than reaching the models as mixed.
+     */
+    public function testAJsonBodyThatIsNotAnObjectReadsAsNoIssueOnEitherEndpoint(): void
+    {
+        $single = new DrupalOrgClient(new MockHttpClient(new MockResponse('"service unavailable"')));
+        self::assertNull($single->issue(3467675));
+
+        $listing = new DrupalOrgClient(new MockHttpClient(new MockResponse('42')));
+        self::assertSame([], $listing->projectIssues('widget', [IssueStatus::NeedsReview]));
+    }
+
+    public function testUnusableEntriesInAListingAreSkippedWhileTheRestOfThePageIsKept(): void
+    {
+        $client = new DrupalOrgClient(new MockHttpClient(new MockResponse(json_encode([
+            'list' => [
+                'not-an-object',
+                self::issuePayload(['nid' => 100, 'field_issue_status' => '8']),
+                self::issuePayload(['nid' => 200, 'field_issue_status' => '999']),
+            ],
+        ], \JSON_THROW_ON_ERROR))));
+
+        $issues = $client->projectIssues('widget', [IssueStatus::NeedsReview]);
+
+        self::assertCount(1, $issues);
+        self::assertSame(100, $issues[0]->nid);
+    }
+
+    public function testAnUnreadablePageEndsTheListingInsteadOfEscapingAsAnException(): void
+    {
+        // Failures are absorbed here by design: the caller gets whatever was
+        // gathered and decides how to degrade. A half-read listing must not
+        // take down the command that asked for it.
+        $calls = 0;
+        $factory = function () use (&$calls): MockResponse {
+            ++$calls;
+
+            return $calls === 1
+                ? new MockResponse(json_encode([
+                    'list' => [self::issuePayload(['nid' => 100, 'field_issue_status' => '8'])],
+                    'next' => 'https://www.drupal.org/api-d7/node.json?page=1',
+                ], \JSON_THROW_ON_ERROR))
+                : new MockResponse('<html>gateway interstitial</html>');
+        };
+
+        $client = new DrupalOrgClient(new MockHttpClient($factory));
+        $issues = $client->projectIssues('widget', [IssueStatus::NeedsReview]);
+
+        self::assertSame(2, $calls, 'A "next" link must be followed.');
+        self::assertCount(1, $issues, 'What was already read is kept.');
+    }
+
     public function testProjectIssuesCachesIndividualIssues(): void
     {
         $issue = self::issuePayload(['nid' => 100, 'field_issue_status' => '8']);

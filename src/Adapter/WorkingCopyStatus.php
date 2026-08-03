@@ -106,7 +106,7 @@ final readonly class WorkingCopyStatus
     /**
      * Inspects the git state of a module working copy directory.
      */
-    public static function inspect(string $moduleDir, ProcessRunner $runner): self
+    public static function inspect(string $moduleDir, CommandRunner $runner): self
     {
         $hasStagedChanges = false;
         $hasUnstagedChanges = false;

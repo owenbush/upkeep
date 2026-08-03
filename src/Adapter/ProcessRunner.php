@@ -22,10 +22,8 @@ use Upkeep\Security\SecretRedactor;
  *      combined output in CapturedProcess, which callers persist — passes
  *      through the redactor first.
  */
-final readonly class ProcessRunner
+final readonly class ProcessRunner implements CommandRunner
 {
-    public const DEFAULT_TIMEOUT = 3600;
-
     /**
      * Child output is untrusted and unbounded; a failing composer or engine
      * step can emit megabytes. Failure messages carry the tail only.

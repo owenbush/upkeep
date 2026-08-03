@@ -41,16 +41,17 @@ final readonly class DashboardCache
             return null;
         }
 
-        $content = file_get_contents($path);
+        // Silenced deliberately: every unreadable-cache outcome is the same
+        // documented miss the dashboard re-fetches over, so it must not also
+        // print a PHP warning into the operator's table. fromJson() is total —
+        // it answers null for anything it cannot read — so there is nothing
+        // further to guard here.
+        $content = @file_get_contents($path);
         if ($content === false) {
             return null;
         }
 
-        try {
-            return ModuleSnapshot::fromJson($content);
-        } catch (\Throwable) {
-            return null;
-        }
+        return ModuleSnapshot::fromJson($content);
     }
 
     /**

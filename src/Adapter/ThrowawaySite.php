@@ -20,7 +20,7 @@ final readonly class ThrowawaySite
      * @param \Closure(string): void $log
      */
     public function __construct(
-        private ProcessRunner $runner,
+        private CommandRunner $runner,
         private \Closure $log,
     ) {
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Upkeep\Tests\Maintenance;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Cockpit\Cockpit;
 use Upkeep\Maintenance\Category;
@@ -222,6 +223,100 @@ final class InventoryScannerTest extends TestCase
         } finally {
             chmod($this->cockpitRoot . '/fixtures', 0o755);
         }
+    }
+
+    public function testAnUnreadableProjectsRootIsWarnedAboutRatherThanReportedAsNoEnvironments(): void
+    {
+        chmod($this->projectsRoot, 0o000);
+
+        try {
+            $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+            $items = $scanner->scan();
+
+            // Under-reporting fails safe for prune, but "there are no
+            // environments" and "I could not look" must not read the same.
+            foreach ($items as $item) {
+                self::assertStringNotContainsString('/projects/', $item->path);
+            }
+            self::assertStringContainsString($this->projectsRoot, implode("\n", $scanner->warnings()));
+        } finally {
+            chmod($this->projectsRoot, 0o755);
+        }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function unusableMetaProvider(): array
+    {
+        return [
+            'malformed YAML' => ["module: [conditions_helper\ncore_major: '11'\n"],
+            'not a mapping' => ["just a string\n"],
+        ];
+    }
+
+    #[DataProvider('unusableMetaProvider')]
+    public function testAnUnusableEnvMetaDotfileDegradesToUnknownAttributionNotAFailedScan(string $meta): void
+    {
+        // A partial or hand-mangled provision is still disk usage the operator
+        // needs to see; only its attribution and age are unknown.
+        $project = $this->projectsRoot . '/upkeep-mangled-d11';
+        mkdir($project, 0o755, true);
+        file_put_contents($project . '/.upkeep-env.yml', $meta);
+
+        $item = self::byPathSuffix($this->scan(), '/upkeep-mangled-d11');
+
+        self::assertSame(Category::ProjectTree, $item->category);
+        self::assertNull($item->module);
+        self::assertNull($item->coreMajor);
+        self::assertNull($item->lastUsedAt);
+    }
+
+    public function testAnUnparseableLastUsedAtReadsAsUnknownAgeRatherThanNow(): void
+    {
+        // Age drives prune --older-than. A timestamp that cannot be parsed must
+        // yield "unknown", which the selector excludes, rather than a date that
+        // would make the environment look prunable.
+        $project = $this->projectsRoot . '/upkeep-badstamp-d11';
+        mkdir($project, 0o755, true);
+        file_put_contents($project . '/.upkeep-env.yml', implode("\n", [
+            'module: badstamp',
+            "core_major: '11'",
+            "last_used_at: 'not a timestamp'",
+        ]));
+
+        $item = self::byPathSuffix($this->scan(), '/upkeep-badstamp-d11');
+
+        self::assertSame('badstamp', $item->module);
+        self::assertNull($item->lastUsedAt);
+    }
+
+    public function testLastUsedAtIsPreferredOverCreatedAtAndCreatedAtRemainsTheFallback(): void
+    {
+        // Task 7 behaviour change: .upkeep-env.yml now carries last_used_at,
+        // stamped at provision and re-stamped on reuse. An environment written
+        // before that (created_at only) must still report an age rather than
+        // reading as unknown and never expiring.
+        $legacy = $this->projectsRoot . '/upkeep-legacy-d11';
+        mkdir($legacy, 0o755, true);
+        file_put_contents($legacy . '/.upkeep-env.yml', implode("\n", [
+            'module: legacy',
+            "core_major: '11'",
+            "created_at: '2026-01-02T03:04:05+00:00'",
+        ]));
+
+        $items = $this->scan();
+        $reused = self::byPathSuffix($items, '/upkeep-conditions-helper-d11');
+
+        self::assertSame(
+            '2026-06-01T00:00:00+00:00',
+            $reused->lastUsedAt?->format(\DateTimeInterface::ATOM),
+            'last_used_at must win over the older created_at.',
+        );
+        self::assertSame(
+            '2026-01-02T03:04:05+00:00',
+            self::byPathSuffix($items, '/upkeep-legacy-d11')->lastUsedAt?->format(\DateTimeInterface::ATOM),
+        );
     }
 
     public function testACleanScanReportsNoWarnings(): void

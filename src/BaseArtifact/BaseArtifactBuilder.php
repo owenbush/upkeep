@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Upkeep\BaseArtifact;
 
-use Symfony\Component\Process\Process;
+use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\CommandRunner;
+use Upkeep\Adapter\ProcessRunner;
 use Upkeep\Adapter\ThrowawaySite;
 use Upkeep\Filesystem\FileWriter;
-use Upkeep\Security\CredentialEnvironment;
 
 /**
  * Builds the two canonical per-core-version base artifacts:
@@ -38,14 +39,26 @@ final readonly class BaseArtifactBuilder
     private const PROCESS_TIMEOUT = 3600;
 
     /**
-     * @param \Closure(string): void $log receives streamed process output/progress lines
+     * Every command this builder issues goes through the adapter's shell-out
+     * seam, the same one ThrowawaySite uses — so the orchestration (which
+     * commands, in what order, and what to conclude from each outcome) can be
+     * exercised without a container runtime or a network, and so child output
+     * reaches the log and the exception messages already redacted.
+     */
+    private CommandRunner $runner;
+
+    /**
+     * @param \Closure(string): void $log    receives streamed process output/progress lines
+     * @param ?CommandRunner         $runner defaults to a real process runner sharing $log
      */
     public function __construct(
         private ArtifactLayout $layout,
         private ThrowawaySite $installSite,
         private string $scratchDir,
         private \Closure $log,
+        ?CommandRunner $runner = null,
     ) {
+        $this->runner = $runner ?? new ProcessRunner($log);
     }
 
     public function build(string $coreMajor, bool $force): ArtifactMeta
@@ -69,7 +82,9 @@ final readonly class BaseArtifactBuilder
             $this->run(['rm', '-rf', $versionDir], null);
         }
 
-        if (!mkdir($versionDir, 0755, true) && !is_dir($versionDir)) {
+        // Silenced: a directory that cannot be created is reported as a build
+        // failure naming it, not as a PHP warning printed mid-build.
+        if (!@mkdir($versionDir, 0755, true) && !is_dir($versionDir)) {
             throw new BuildException(sprintf('Could not create artifact directory "%s".', $versionDir));
         }
 
@@ -110,7 +125,7 @@ final readonly class BaseArtifactBuilder
 
         $dumpPath = $this->layout->dumpPath($coreMajor);
 
-        if (!is_dir($this->scratchDir) && !mkdir($this->scratchDir, 0755, true) && !is_dir($this->scratchDir)) {
+        if (!is_dir($this->scratchDir) && !@mkdir($this->scratchDir, 0755, true) && !is_dir($this->scratchDir)) {
             throw new BuildException(sprintf('Could not create scratch directory "%s".', $this->scratchDir));
         }
 
@@ -147,30 +162,18 @@ final readonly class BaseArtifactBuilder
     }
 
     /**
+     * A failed step is a failed build, not an adapter problem the caller has
+     * to know about: the adapter's exception type is translated here so the
+     * build surface raises exactly one kind of error.
+     *
      * @param list<string> $command
      */
     private function run(array $command, ?string $cwd): string
     {
-        $process = new Process($command, $cwd, CredentialEnvironment::scrubbed(), timeout: self::PROCESS_TIMEOUT);
-        $process->run(function (string $type, string $buffer): void {
-            foreach (explode("\n", rtrim($buffer, "\n")) as $line) {
-                ($this->log)('  ' . $line);
-            }
-        });
-
-        if (!$process->isSuccessful()) {
-            // Process::getExitCode() is null when the child reported no status
-            // at all. Named rather than collapsed onto a number, since every
-            // value in 0..255 is a status some command really returns.
-            $exitCode = $process->getExitCode();
-            throw new BuildException(sprintf(
-                "Command failed (%s): %s\n%s",
-                $exitCode === null ? 'no exit status' : (string) $exitCode,
-                $process->getCommandLine(),
-                trim($process->getErrorOutput() . "\n" . $process->getOutput()),
-            ));
+        try {
+            return $this->runner->run($command, $cwd, self::PROCESS_TIMEOUT);
+        } catch (AdapterException $e) {
+            throw new BuildException($e->getMessage(), 0, $e);
         }
-
-        return $process->getOutput();
     }
 }

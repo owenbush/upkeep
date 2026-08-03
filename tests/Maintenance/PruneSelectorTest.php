@@ -463,6 +463,51 @@ final class PruneSelectorTest extends TestCase
         }
     }
 
+    public function testCanonicalCategoriesNameWhyTheyCanNeverBeDeleted(): void
+    {
+        // protectionReason() is public because the executor re-asserts it
+        // immediately before deleting. Its reason for the two canonical
+        // categories is what the operator is shown when a candidate list that
+        // bypassed selection is refused, so it must name the category and not
+        // just be non-null.
+        $selector = $this->selector();
+
+        self::assertSame('canonical base artifact', $selector->protectionReason(new InventoryItem(
+            path: self::PROJECTS . '/somewhere/11',
+            category: Category::BaseArtifact,
+            sizeBytes: 1,
+        )));
+        self::assertSame('committed fixture dump', $selector->protectionReason(new InventoryItem(
+            path: self::PROJECTS . '/somewhere/dump.sql.gz',
+            category: Category::FixtureDump,
+            sizeBytes: 1,
+        )));
+    }
+
+    public function testAProtectedRootThatCannotBeCanonicalisedStillProtectsLexically(): void
+    {
+        // A root spelled with a traversal segment below a directory that does
+        // not exist cannot be resolved to a real location at all. Failing to
+        // canonicalise must not silently drop the protection: the lexical
+        // prefix test can only ever protect more, never less.
+        $unresolvable = '/no-such-root/../base-artifacts';
+        $selector = new PruneSelector([$unresolvable]);
+
+        self::assertSame(
+            'under protected root ' . $unresolvable,
+            $selector->protectionReason(new InventoryItem(
+                path: $unresolvable . '/11',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            )),
+        );
+        self::assertNull($selector->protectionReason(new InventoryItem(
+            path: '/no-such-root/../base-artifacts-old/11',
+            category: Category::ProjectTree,
+            sizeBytes: 1,
+        )));
+    }
+
     public function testASiblingSharingAStringPrefixWithAProtectedRootIsNotProtected(): void
     {
         $world = (string) realpath(sys_get_temp_dir()) . '/upkeep-selector-sib-' . bin2hex(random_bytes(4));

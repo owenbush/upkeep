@@ -74,6 +74,22 @@ final class RegistryEditorTest extends TestCase
         self::assertSame(['conditions_helper', 'fresh_module'], array_keys($modules));
     }
 
+    public function testAnAddOfNothingNewDoesNotRewriteTheRegistryAtAll(): void
+    {
+        // Dumping regenerates the YAML and loses hand-written comments, so an
+        // add that changes nothing must not reach the writer at all — re-running
+        // `modules:add` for an already-registered module has to be inert.
+        $before = (string) file_get_contents($this->path);
+
+        $added = (new RegistryEditor($this->path))->add([
+            new Module('conditions_helper', 'project/conditions_helper', ['10', '11']),
+        ]);
+
+        self::assertSame([], $added);
+        self::assertSame($before, file_get_contents($this->path));
+        self::assertSame(['registry.yml'], $this->siblings());
+    }
+
     public function testAddValidatesThroughTheRegistryParserBeforeWriting(): void
     {
         $editor = new RegistryEditor($this->path);

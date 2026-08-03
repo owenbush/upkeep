@@ -6,6 +6,7 @@ namespace Upkeep\Tests\Adapter;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
+use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\EngineAddOn;
 
 final class EngineAddOnTest extends TestCase
@@ -83,5 +84,22 @@ final class EngineAddOnTest extends TestCase
         $once = EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG);
 
         self::assertSame($once, EngineAddOn::adaptContribConfig($once));
+    }
+
+    /**
+     * A future add-on release could ship something other than a mapping (or
+     * an empty file). Adapting it would silently produce a config that drops
+     * the whole web_environment block, so it is refused instead.
+     */
+    public function testAConfigThatIsNotAMappingIsRefusedRatherThanAdapted(): void
+    {
+        foreach (['', 'just a scalar'] as $shipped) {
+            try {
+                EngineAddOn::adaptContribConfig($shipped);
+                self::fail('Expected a non-mapping add-on config to be refused.');
+            } catch (AdapterException $e) {
+                self::assertStringContainsString('not a YAML mapping', $e->getMessage());
+            }
+        }
     }
 }

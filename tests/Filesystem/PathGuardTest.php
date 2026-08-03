@@ -57,6 +57,55 @@ final class PathGuardTest extends TestCase
         PathGuard::canonicalize($this->world . '/root/does-not-exist/../escape');
     }
 
+    public function testAPathWithNoExistingAncestorAtAllStillCanonicalisesAgainstTheRoot(): void
+    {
+        // Nothing below "/" resolves here, so the walk runs all the way to the
+        // root — which is its own canonical spelling. Redundant separators are
+        // still collapsed on the way.
+        self::assertSame('/no-such-top-level/child', PathGuard::canonicalize('/no-such-top-level/child'));
+        self::assertSame('/no-such-top-level/child', PathGuard::canonicalize('//no-such-top-level//child'));
+        self::assertSame(
+            $this->world . '/root/inside',
+            PathGuard::canonicalize($this->world . '//root///inside'),
+        );
+    }
+
+    public function testARelativePathIsResolvedAgainstTheWorkingDirectory(): void
+    {
+        $original = getcwd();
+        self::assertNotFalse($original);
+        chdir($this->world . '/root');
+
+        try {
+            self::assertSame($this->world . '/root/inside', PathGuard::canonicalize('inside'));
+            self::assertSame($this->world . '/root/not-yet', PathGuard::canonicalize('not-yet'));
+        } finally {
+            chdir($original);
+        }
+    }
+
+    public function testARelativePathIsRefusedWhenTheWorkingDirectoryHasBeenDeleted(): void
+    {
+        // A shell left sitting in a directory that has since been removed has
+        // no working directory to resolve against. Refusing explains that;
+        // resolving against nothing would silently root the path at "/".
+        $original = getcwd();
+        self::assertNotFalse($original);
+        $doomed = $this->world . '/doomed';
+        mkdir($doomed, 0o700);
+        chdir($doomed);
+        rmdir($doomed);
+
+        try {
+            $this->expectException(FilesystemException::class);
+            $this->expectExceptionMessageMatches('/working directory is unavailable/');
+
+            PathGuard::canonicalize('relative/target');
+        } finally {
+            chdir($original);
+        }
+    }
+
     public function testCanonicaliseRejectsAnEmptyPath(): void
     {
         $this->expectException(FilesystemException::class);

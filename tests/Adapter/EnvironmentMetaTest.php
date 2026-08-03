@@ -139,4 +139,49 @@ final class EnvironmentMetaTest extends TestCase
         self::assertStringContainsString('11.4.4', $reasons[0]);
         self::assertStringContainsString('11.5.1', $reasons[0]);
     }
+
+    /**
+     * The dotfile doubles as the provisioning completion marker, so anything
+     * that is not a well-formed meta mapping must be an error rather than a
+     * partially populated meta the reuse decision would then trust.
+     */
+    public function testAMalformedMetaDocumentIsRefusedWithWhatIsWrongWithIt(): void
+    {
+        $cases = [
+            "- module: widget\n" => 'must be a mapping',
+            "module: widget\ncore_major: 11\nseed_core_version: 11.4.4\naddon_version: 1.1.5\n"
+                . "created_at: '2026-01-01T00:00:00+00:00'\nlast_used_at: { not: a timestamp }\n"
+                => '"last_used_at" must be a timestamp',
+        ];
+
+        foreach ($cases as $yaml => $expected) {
+            try {
+                EnvironmentMeta::fromYaml($yaml);
+                self::fail(sprintf('Expected "%s" to be refused.', $expected));
+            } catch (AdapterException $e) {
+                self::assertStringContainsString($expected, $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Stamping a reuse reads the existing dotfile first. A missing one means
+     * the environment was never fully provisioned, which is not something to
+     * paper over by writing a fresh marker.
+     */
+    public function testStampingAnEnvironmentWithNoMarkerIsRefused(): void
+    {
+        $dir = (string) realpath(sys_get_temp_dir()) . '/upkeep-meta-' . bin2hex(random_bytes(4));
+        mkdir($dir, 0o700, true);
+
+        try {
+            EnvironmentMeta::stampLastUsed($dir);
+            self::fail('Expected the missing marker to be refused.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('Cannot read the environment meta at', $e->getMessage());
+            self::assertFileDoesNotExist($dir . '/' . EnvironmentMeta::FILENAME);
+        } finally {
+            exec('rm -rf ' . escapeshellarg($dir));
+        }
+    }
 }

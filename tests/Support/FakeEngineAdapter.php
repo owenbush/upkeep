@@ -29,6 +29,7 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         private readonly ?string $envPath = null,
         private readonly ?\Throwable $failure = null,
         private readonly ?\Throwable $branchFailure = null,
+        private readonly ?CheckRunResult $checkRun = null,
     ) {
     }
 
@@ -40,6 +41,12 @@ final class FakeEngineAdapter implements EngineAdapterInterface
     public static function withEnvPath(?string $envPath): self
     {
         return new self(envPath: $envPath);
+    }
+
+    /** An environment whose checks have already been decided by the test. */
+    public static function withCheckRun(Environment $environment, CheckRunResult $run): self
+    {
+        return new self(environment: $environment, checkRun: $run);
     }
 
     public static function failing(\Throwable $failure): self
@@ -71,7 +78,7 @@ final class FakeEngineAdapter implements EngineAdapterInterface
 
     public function runChecks(Environment $environment, array $checks = []): CheckRunResult
     {
-        throw new \BadMethodCallException('runChecks() not configured');
+        return $this->checkRun ?? throw new \BadMethodCallException('runChecks() not configured');
     }
 
     public function serve(Environment $environment): ServeResult

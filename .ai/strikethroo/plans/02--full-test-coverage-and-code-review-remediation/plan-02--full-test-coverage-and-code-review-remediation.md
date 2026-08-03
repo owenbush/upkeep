@@ -520,12 +520,40 @@ longer flattened to `-1`. Every value in 0..255 is a status some command really
 returns, so a sentinel is indistinguishable from a real result;
 `CapturedProcess::$exitCode` is now `?int` and "no status" is never a pass.
 
-### Phase 5: E2E Harness and Coverage Closure
+### ✅ Phase 5: E2E Harness and Coverage Closure — completed
 **Parallel Tasks:**
-- Task 012: Build the hermetic CLI e2e harness and cover the exit-code contract (depends on: 006, 007, 009, 010, 011)
-- Task 013: Close coverage to 100% across the adapter namespace (depends on: 006, 011)
-- Task 014: Close coverage to 100% across the GitLab namespace (depends on: 006, 010)
-- Task 016: Close coverage to 100% across the remaining namespaces (depends on: 007, 011)
+- ✔️ Task 012: Build the hermetic CLI e2e harness and cover the exit-code contract (depends on: 006, 007, 009, 010, 011) — `completed`
+- ✔️ Task 013: Close coverage to 100% across the adapter namespace (depends on: 006, 011) — `completed`
+- ✔️ Task 014: Close coverage to 100% across the GitLab namespace (depends on: 006, 010) — `completed`
+- ✔️ Task 016: Close coverage to 100% across the remaining namespaces (depends on: 007, 011) — `completed`
+
+**Verified**: 777 tests / 2156 assertions passing; PHPStan `[OK] No errors`;
+phpcs clean; still **zero suppressions of any kind** repo-wide. Coverage
+74.47% → **95.45% lines (3857/4041)**. Every class still below 100% is in
+`src/Command/`, which is task 015's scope — tasks 013, 014, and 016 each closed
+their namespaces completely.
+
+**Seams introduced rather than bars lowered**: `Adapter\CommandRunner` (the
+shell-out interface that made `DdevContribAdapter`'s 422 lines of orchestration
+testable without docker), `BaseArtifactBuilder` taking an optional
+`CommandRunner` (it was at 0/68 lines because it shelled out to a real
+`composer create-project`), and `FileWriter`'s protected seam for simulating
+short and refused writes. `AbstractMrCommand` gained an optional injected
+`GitlabClient`, matching the seam six sibling commands already exposed — without
+it `check`/`review` were unreachable end to end.
+
+**Unreachable branches removed at source rather than suppressed**: an
+unreachable `LogicException` arm in `runCheck()`'s dispatch, a `match` default
+over a regex-constrained unit set, `PathGuard`'s structurally unreachable root
+guard, and `RegistryEditor`'s unreachable `catch` (replaced by a `finally` that
+also stops a failed commit leaving the temp file behind).
+
+**Harness**: `tests/Support/CliHarness` builds the real Application as
+`bin/upkeep` does and drives it through **argv** — deliberately not
+`ApplicationTester`, which hardcodes `ArrayInput` and makes
+`Application::doRun()` answer its `--version` probe, so `check widget 5
+--version=9` would print the app version and exit 0 instead of selecting target
+core 9.
 
 ### Phase 6: Command Coverage
 **Parallel Tasks:**

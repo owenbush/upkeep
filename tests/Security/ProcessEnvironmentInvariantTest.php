@@ -32,7 +32,12 @@ final class ProcessEnvironmentInvariantTest extends TestCase
             }
         }
 
-        $this->assertGreaterThanOrEqual(5, $sites, 'Expected to find the known Process construction sites.');
+        // A floor, not an exact count: it only has to prove the scanner really
+        // found the construction sites rather than silently matching nothing.
+        // Four remain — ProcessRunner, DiskUsage, BrowserOpener, ExecCommand —
+        // since the base-artifact build moved onto the adapter's shell-out
+        // seam and stopped spawning children of its own.
+        $this->assertGreaterThanOrEqual(4, $sites, 'Expected to find the known Process construction sites.');
     }
 
     /**

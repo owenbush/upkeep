@@ -84,6 +84,28 @@ final class ModuleWiringTest extends TestCase
     }
 
     /**
+     * The rewrite is read-modify-write over the file the environment cannot
+     * function without, so anything whose shape it does not understand is
+     * refused rather than replaced with a guess.
+     */
+    public function testRefusesAComposerJsonWhoseShapeItCannotRewrite(): void
+    {
+        $cases = [
+            ['42', 'must decode to an object'],
+            ['{"repositories": {"drupal": {"type": "composer"}}}', '"repositories" must be a list'],
+        ];
+
+        foreach ($cases as [$composerJson, $expected]) {
+            try {
+                ModuleWiring::withPathRepository($composerJson, './module');
+                self::fail(sprintf('Expected "%s" to be refused.', $expected));
+            } catch (AdapterException $e) {
+                self::assertStringContainsString($expected, $e->getMessage());
+            }
+        }
+    }
+
+    /**
      * @param string $composerJson a composer.json document
      *
      * @return list<mixed> its decoded repositories block

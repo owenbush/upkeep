@@ -64,22 +64,31 @@ final readonly class RegistryEditor
         // validated from that file — through the real parser, so what is
         // checked is what will be published — and then renamed into place.
         $temp = FileWriter::writeTemporary($this->registryPath, $yaml, null);
-        try {
-            ModuleRegistry::fromFile($temp);
-        } catch (RegistryException $e) {
-            @unlink($temp);
-            // Report the registry the user asked to change, not the temp file.
-            throw new RegistryException(
-                str_replace($temp, $this->registryPath, $e->getMessage()),
-                $e->getCode(),
-                $e,
-            );
-        } catch (\Throwable $e) {
-            @unlink($temp);
-            throw $e;
-        }
 
-        FileWriter::commit($temp, $this->registryPath);
+        // Anything that stops the temp file becoming the registry — a rejected
+        // entry, a failed rename, an error from the parser — must also stop it
+        // being left next to the registry as debris. One flag and a finally
+        // says that once, for every way out of this block.
+        $published = false;
+        try {
+            try {
+                ModuleRegistry::fromFile($temp);
+            } catch (RegistryException $e) {
+                // Report the registry the user asked to change, not the temp file.
+                throw new RegistryException(
+                    str_replace($temp, $this->registryPath, $e->getMessage()),
+                    $e->getCode(),
+                    $e,
+                );
+            }
+
+            FileWriter::commit($temp, $this->registryPath);
+            $published = true;
+        } finally {
+            if (!$published) {
+                @unlink($temp);
+            }
+        }
 
         return $added;
     }

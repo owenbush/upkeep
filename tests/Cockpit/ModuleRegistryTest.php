@@ -90,6 +90,73 @@ final class ModuleRegistryTest extends TestCase
         yield 'empty' => ['""'];
     }
 
+    /**
+     * The registry is the tool's single source of truth and the file operators
+     * hand-edit most often, so every malformed shape has to name what is wrong
+     * with it rather than surfacing later as a type error inside a command.
+     *
+     * @param non-empty-string $expected
+     */
+    #[DataProvider('malformedRegistries')]
+    public function testEveryMalformedRegistryShapeIsRejectedWithAnExplanation(string $yaml, string $expected): void
+    {
+        $path = self::writeRegistry($yaml);
+
+        try {
+            $this->expectException(RegistryException::class);
+            $this->expectExceptionMessageMatches($expected);
+            ModuleRegistry::fromFile($path);
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, non-empty-string}>
+     */
+    public static function malformedRegistries(): iterable
+    {
+        yield 'not YAML at all' => ["modules:\n  token_or:\n   - [unclosed\n", '/not valid YAML/'];
+        yield 'modules is a scalar' => ["modules: everything\n", '/must be a mapping of machine name/'];
+        // A YAML sequence parses as an array, so it is caught one step later:
+        // its keys are integers, which are not machine names.
+        yield 'modules is a list of names' => ["modules:\n  - token_or\n", '/Module key "0".*machine name/s'];
+        yield 'a module definition is a scalar' => [
+            "modules:\n  token_or: project/token_or\n",
+            '/token_or.*must be a mapping/s',
+        ];
+        yield 'project is missing' => ["modules:\n  token_or:\n    core_versions: [\"11\"]\n", '/non-empty "project"/'];
+        yield 'project is empty' => [
+            "modules:\n  token_or:\n    project: ''\n    core_versions: [\"11\"]\n",
+            '/non-empty "project"/',
+        ];
+        yield 'core_versions is missing' => [
+            "modules:\n  token_or:\n    project: project/token_or\n",
+            '/core_versions.*non-empty list/s',
+        ];
+        yield 'core_versions is empty' => [
+            "modules:\n  token_or:\n    project: project/token_or\n    core_versions: []\n",
+            '/core_versions.*non-empty list/s',
+        ];
+        yield 'core_versions is a mapping, not a list' => [
+            "modules:\n  token_or:\n    project: project/token_or\n    core_versions:\n      first: '11'\n",
+            '/core_versions.*non-empty list/s',
+        ];
+    }
+
+    public function testAnEmptyRegistryLoadsAsNoModulesRatherThanFailing(): void
+    {
+        // `upkeep init` scaffolds a registry with no modules yet; every command
+        // that parses it must survive that state and report "none registered".
+        $path = self::writeRegistry("modules:\n");
+
+        try {
+            self::assertSame([], ModuleRegistry::fromFile($path)->modules());
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function testRejectsACoreVersionThatIsNotAWholeMajorVersion(): void
     {
         $path = self::writeRegistry(

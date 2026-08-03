@@ -22,8 +22,16 @@ namespace Upkeep\Filesystem;
  * Modes are explicit because `file_put_contents` cannot take one and the umask
  * default (typically 0644) is wrong for the caches that carry token-scoped
  * remote data and raw check output.
+ *
+ * Not final, and only because of that second guarantee: the raw byte write and
+ * the mode change are isolated into two overridable static primitives so the
+ * failures this class exists to detect — a short write, a refused chmod — can
+ * be simulated. They cannot be provoked on a working filesystem, and an
+ * untested error path is exactly the kind that reports success over a write
+ * that never landed. Subclassing is for that seam and nothing else: every
+ * production write goes through FileWriter itself.
  */
-final class FileWriter
+class FileWriter
 {
     /** Owner-only: files carrying token-scoped remote data or raw check output. */
     public const MODE_PRIVATE = 0o600;
@@ -86,7 +94,7 @@ final class FileWriter
             ));
         }
 
-        $written = @file_put_contents($temp, $contents);
+        $written = static::putContents($temp, $contents);
         if ($written === false || $written !== \strlen($contents)) {
             @unlink($temp);
 
@@ -98,13 +106,30 @@ final class FileWriter
             ));
         }
 
-        if (!@chmod($temp, $effectiveMode)) {
+        if (!static::setMode($temp, $effectiveMode)) {
             @unlink($temp);
 
             throw new FilesystemException(sprintf('Cannot set mode %o on "%s".', $effectiveMode, $path));
         }
 
         return $temp;
+    }
+
+    /**
+     * The raw byte write. See the class comment: this is a seam, not an
+     * extension point.
+     *
+     * @return int<0, max>|false bytes written, or false when nothing was
+     */
+    protected static function putContents(string $path, string $contents): int|false
+    {
+        return @file_put_contents($path, $contents);
+    }
+
+    /** The raw mode change. See the class comment: this is a seam. */
+    protected static function setMode(string $path, int $mode): bool
+    {
+        return @chmod($path, $mode);
     }
 
     /**

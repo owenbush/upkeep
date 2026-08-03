@@ -179,6 +179,7 @@ final class GitlabClientTest extends TestCase
         $this->assertNotInstanceOf(\Upkeep\Gitlab\ApiFailure::class, $list);
         $this->assertCount(2, $list);
         $mrs = $list->all();
+        $this->assertSame($mrs, iterator_to_array($list), 'foreach over the list must yield the same MRs as all()');
 
         $bot = $mrs[0];
         $this->assertInstanceOf(MergeRequest::class, $bot);
@@ -437,6 +438,22 @@ final class GitlabClientTest extends TestCase
             'https://git.drupalcode.org/api/v4/projects/181714/repository/tags',
             $this->requests[0]['url'],
         );
+    }
+
+    public function testTagWithAnUnparseableCommitDateDegradesToNullInsteadOfFataling(): void
+    {
+        // git.drupalcode.org is untrusted input: a commit date that
+        // DateTimeImmutable cannot parse must degrade to a null createdAt,
+        // not throw out of Tag::fromApi() and fatal the whole tags() call.
+        $client = $this->client([self::json([
+            ['name' => '1.0.2', 'target' => 'ccc333', 'commit' => ['id' => 'ccc333', 'created_at' => 'not-a-date']],
+        ])]);
+
+        $tags = $client->tags($this->projectModel());
+
+        $this->assertIsArray($tags);
+        $this->assertSame('1.0.2', $tags[0]->name);
+        $this->assertNull($tags[0]->createdAt);
     }
 
     public function testMergedSinceDateQueriesMergedMrsWithUpdatedAfter(): void

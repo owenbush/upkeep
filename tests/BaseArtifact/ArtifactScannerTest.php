@@ -79,6 +79,45 @@ final class ArtifactScannerTest extends TestCase
         );
     }
 
+    public function testAVersionDirectoryWithNoTreeAtAllReportsTheTreeAsMissing(): void
+    {
+        // The clearest way a build is interrupted: the version directory exists
+        // (so prune protects it) but the resolve never produced a tree. The
+        // status report has to name that, and size it as nothing.
+        mkdir($this->layout->versionDir('11'), 0o755, true);
+        file_put_contents($this->layout->dumpPath('11'), str_repeat('z', 2048));
+        file_put_contents($this->layout->metaPath('11'), self::META_11);
+        file_put_contents($this->layout->canonicalMarkerPath('11'), "canonical\n");
+
+        $record = (new ArtifactScanner($this->layout))->scan()[0];
+
+        self::assertFalse($record->complete);
+        self::assertSame([ArtifactLayout::TREE_DIR . '/'], $record->missing);
+        self::assertSame(0, $record->treeSizeBytes);
+        self::assertSame(2048, $record->dumpSizeBytes);
+    }
+
+    public function testTheSizeWalkStaysInsideTheTreeAndCountsOnlyRealFiles(): void
+    {
+        // Symlinks are deliberately not followed, so a symlinked directory is
+        // reported as a leaf that is not a file. Counting through it would
+        // attribute someone else's bytes to the artifact — and empty
+        // directories must contribute nothing either, or two identical trees
+        // measure differently.
+        $this->makeCompleteVersion('11', self::META_11);
+        $outside = $this->dir . '/outside-the-tree';
+        mkdir($outside, 0o755, true);
+        file_put_contents($outside . '/huge.bin', str_repeat('q', 50_000));
+
+        symlink($outside, $this->layout->treePath('11') . '/linked');
+        symlink($outside . '/nothing-here', $this->layout->treePath('11') . '/dangling');
+        mkdir($this->layout->treePath('11') . '/web/sites/default/files', 0o755, true);
+
+        $record = (new ArtifactScanner($this->layout))->scan()[0];
+
+        self::assertSame(102, $record->treeSizeBytes);
+    }
+
     public function testMalformedMetaMarksSetIncomplete(): void
     {
         $this->makeCompleteVersion('11', '{{{ not yaml');

@@ -27,6 +27,7 @@ use Upkeep\Command\PruneCommand;
 use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StatusCommand;
 use Upkeep\Command\UpkeepCommand;
+use Upkeep\Tests\Support\CliHarness;
 use Upkeep\Tests\Support\FakeEngineAdapter;
 use Upkeep\Tests\Support\StubEngineAdapterFactory;
 
@@ -67,6 +68,41 @@ final class CommandSurfaceTest extends TestCase
             new ReviewCommand($engines),
             new StatusCommand($probe),
         ];
+    }
+
+    /**
+     * The end-to-end tests are only worth their name if the application they
+     * drive is the application `bin/upkeep` builds. Nothing can make a test
+     * harness and a composition root share code — one is a script, the other
+     * a class — so this asserts they registered the same commands. A command
+     * added to `bin/upkeep` and not to the harness would otherwise be a
+     * command no end-to-end test could ever reach.
+     */
+    public function testTheHarnessRegistersExactlyTheCommandsBinUpkeepDoes(): void
+    {
+        $source = file_get_contents(__DIR__ . '/../../bin/upkeep');
+        self::assertIsString($source);
+        self::assertGreaterThan(0, preg_match_all('/new (\w+Command)\(/', $source, $matches));
+
+        $composed = array_values(array_unique($matches[1]));
+        sort($composed);
+
+        $harness = CliHarness::create('surface');
+        try {
+            $registered = [];
+            foreach ($harness->application()->all() as $command) {
+                $class = new \ReflectionClass($command);
+                if (str_starts_with($class->getName(), 'Upkeep\\')) {
+                    $registered[$class->getShortName()] = true;
+                }
+            }
+        } finally {
+            $harness->destroy();
+        }
+
+        $wired = array_keys($registered);
+        sort($wired);
+        self::assertSame($composed, $wired);
     }
 
     /**

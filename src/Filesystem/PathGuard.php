@@ -37,22 +37,26 @@ final class PathGuard
             return $real;
         }
 
+        // Walk up to the deepest ancestor realpath() can resolve, then
+        // re-append the tail. The walk is bounded by the number of path
+        // segments and its base case is the filesystem root, which is its own
+        // canonical spelling and so needs no resolving — there is no way for
+        // this to run off the top of the tree.
+        $segments = array_values(array_filter(explode('/', self::absolute($path)), static fn (string $s) => $s !== ''));
         $tail = [];
-        $current = self::absolute($path);
-        while (true) {
-            $parent = \dirname($current);
-            if ($parent === $current) {
-                throw new FilesystemException(sprintf('Cannot resolve the path "%s".', $path));
+        while ($segments !== []) {
+            array_unshift($tail, (string) array_pop($segments));
+            if ($segments === []) {
+                break;
             }
-            $tail[] = basename($current);
 
-            $realParent = realpath($parent);
+            $realParent = realpath('/' . implode('/', $segments));
             if ($realParent !== false) {
-                return self::join($realParent, array_reverse($tail), $path);
+                return self::join($realParent, $tail, $path);
             }
-
-            $current = $parent;
         }
+
+        return self::join('/', $tail, $path);
     }
 
     /**

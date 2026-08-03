@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Adapter;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\ProjectsRoot;
+use Upkeep\Filesystem\FilesystemException;
 
 final class ProjectsRootTest extends TestCase
 {
@@ -157,5 +158,23 @@ final class ProjectsRootTest extends TestCase
 
         $this->expectException(AdapterException::class);
         ProjectsRoot::resolve('/anywhere');
+    }
+
+    /**
+     * A path that cannot be canonicalised at all — a traversal segment below a
+     * directory that does not exist, which cannot be resolved against anything
+     * real — is reported as an adapter problem naming the projects root, not
+     * as a bare filesystem error from two layers down.
+     */
+    public function testAnUnresolvablePathIsRefusedAsAProjectsRootProblem(): void
+    {
+        try {
+            ProjectsRoot::resolve($this->home . '/never-created/../sideways');
+            self::fail('Expected the unresolvable path to be refused.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('as the projects root', $e->getMessage());
+            self::assertStringContainsString('traversal segment', $e->getMessage());
+            self::assertInstanceOf(FilesystemException::class, $e->getPrevious());
+        }
     }
 }
