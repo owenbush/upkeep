@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Upkeep\Maintenance;
 
+use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\ProjectName;
 use Upkeep\Adapter\SnapshotLayout;
@@ -68,7 +69,12 @@ final readonly class PruneExecutor
             }
             [$module, $coreMajor] = $resolved;
             ($this->log)(sprintf('Tearing down environment %s (module %s, Drupal %s) via the adapter ...', $item->projectName ?? $item->path, $module->name, $coreMajor));
-            $this->adapter->teardown($module, $coreMajor);
+            try {
+                $this->adapter->teardown($module, $coreMajor);
+            } catch (AdapterException $e) {
+                $skipped[] = [$item, $e->getMessage()];
+                continue;
+            }
             $tornDownProjects[$item->projectName ?? ''] = true;
             $freed += $item->sizeBytes;
             $deleted[] = $item;

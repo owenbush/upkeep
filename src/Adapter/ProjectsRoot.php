@@ -7,8 +7,9 @@ namespace Upkeep\Adapter;
 /**
  * Resolves the directory that holds all engine-managed module environments.
  *
- * Resolution order: explicit configuration (cockpit config / CLI flag), the
- * UPKEEP_PROJECTS_ROOT environment variable, then `~/.upkeep/projects`.
+ * Resolution order: explicit --projects-root flag, the UPKEEP_PROJECTS_ROOT
+ * environment variable, a projects/ directory inside the cockpit (if it
+ * exists), then `~/.upkeep/projects`.
  *
  * The default deliberately lives under $HOME and there is no temp-dir
  * fallback: environments are bind-mounted into the Docker VM, and macOS
@@ -19,7 +20,7 @@ final readonly class ProjectsRoot
 {
     public const ENV_VAR = 'UPKEEP_PROJECTS_ROOT';
 
-    public static function resolve(?string $explicit): string
+    public static function resolve(?string $explicit, ?string $cockpitRoot = null): string
     {
         if ($explicit !== null && $explicit !== '') {
             return $explicit;
@@ -28,6 +29,13 @@ final readonly class ProjectsRoot
         $env = getenv(self::ENV_VAR);
         if ($env !== false && $env !== '') {
             return $env;
+        }
+
+        if ($cockpitRoot !== null) {
+            $cockpitProjects = $cockpitRoot . '/projects';
+            if (is_dir($cockpitProjects)) {
+                return $cockpitProjects;
+            }
         }
 
         $home = getenv('HOME');

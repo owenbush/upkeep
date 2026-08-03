@@ -9,6 +9,7 @@ use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
 use Upkeep\Command\CheckCommand;
 use Upkeep\Command\DashboardCommand;
+use Upkeep\Command\DevCommand;
 use Upkeep\Command\EnvPathCommand;
 use Upkeep\Command\ExecCommand;
 use Upkeep\Command\InitCommand;
@@ -38,6 +39,7 @@ $application->addCommands([
     new BaseArtifactsStatusCommand(),
     new CheckCommand(),
     new DashboardCommand(),
+    new DevCommand(),
     new EnvPathCommand(),
     new ExecCommand(),
     new InitCommand(),

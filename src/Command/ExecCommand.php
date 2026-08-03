@@ -36,7 +36,7 @@ final class ExecCommand extends Command
             ->addArgument('cmd', InputArgument::IS_ARRAY | InputArgument::REQUIRED, 'Command to run (use -- before the command to separate it from upkeep options)')
             ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version (defaults to the first tracked version in the registry)')
             ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -95,7 +95,7 @@ final class ExecCommand extends Command
     {
         return new DdevContribAdapter(
             new ArtifactLayout($cockpit->baseArtifactsPath()),
-            ProjectsRoot::resolve($input->getOption('projects-root')),
+            ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root),
             new ProcessRunner(static function (): void {}),
             static function (): void {},
         );

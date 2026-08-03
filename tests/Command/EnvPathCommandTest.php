@@ -10,6 +10,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\ServeResult;
+use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\EnvPathCommand;
 use Upkeep\Gitlab\MergeRequest;
@@ -47,6 +48,8 @@ final class EnvPathCommandTest extends TestCase
             public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException(); }
             public function resolveEnvPath(string $moduleName, string $coreMajor): ?string { return $this->returnPath; }
             public function teardown(Module $module, string $coreMajor): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
+            public function checkoutBranch(Environment $environment, string $branch): void {}
         };
     }
 
@@ -76,6 +79,8 @@ final class EnvPathCommandTest extends TestCase
                 return '/some/path';
             }
             public function teardown(Module $module, string $coreMajor): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
+            public function checkoutBranch(Environment $environment, string $branch): void {}
         };
 
         $tester = new CommandTester(new EnvPathCommand($adapter));
@@ -100,6 +105,8 @@ final class EnvPathCommandTest extends TestCase
                 return '/some/path';
             }
             public function teardown(Module $module, string $coreMajor): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
+            public function checkoutBranch(Environment $environment, string $branch): void {}
         };
 
         $tester = new CommandTester(new EnvPathCommand($adapter));
