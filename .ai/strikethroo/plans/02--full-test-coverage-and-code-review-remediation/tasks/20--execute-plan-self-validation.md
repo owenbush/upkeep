@@ -2,7 +2,7 @@
 id: 20
 group: "enforcement-and-docs"
 dependencies: [18, 19]
-status: "pending"
+status: "completed"
 created: 2026-08-02
 skills:
   - phpunit

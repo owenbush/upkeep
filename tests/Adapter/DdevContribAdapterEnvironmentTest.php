@@ -175,7 +175,13 @@ final class DdevContribAdapterEnvironmentTest extends DdevAdapterTestCase
             self::fail('Expected missing base artifacts to be refused.');
         } catch (AdapterException $e) {
             self::assertStringContainsString('No base artifacts for Drupal 11', $e->getMessage());
-            self::assertStringContainsString('base-artifacts:build --core=11', $e->getMessage());
+            // The hint has to name an option base-artifacts:build actually
+            // accepts. It said --core=11 until that option was renamed to
+            // --version, and this assertion pinned the stale spelling — so the
+            // suite defended a hint that exits 1 when followed. Assert the
+            // absence too, so the same drift cannot pass again.
+            self::assertStringContainsString('base-artifacts:build --version=11', $e->getMessage());
+            self::assertStringNotContainsString('--core', $e->getMessage());
             self::assertSame([], $runner->invocations);
         }
     }

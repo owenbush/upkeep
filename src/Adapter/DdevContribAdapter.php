@@ -810,7 +810,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         $metaPath = $this->layout->metaPath($coreMajor);
         if (!is_file($metaPath)) {
             throw new AdapterException(sprintf(
-                'No base artifacts for Drupal %s (missing %s). Run `upkeep base-artifacts:build --core=%s` first.',
+                'No base artifacts for Drupal %s (missing %s). Run `upkeep base-artifacts:build --version=%s` first.',
                 $coreMajor,
                 $metaPath,
                 $coreMajor,
