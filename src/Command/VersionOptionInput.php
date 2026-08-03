@@ -24,6 +24,9 @@ use Symfony\Component\Console\Input\ArgvInput;
  */
 final class VersionOptionInput extends ArgvInput
 {
+    /**
+     * @param string|string[] $values
+     */
     public function hasParameterOption(string|array $values, bool $onlyParams = false): bool
     {
         if (\in_array('--version', (array) $values, true)) {

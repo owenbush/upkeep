@@ -36,6 +36,9 @@ final class MrContextResolverTest extends TestCase
         ], $client);
     }
 
+    /**
+     * @param array<string, mixed> $payload
+     */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, JSON_THROW_ON_ERROR), [
@@ -44,6 +47,9 @@ final class MrContextResolverTest extends TestCase
         ]);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private static function projectPayload(): array
     {
         return [
@@ -55,6 +61,11 @@ final class MrContextResolverTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function mrPayload(array $overrides = []): array
     {
         return $overrides + [

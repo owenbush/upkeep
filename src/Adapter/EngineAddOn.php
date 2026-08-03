@@ -71,10 +71,17 @@ final readonly class EngineAddOn
         unset($config['hooks']);
 
         if (isset($config['web_environment']) && is_array($config['web_environment'])) {
+            // Parsed YAML is untrusted: entries are `KEY=value` strings in
+            // every add-on release seen so far, but anything else is left
+            // exactly as found rather than coerced.
             $config['web_environment'] = array_values(array_map(
-                static fn (string $var): string => str_starts_with($var, 'DRUPAL_PROJECTS_PATH=')
-                    ? 'DRUPAL_PROJECTS_PATH=' . self::PROJECTS_PATH
-                    : $var,
+                static function (mixed $var): mixed {
+                    if (!\is_string($var) || !str_starts_with($var, 'DRUPAL_PROJECTS_PATH=')) {
+                        return $var;
+                    }
+
+                    return 'DRUPAL_PROJECTS_PATH=' . self::PROJECTS_PATH;
+                },
                 $config['web_environment'],
             ));
         }

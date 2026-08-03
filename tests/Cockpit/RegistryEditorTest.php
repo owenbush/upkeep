@@ -40,7 +40,10 @@ final class RegistryEditorTest extends TestCase
      */
     private function siblings(): array
     {
-        return array_values(array_diff((array) scandir($this->dir), ['.', '..']));
+        $entries = scandir($this->dir);
+        self::assertNotFalse($entries, 'The registry directory must be readable.');
+
+        return array_values(array_diff($entries, ['.', '..']));
     }
 
     public function testAddAppendsNewModulesAndPreservesExistingEntries(): void

@@ -13,11 +13,17 @@ final readonly class Tag
     ) {
     }
 
+    /**
+     * @param array<array-key, mixed> $data a decoded tag JSON object
+     */
     public static function fromApi(array $data): self
     {
+        $payload = new ApiPayload($data);
+        $commit = $payload->child('commit');
+
         $createdAt = null;
-        $raw = $data['commit']['created_at'] ?? $data['commit']['committed_date'] ?? null;
-        if (\is_string($raw)) {
+        $raw = $commit?->stringOrNull('created_at') ?? $commit?->stringOrNull('committed_date');
+        if ($raw !== null) {
             try {
                 $createdAt = new \DateTimeImmutable($raw);
             } catch (\Exception) {
@@ -26,9 +32,8 @@ final readonly class Tag
         }
 
         return new self(
-            name: (string) ($data['name'] ?? ''),
-            commitSha: isset($data['commit']['id']) ? (string) $data['commit']['id']
-                : (isset($data['target']) ? (string) $data['target'] : null),
+            name: $payload->string('name'),
+            commitSha: $commit?->stringOrNull('id') ?? $payload->stringOrNull('target'),
             createdAt: $createdAt,
         );
     }

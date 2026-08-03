@@ -67,6 +67,7 @@ final class DashboardCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'glpat-test-token');
     }
 
+    /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, JSON_THROW_ON_ERROR), [
@@ -75,6 +76,7 @@ final class DashboardCommandTest extends TestCase
         ]);
     }
 
+    /** @return array<string, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -86,6 +88,11 @@ final class DashboardCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function botMrPayload(array $overrides = []): array
     {
         return $overrides + [
@@ -103,6 +110,7 @@ final class DashboardCommandTest extends TestCase
         ];
     }
 
+    /** @return array<string, mixed> */
     private static function greenPipeline(): array
     {
         return [
@@ -118,6 +126,7 @@ final class DashboardCommandTest extends TestCase
         return new DrupalOrgClient(new MockHttpClient(static fn () => new MockResponse('', ['http_code' => 404])));
     }
 
+    /** @param array<string, mixed> $args */
     private function runDashboard(GitlabClient $client, array $args = []): CommandTester
     {
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
@@ -126,6 +135,7 @@ final class DashboardCommandTest extends TestCase
         return $tester;
     }
 
+    /** @param list<CheckResult> $checks */
     private function storeLocal(array $checks, string $sha = self::HEAD_SHA): void
     {
         (new ResultsCache($this->cockpit . '/results'))->store(
@@ -137,7 +147,11 @@ final class DashboardCommandTest extends TestCase
         );
     }
 
-    /** Routes for the healthy one-bot-MR module. */
+    /**
+     * Routes for the healthy one-bot-MR module.
+     *
+     * @return array<string, MockResponse>
+     */
     private function healthyRoutes(): array
     {
         return [

@@ -32,8 +32,12 @@ final readonly class CheckResult
      * of exit code (PHPUnit 11.5 exits 0 for it — a silent pass would hide
      * the fact that nothing ran); otherwise zero exit is a pass and any
      * non-zero exit a failure.
+     *
+     * A null $exitCode is the child having reported no status at all (see
+     * CapturedProcess::$exitCode). Only exit 0 is a pass, so "no status" is a
+     * failure — never mistaken for one.
      */
-    public static function fromProcess(CheckType $type, int $exitCode, string $output, float $durationSeconds): self
+    public static function fromProcess(CheckType $type, ?int $exitCode, string $output, float $durationSeconds): self
     {
         $status = match (true) {
             $type === CheckType::PhpUnit

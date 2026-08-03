@@ -117,9 +117,13 @@ final class EnvPathCommandTest extends TestCase
             {
                 throw new \BadMethodCallException();
             }
-            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+            public function resolveEnvPath(string $moduleName, string $coreMajor): string
             {
-                $this->calls[] = [$moduleName, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->calls = [...$this->calls, [$moduleName, $coreMajor]];
                 return '/some/path';
             }
             public function teardown(Module $module, string $coreMajor): void
@@ -144,6 +148,7 @@ final class EnvPathCommandTest extends TestCase
     {
         $calls = [];
         $adapter = new class ($calls) implements EngineAdapterInterface {
+            /** @param list<array{string, string}> $calls */
             public function __construct(private array &$calls)
             {
             }
@@ -165,9 +170,13 @@ final class EnvPathCommandTest extends TestCase
             {
                 throw new \BadMethodCallException();
             }
-            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+            public function resolveEnvPath(string $moduleName, string $coreMajor): string
             {
-                $this->calls[] = [$moduleName, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->calls = [...$this->calls, [$moduleName, $coreMajor]];
                 return '/some/path';
             }
             public function teardown(Module $module, string $coreMajor): void

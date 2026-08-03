@@ -51,7 +51,7 @@ final class VolumeProbeInventoryTest extends TestCase
             array_values($volumes),
         ));
 
-        return new VolumeProbe(static fn (array $command): ?string => $command[1] === 'volume' ? $listing : '');
+        return new VolumeProbe(static fn (array $command): string => $command[1] === 'volume' ? $listing : '');
     }
 
     private static function item(string $path, Category $category, ?string $projectName): InventoryItem

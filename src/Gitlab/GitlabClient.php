@@ -40,7 +40,7 @@ final class GitlabClient
      * network blip, gateway interstitial) must not fail that resource for the
      * rest of the run — see ApiFailure::isTransient().
      *
-     * @var array<string, array|ApiFailure>
+     * @var array<string, array<array-key, mixed>|ApiFailure>
      */
     private array $getCache = [];
 
@@ -89,12 +89,16 @@ final class GitlabClient
      */
     public function openMergeRequests(Project $project): MergeRequestList|ApiFailure
     {
-        $data = $this->get(
-            $this->apiBase . '/projects/' . $project->id . '/merge_requests?state=opened&scope=all&per_page=100',
-            $project->webUrl . '/-/merge_requests',
-        );
+        $url = $this->apiBase . '/projects/' . $project->id
+            . '/merge_requests?state=opened&scope=all&per_page=100';
+        $browserUrl = $project->webUrl . '/-/merge_requests';
+        $data = $this->get($url, $browserUrl);
+        if ($data instanceof ApiFailure) {
+            return $data;
+        }
+        $rows = self::objectRows($data, 'merge requests', $url, $browserUrl);
 
-        return $data instanceof ApiFailure ? $data : MergeRequestList::fromApi($data);
+        return $rows instanceof ApiFailure ? $rows : MergeRequestList::fromApi($rows);
     }
 
     /**
@@ -145,17 +149,14 @@ final class GitlabClient
             if ($data instanceof ApiFailure) {
                 return $data;
             }
-            if (!array_is_list($data)) {
-                return new MalformedResponse(
-                    sprintf('Expected a list of projects from %s, got a JSON object.', $url),
-                    200,
-                    $browserUrl,
-                );
+            $rows = self::objectRows($data, 'projects', $url, $browserUrl);
+            if ($rows instanceof ApiFailure) {
+                return $rows;
             }
-            if ($data === []) {
+            if ($rows === []) {
                 return $projects;
             }
-            foreach ($data as $item) {
+            foreach ($rows as $item) {
                 $projects[] = Project::fromApi($item);
             }
         }
@@ -177,14 +178,15 @@ final class GitlabClient
      */
     public function tags(Project $project): array|ApiFailure
     {
-        $data = $this->get(
-            $this->apiBase . '/projects/' . $project->id . '/repository/tags',
-            $project->webUrl . '/-/tags',
-        );
+        $url = $this->apiBase . '/projects/' . $project->id . '/repository/tags';
+        $browserUrl = $project->webUrl . '/-/tags';
+        $data = $this->get($url, $browserUrl);
+        if ($data instanceof ApiFailure) {
+            return $data;
+        }
+        $rows = self::objectRows($data, 'tags', $url, $browserUrl);
 
-        return $data instanceof ApiFailure
-            ? $data
-            : array_map(Tag::fromApi(...), array_values($data));
+        return $rows instanceof ApiFailure ? $rows : array_map(Tag::fromApi(...), $rows);
     }
 
     /**
@@ -207,12 +209,15 @@ final class GitlabClient
             'per_page' => 100,
             'updated_after' => $since->format(\DateTimeInterface::ATOM),
         ]);
-        $data = $this->get(
-            $this->apiBase . '/projects/' . $project->id . '/merge_requests?' . $query,
-            $project->webUrl . '/-/merge_requests?state=merged',
-        );
+        $url = $this->apiBase . '/projects/' . $project->id . '/merge_requests?' . $query;
+        $browserUrl = $project->webUrl . '/-/merge_requests?state=merged';
+        $data = $this->get($url, $browserUrl);
+        if ($data instanceof ApiFailure) {
+            return $data;
+        }
+        $rows = self::objectRows($data, 'merge requests', $url, $browserUrl);
 
-        return $data instanceof ApiFailure ? $data : MergeRequestList::fromApi($data);
+        return $rows instanceof ApiFailure ? $rows : MergeRequestList::fromApi($rows);
     }
 
     /**
@@ -300,11 +305,63 @@ final class GitlabClient
     }
 
     /**
+     * The collection half of the boundary: narrow a decoded body into the list
+     * of JSON objects a collection endpoint promises, or say why it is not one.
+     *
+     * Two structural faults are caught here, both of which a model's tolerant
+     * field narrowing (see ApiPayload) cannot paper over: a JSON object where a
+     * list was promised — the shape that used to make pagination loop forever —
+     * and a list carrying an entry that is not an object, which used to reach a
+     * model as a scalar and fatal. After this, every row handed to a
+     * `fromApi()` is a real array and nothing inward sees `mixed`.
+     *
+     * @param array<array-key, mixed> $data
+     * @param string $what plural noun for the collection, e.g. "tags"
+     * @return list<array<array-key, mixed>>|MalformedResponse
+     */
+    private static function objectRows(
+        array $data,
+        string $what,
+        string $url,
+        string $browserUrl,
+    ): array|MalformedResponse {
+        if (!array_is_list($data)) {
+            return new MalformedResponse(
+                sprintf('Expected a list of %s from %s, got a JSON object.', $what, $url),
+                200,
+                $browserUrl,
+            );
+        }
+
+        $rows = [];
+        foreach ($data as $index => $item) {
+            if (!\is_array($item)) {
+                return new MalformedResponse(
+                    sprintf(
+                        'Expected the list of %s from %s to hold JSON objects; entry %d is %s.',
+                        $what,
+                        $url,
+                        $index,
+                        get_debug_type($item),
+                    ),
+                    200,
+                    $browserUrl,
+                );
+            }
+            $rows[] = $item;
+        }
+
+        return $rows;
+    }
+
+    /**
      * Perform a GET and decode the JSON body, or return a typed failure.
      *
      * Memoizes successes and stable failures. A transient failure is returned
      * but NOT stored: a rate limit or a network blip midway through a long
      * dashboard run must not turn into a permanent verdict for that resource.
+     *
+     * @return array<array-key, mixed>|ApiFailure
      */
     private function get(string $url, string $browserUrl): array|ApiFailure
     {
@@ -328,6 +385,9 @@ final class GitlabClient
      * for redirection/client/server/decoding failures too, not just transport
      * ones. The token never reaches a message — it travels only in the
      * PRIVATE-TOKEN header, and error text is taken from the response body.
+     *
+     * @param array<string, mixed> $extraOptions
+     * @return array<array-key, mixed>|ApiFailure
      */
     private function request(string $method, string $url, array $extraOptions, string $browserUrl): array|ApiFailure
     {
@@ -391,7 +451,16 @@ final class GitlabClient
 
         $detail = $decoded['message'] ?? $decoded['error'] ?? null;
         if (\is_array($detail)) {
-            $detail = implode('; ', array_map(strval(...), $detail));
+            // GitLab returns either a string or a list of complaints. Only the
+            // scalar entries are quotable; a nested structure has no sensible
+            // one-line rendering and is dropped rather than printed as "Array".
+            $parts = [];
+            foreach ($detail as $entry) {
+                if (\is_scalar($entry)) {
+                    $parts[] = (string) $entry;
+                }
+            }
+            $detail = implode('; ', $parts);
         }
 
         return \is_string($detail) && $detail !== '' ? $detail : null;

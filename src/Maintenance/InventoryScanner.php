@@ -46,13 +46,18 @@ final class InventoryScanner
     private const MODULE_FIXTURES_DIR = 'module/tests/fixtures';
 
     /**
-     * @param \Closure(string): int $sizer bytes-on-disk measure, defaults to `du -sk`
+     * Bytes-on-disk measure for one path, defaulting to `du -sk`.
+     *
+     * @var \Closure(string): int
      */
     private readonly \Closure $sizer;
 
     /** @var list<string> */
     private array $warnings = [];
 
+    /**
+     * @param (\Closure(string): int)|null $sizer
+     */
     public function __construct(
         private readonly Cockpit $cockpit,
         private readonly string $projectsRoot,

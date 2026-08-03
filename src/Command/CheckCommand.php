@@ -45,7 +45,7 @@ final class CheckCommand extends AbstractMrCommand
 
     protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $fixture = $input->getOption('fixture');
+        $fixture = self::stringOption($input, 'fixture');
 
         $context = $this->resolveContext($input, $io);
         self::describeContext($io, $context, self::stringOption($input, 'version'));
@@ -60,7 +60,7 @@ final class CheckCommand extends AbstractMrCommand
 
         if ($fixture !== null) {
             $io->section('Fixture');
-            $adapter->loadFixture($environment, (string) $fixture);
+            $adapter->loadFixture($environment, $fixture);
         }
 
         $io->section('Checks');

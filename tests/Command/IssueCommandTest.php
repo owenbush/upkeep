@@ -34,6 +34,7 @@ final class IssueCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->cockpit));
     }
 
+    /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, \JSON_THROW_ON_ERROR), [
@@ -42,6 +43,7 @@ final class IssueCommandTest extends TestCase
         ]);
     }
 
+    /** @param array<string, mixed> $mrOverrides */
     private function gitlabClient(array $mrOverrides = []): GitlabClient
     {
         $project = [
@@ -77,6 +79,7 @@ final class IssueCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'test-token');
     }
 
+    /** @param array<string, mixed> $issueOverrides */
     private function drupalClient(array $issueOverrides = []): DrupalOrgClient
     {
         $issue = $issueOverrides + [
@@ -91,7 +94,9 @@ final class IssueCommandTest extends TestCase
             'field_project' => ['machine_name' => 'widget'],
         ];
 
-        return new DrupalOrgClient(new MockHttpClient(new MockResponse(json_encode($issue))));
+        return new DrupalOrgClient(
+            new MockHttpClient(new MockResponse(json_encode($issue, \JSON_THROW_ON_ERROR))),
+        );
     }
 
     public function testShowsIssueDetailsFromMrTitle(): void

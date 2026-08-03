@@ -83,7 +83,11 @@ final class PruneExecutorTest extends TestCase
 
             public function teardown(Module $module, string $coreMajor): void
             {
-                $this->teardowns[] = [$module->name, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->teardowns = [...$this->teardowns, [$module->name, $coreMajor]];
             }
             public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
             {
@@ -214,6 +218,7 @@ final class PruneExecutorTest extends TestCase
     public function testTeardownFailureSkipsItemInsteadOfAborting(): void
     {
         $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
+            /** @param list<array{string, string}> $teardowns */
             public function __construct(private array &$teardowns)
             {
             }
@@ -244,7 +249,11 @@ final class PruneExecutorTest extends TestCase
                 if ($coreMajor === '11') {
                     throw new AdapterException('local work detected');
                 }
-                $this->teardowns[] = [$module->name, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->teardowns = [...$this->teardowns, [$module->name, $coreMajor]];
             }
             public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
             {

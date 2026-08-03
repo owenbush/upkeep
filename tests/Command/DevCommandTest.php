@@ -175,6 +175,7 @@ final class DevCommandTest extends TestCase
     private function adapterWithBranchTracking(Environment $env, array &$branchCalls): EngineAdapterInterface
     {
         return new class ($env, $branchCalls) implements EngineAdapterInterface {
+            /** @param list<string> $calls */
             public function __construct(private readonly Environment $env, private array &$calls)
             {
             }
@@ -209,7 +210,11 @@ final class DevCommandTest extends TestCase
             }
             public function checkoutBranch(Environment $environment, string $branch): void
             {
-                $this->calls[] = $branch;
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->calls = [...$this->calls, $branch];
             }
         };
     }

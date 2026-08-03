@@ -86,8 +86,18 @@ final readonly class ArtifactScanner
             \RecursiveIteratorIterator::CATCH_GET_CHILD,
         );
         foreach ($iterator as $file) {
-            if ($file->isFile()) {
-                $bytes += $file->getSize();
+            // CURRENT_AS_FILEINFO is the directory iterator's default, so
+            // every entry is an SplFileInfo — checked rather than assumed.
+            // getSize() is false for a file that vanished mid-walk; an
+            // under-count is the documented failure mode here, so such an
+            // entry contributes nothing rather than aborting the measure.
+            if (!$file instanceof \SplFileInfo || !$file->isFile()) {
+                continue;
+            }
+
+            $size = $file->getSize();
+            if ($size !== false) {
+                $bytes += $size;
             }
         }
 

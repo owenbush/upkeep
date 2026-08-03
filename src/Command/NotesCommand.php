@@ -13,6 +13,7 @@ use Upkeep\Cockpit\Cockpit;
 use Upkeep\Cockpit\RegistryException;
 use Upkeep\Filesystem\FilesystemException;
 use Upkeep\Gitlab\ApiFailure;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Notes\NotesGenerator;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\WorkflowException;
@@ -21,11 +22,14 @@ use Upkeep\Workflow\WorkflowException;
  * Draft release notes for a module: what merged since its last tag, as
  * paste-ready Markdown on stdout.
  *
- * Thin wiring, deliberately untested: all meaningful behavior — latest-tag
- * selection, bot/human grouping, Markdown formatting, and both edge cases —
- * lives in NotesGenerator (unit-tested with mocked client data); fetching and
- * typed failures live in GitlabClient (also unit-tested). This command only
- * resolves the module, fetches, and prints, and is verified live.
+ * Thin wiring: all meaningful behavior — latest-tag selection, bot/human
+ * grouping, Markdown formatting, and both edge cases — lives in
+ * NotesGenerator (unit-tested with mocked client data); fetching and typed
+ * failures live in GitlabClient (also unit-tested). This command only
+ * resolves the module, fetches, and prints, and is verified live. The wiring
+ * itself is pinned by one hermetic no-token run (NotesCommandTest), because
+ * "verified live" is not a thing CI does: this class once shipped with an
+ * unimported GitlabClientFactory and fataled on every invocation.
  *
  * Module resolution mirrors api:probe with one addition: when a cockpit
  * registry is available and knows the module, its project path wins;
@@ -83,8 +87,10 @@ final class NotesCommand extends UpkeepCommand
         }
 
         $latestTag = NotesGenerator::latestTag($tags);
-        // Tagless module: the full merged history is everything since epoch.
-        $since = $latestTag?->createdAt ?? new \DateTimeImmutable('@0');
+        // Tagless module — or a tag GitLab reports without a creation date:
+        // the full merged history is everything since epoch. `??` reads with
+        // isset() semantics, so a null $latestTag falls through here too.
+        $since = $latestTag->createdAt ?? new \DateTimeImmutable('@0');
 
         $merged = $client->mergedSince($project, $since);
         if ($merged instanceof ApiFailure) {
@@ -117,6 +123,8 @@ final class NotesCommand extends UpkeepCommand
             return $module;
         }
 
-        return ($registry->modules()[$module] ?? null)?->project ?? $module;
+        $registered = $registry->modules()[$module] ?? null;
+
+        return $registered !== null ? $registered->project : $module;
     }
 }

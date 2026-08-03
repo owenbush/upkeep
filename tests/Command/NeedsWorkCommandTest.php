@@ -33,6 +33,7 @@ final class NeedsWorkCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->cockpit));
     }
 
+    /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, \JSON_THROW_ON_ERROR), [
@@ -41,6 +42,7 @@ final class NeedsWorkCommandTest extends TestCase
         ]);
     }
 
+    /** @return array<string, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -52,6 +54,11 @@ final class NeedsWorkCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function mrPayload(array $overrides = []): array
     {
         return $overrides + [
@@ -67,6 +74,10 @@ final class NeedsWorkCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed>                          $mrOverrides
+     * @param (callable(string, string): MockResponse)|null $noteHandler serves POSTed notes
+     */
     private function gitlabClient(array $mrOverrides = [], ?callable $noteHandler = null): GitlabClient
     {
         $project = self::projectPayload();

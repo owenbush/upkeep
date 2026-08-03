@@ -63,7 +63,7 @@ final readonly class ProcessRunner
         if (!$process->isSuccessful()) {
             throw new AdapterException($this->redactor->redact(sprintf(
                 "Command failed (%s): %s\n%s",
-                $process->getExitCode() ?? -1,
+                self::exitCodeLabel($process),
                 $process->getCommandLine(),
                 $this->failureExcerpt($process->getErrorOutput() . "\n" . $process->getOutput()),
             )));
@@ -110,7 +110,7 @@ final readonly class ProcessRunner
         }
 
         return new CapturedProcess(
-            exitCode: $process->getExitCode() ?? -1,
+            exitCode: $process->getExitCode(),
             output: $this->redactor->redact($combined),
             timedOut: $timedOut,
             durationSeconds: microtime(true) - $started,
@@ -143,6 +143,19 @@ final readonly class ProcessRunner
     private function process(array $command, ?string $cwd, int $timeout): Process
     {
         return new Process($command, $cwd, CredentialEnvironment::scrubbed(), timeout: $timeout);
+    }
+
+    /**
+     * Symfony types Process::getExitCode() as ?int: null means the child never
+     * reported a status. That is not itself a status, so it is never collapsed
+     * onto a number (every value in 0..255 is a status some command really
+     * returns) — it is named.
+     */
+    private static function exitCodeLabel(Process $process): string
+    {
+        $exitCode = $process->getExitCode();
+
+        return $exitCode === null ? 'no exit status' : (string) $exitCode;
     }
 
     private function stream(string $buffer): void

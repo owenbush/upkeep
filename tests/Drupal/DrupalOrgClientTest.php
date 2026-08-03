@@ -12,6 +12,11 @@ use Upkeep\Drupal\IssueStatus;
 
 final class DrupalOrgClientTest extends TestCase
 {
+    /**
+     * @param array<array-key, mixed> $overrides fields replacing the defaults below
+     *
+     * @return array<array-key, mixed> a drupal.org api-d7 issue node payload
+     */
     private static function issuePayload(array $overrides = []): array
     {
         return $overrides + [
@@ -30,7 +35,7 @@ final class DrupalOrgClientTest extends TestCase
     public function testFetchesAndParsesAnIssue(): void
     {
         $client = new DrupalOrgClient(new MockHttpClient(
-            new MockResponse(json_encode(self::issuePayload())),
+            new MockResponse(json_encode(self::issuePayload(), \JSON_THROW_ON_ERROR)),
         ));
 
         $issue = $client->issue(3467675);
@@ -53,7 +58,7 @@ final class DrupalOrgClientTest extends TestCase
         $calls = 0;
         $client = new DrupalOrgClient(new MockHttpClient(function () use (&$calls) {
             ++$calls;
-            return new MockResponse(json_encode(self::issuePayload()));
+            return new MockResponse(json_encode(self::issuePayload(), \JSON_THROW_ON_ERROR));
         }));
 
         $first = $client->issue(3467675);
@@ -84,7 +89,7 @@ final class DrupalOrgClientTest extends TestCase
     public function testReturnsNullOnUnknownStatusId(): void
     {
         $client = new DrupalOrgClient(new MockHttpClient(
-            new MockResponse(json_encode(self::issuePayload(['field_issue_status' => '999']))),
+            new MockResponse(json_encode(self::issuePayload(['field_issue_status' => '999']), \JSON_THROW_ON_ERROR)),
         ));
 
         self::assertNull($client->issue(3467675));
@@ -93,7 +98,7 @@ final class DrupalOrgClientTest extends TestCase
     public function testRtbcStatus(): void
     {
         $client = new DrupalOrgClient(new MockHttpClient(
-            new MockResponse(json_encode(self::issuePayload(['field_issue_status' => '14']))),
+            new MockResponse(json_encode(self::issuePayload(['field_issue_status' => '14']), \JSON_THROW_ON_ERROR)),
         ));
 
         $issue = $client->issue(3467675);
@@ -108,7 +113,7 @@ final class DrupalOrgClientTest extends TestCase
         $issue2 = self::issuePayload(['nid' => 200, 'field_issue_status' => '8']);
 
         $client = new DrupalOrgClient(new MockHttpClient(
-            new MockResponse(json_encode(['list' => [$issue1, $issue2]])),
+            new MockResponse(json_encode(['list' => [$issue1, $issue2]], \JSON_THROW_ON_ERROR)),
         ));
 
         $issues = $client->projectIssues('widget', [IssueStatus::NeedsReview]);
@@ -128,7 +133,7 @@ final class DrupalOrgClientTest extends TestCase
             ++$calls;
             $list = $calls === 1 ? [$needsReview] : [$rtbc];
 
-            return new MockResponse(json_encode(['list' => $list]));
+            return new MockResponse(json_encode(['list' => $list], \JSON_THROW_ON_ERROR));
         };
 
         $client = new DrupalOrgClient(new MockHttpClient($factory));
@@ -153,7 +158,7 @@ final class DrupalOrgClientTest extends TestCase
         $issue = self::issuePayload(['nid' => 100, 'field_issue_status' => '8']);
 
         $client = new DrupalOrgClient(new MockHttpClient(
-            new MockResponse(json_encode(['list' => [$issue, $issue]])),
+            new MockResponse(json_encode(['list' => [$issue, $issue]], \JSON_THROW_ON_ERROR)),
         ));
 
         $issues = $client->projectIssues('widget', [IssueStatus::NeedsReview]);
@@ -168,7 +173,7 @@ final class DrupalOrgClientTest extends TestCase
         $factory = function () use ($issue, &$calls): MockResponse {
             ++$calls;
 
-            return new MockResponse(json_encode(['list' => [$issue]]));
+            return new MockResponse(json_encode(['list' => [$issue]], \JSON_THROW_ON_ERROR));
         };
 
         $client = new DrupalOrgClient(new MockHttpClient($factory));

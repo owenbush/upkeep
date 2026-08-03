@@ -60,9 +60,15 @@ final readonly class ModuleRegistry
             ));
         }
 
+        // Keyed by the *validated* name rather than by the raw YAML key: an
+        // unquoted numeric key parses as an int, and buildModule() is what
+        // decides whether a key is a usable machine name at all. Machine names
+        // start with a letter, so the result is a genuine string-keyed map
+        // that PHP will not coerce back to integer keys.
         $modules = [];
         foreach ($entries as $name => $definition) {
-            $modules[$name] = self::buildModule($path, (string) $name, $definition);
+            $module = self::buildModule($path, (string) $name, $definition);
+            $modules[$module->name] = $module;
         }
 
         return new self($modules);

@@ -26,6 +26,22 @@ final class FastLaneGateTest extends TestCase
 {
     private const HEAD_SHA = 'abc123def456abc123def456abc123def456abcd';
 
+    /**
+     * @param array{
+     *     iid?: int,
+     *     title?: string,
+     *     state?: string,
+     *     authorUsername?: string,
+     *     authorId?: int|null,
+     *     sourceBranch?: string,
+     *     targetBranch?: string,
+     *     draft?: bool,
+     *     detailedMergeStatus?: string|null,
+     *     headSha?: string|null,
+     *     webUrl?: string,
+     *     headPipeline?: Pipeline|null,
+     * } $overrides
+     */
     private function mr(array $overrides = []): MergeRequest
     {
         $defaults = [

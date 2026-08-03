@@ -338,6 +338,33 @@ final class ErrorTaxonomyTest extends TestCase
         $this->assertCount(1, $this->requested);
     }
 
+    public function testACollectionRowThatIsNotAJsonObjectIsMalformedRatherThanAFatal(): void
+    {
+        // A list arrived, but one of its entries is not the JSON object the
+        // endpoint promises. That is a protocol fault of the same family as a
+        // JSON object where a list was promised, and it is caught at the
+        // boundary rather than becoming a TypeError inside a model.
+        $client = $this->client([self::json([['name' => '1.0.0', 'target' => 'bbb222'], 'not-an-object'])]);
+
+        $result = $client->tags(self::projectModel());
+
+        $this->assertInstanceOf(MalformedResponse::class, $result);
+        $this->assertSame('malformed', $result->shortCode());
+        $this->assertStringContainsString('tags', $result->message);
+        $this->assertStringNotContainsString(self::TOKEN, $result->message);
+    }
+
+    public function testAMembershipPageRowThatIsNotAJsonObjectIsMalformed(): void
+    {
+        $client = $this->client([self::json([42])]);
+
+        $result = $client->membershipProjects();
+
+        $this->assertInstanceOf(MalformedResponse::class, $result);
+        $this->assertStringContainsString('projects', $result->message);
+        $this->assertCount(1, $this->requested, 'a malformed page ends the pagination immediately');
+    }
+
     public function testMembershipPaginationIsCapped(): void
     {
         $page = [[

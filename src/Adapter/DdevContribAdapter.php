@@ -354,7 +354,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
             $projectName,
         ));
 
-        if (($described['status'] ?? '') !== 'running') {
+        if ($described->stringOrNull('status') !== 'running') {
             ($this->log)(sprintf('Environment %s is stopped — starting it.', $projectName));
             $this->runner->run(['ddev', 'start', '-y'], $projectPath);
             $described = $this->describe($projectName) ?? throw new AdapterException(sprintf(
@@ -373,7 +373,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
             coreMajor: $coreMajor,
             projectName: $projectName,
             projectPath: $projectPath,
-            primaryUrl: (string) ($described['primary_url'] ?? ''),
+            primaryUrl: $described->stringOrNull('primary_url') ?? '',
             reused: true,
         );
     }
@@ -476,7 +476,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 coreMajor: $coreMajor,
                 projectName: $projectName,
                 projectPath: $projectPath,
-                primaryUrl: (string) ($described['primary_url'] ?? ''),
+                primaryUrl: $described->stringOrNull('primary_url') ?? '',
                 reused: false,
             );
         } catch (\Throwable $e) {
@@ -601,15 +601,31 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ], $environment->projectPath);
     }
 
+    /**
+     * The one dispatch point for every check type. Exhaustive over CheckType
+     * with no default arm on purpose: adding a case to the enum then fails
+     * here, at the place that has to decide how to run it, rather than
+     * silently falling through to a command line that does not exist.
+     */
     private function runCheck(Environment $environment, CheckType $check): CheckResult
     {
-        if ($check === CheckType::Deprecation) {
-            return $this->runDeprecationCheck($environment);
-        }
-        if ($check === CheckType::FunctionalSmoke) {
-            return $this->runSmokeCheck($environment);
-        }
+        return match ($check) {
+            CheckType::Deprecation => $this->runDeprecationCheck($environment),
+            CheckType::FunctionalSmoke => $this->runSmokeCheck($environment),
+            CheckType::PhpUnit,
+            CheckType::PhpCs,
+            CheckType::PhpStan,
+            CheckType::EsLint,
+            CheckType::StyleLint,
+            CheckType::ModuleInstall => $this->runCommandCheck($environment, $check),
+        };
+    }
 
+    /**
+     * The checks that are just a command line run inside the environment.
+     */
+    private function runCommandCheck(Environment $environment, CheckType $check): CheckResult
+    {
         // Checks target exactly the module under maintenance — never all of
         // DRUPAL_PROJECTS_PATH, where composer also materializes the module's
         // real dependencies (their packaged code must not pollute results).
@@ -650,7 +666,8 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 'phpstan analyze ' . $modulePath,
             ])],
             CheckType::ModuleInstall => ['ddev', 'drush', 'pm:install', $environment->moduleName, '-y'],
-            CheckType::FunctionalSmoke, CheckType::Deprecation => throw new \LogicException('Handled above.'),
+            CheckType::FunctionalSmoke, CheckType::Deprecation
+                => throw new \LogicException('Dispatched to their own method by runCheck().'),
         };
 
         $process = $this->runner->capture($command, $environment->projectPath, self::CHECK_TIMEOUT);
@@ -769,18 +786,12 @@ final class DdevContribAdapter implements EngineAdapterInterface
     }
 
     /**
-     * @return array<string, mixed>|null the engine's raw project description, null when unknown
+     * The engine's project description, or null when the project is unknown
+     * to it.
      */
-    private function describe(string $projectName): ?array
+    private function describe(string $projectName): ?EngineDescription
     {
-        $json = $this->runner->tryRun(['ddev', 'describe', $projectName, '-j']);
-        if ($json === null) {
-            return null;
-        }
-
-        $decoded = json_decode($json, true);
-
-        return is_array($decoded['raw'] ?? null) ? $decoded['raw'] : null;
+        return EngineDescription::fromJson($this->runner->tryRun(['ddev', 'describe', $projectName, '-j']));
     }
 
     private function requireArtifactMeta(string $coreMajor): ArtifactMeta

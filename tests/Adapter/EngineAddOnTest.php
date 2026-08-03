@@ -38,25 +38,39 @@ final class EngineAddOnTest extends TestCase
     public function testRemovesTheModuleAsProjectPostStartHook(): void
     {
         $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        self::assertIsArray($adapted);
 
         self::assertArrayNotHasKey('hooks', $adapted);
     }
 
     public function testRepointsProjectsPathAtTheComposerInstalledModuleLocation(): void
     {
-        $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        $webEnvironment = self::adaptedWebEnvironment();
 
-        self::assertContains('DRUPAL_PROJECTS_PATH=modules/contrib', $adapted['web_environment']);
-        self::assertNotContains('DRUPAL_PROJECTS_PATH=modules/custom', $adapted['web_environment']);
+        self::assertContains('DRUPAL_PROJECTS_PATH=modules/contrib', $webEnvironment);
+        self::assertNotContains('DRUPAL_PROJECTS_PATH=modules/custom', $webEnvironment);
     }
 
     public function testPreservesTheEngineTestRunnerEnvironment(): void
     {
-        $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        $webEnvironment = self::adaptedWebEnvironment();
 
-        self::assertContains('SIMPLETEST_DB=mysql://db:db@db/db', $adapted['web_environment']);
-        self::assertContains('SIMPLETEST_BASE_URL=http://web', $adapted['web_environment']);
-        self::assertContains('BROWSERTEST_OUTPUT_BASE_URL=${DDEV_PRIMARY_URL}', $adapted['web_environment']);
+        self::assertContains('SIMPLETEST_DB=mysql://db:db@db/db', $webEnvironment);
+        self::assertContains('SIMPLETEST_BASE_URL=http://web', $webEnvironment);
+        self::assertContains('BROWSERTEST_OUTPUT_BASE_URL=${DDEV_PRIMARY_URL}', $webEnvironment);
+    }
+
+    /** @return array<array-key, mixed> the adapted config's web_environment block */
+    private static function adaptedWebEnvironment(): array
+    {
+        $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        self::assertIsArray($adapted);
+        self::assertArrayHasKey('web_environment', $adapted);
+
+        $webEnvironment = $adapted['web_environment'];
+        self::assertIsArray($webEnvironment);
+
+        return $webEnvironment;
     }
 
     public function testKeepsTheDdevGeneratedMarkerSoReGetsStayDetectable(): void

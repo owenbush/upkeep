@@ -57,9 +57,15 @@ final readonly class ModuleWiring
             throw new AdapterException('Project composer.json "repositories" must be a list; refusing to rewrite it.');
         }
 
+        // Decoded JSON is untrusted: a repository entry that is not an object
+        // is not one of ours, so it is kept rather than dropped.
         $repositories = array_values(array_filter(
             $repositories,
-            static fn (array $repo): bool => !(($repo['type'] ?? '') === 'path' && ($repo['url'] ?? '') === $url),
+            static fn (mixed $repo): bool => !(
+                \is_array($repo)
+                && ($repo['type'] ?? '') === 'path'
+                && ($repo['url'] ?? '') === $url
+            ),
         ));
         array_unshift($repositories, $repository);
         $data['repositories'] = $repositories;

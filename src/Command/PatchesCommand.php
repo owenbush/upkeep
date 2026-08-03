@@ -163,7 +163,9 @@ final class PatchesCommand extends UpkeepCommand
             ? '<fg=gray>' . $cells[4] . '</>'
             : $cells[4];
 
-        return $fmt;
+        // Written back by index, so the result is repacked into a list:
+        // ColumnTable's colouriser contract is list-in, list-out.
+        return array_values($fmt);
     }
 
     /**

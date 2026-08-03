@@ -94,16 +94,18 @@ final readonly class ThrowawaySite
 
     private function detectDbEngine(string $throwawayPath): string
     {
-        $json = $this->runner->run(['ddev', 'describe', '-j'], $throwawayPath);
-        $decoded = json_decode($json, true);
-        $dbinfo = $decoded['raw']['dbinfo'] ?? [];
-        $type = $dbinfo['database_type'] ?? null;
-        $version = $dbinfo['database_version'] ?? null;
-
-        if (is_string($type) && $type !== '') {
-            return is_string($version) && $version !== '' ? $type . ':' . $version : $type;
+        $described = EngineDescription::fromJson($this->runner->run(['ddev', 'describe', '-j'], $throwawayPath));
+        if ($described === null) {
+            return 'unknown';
         }
 
-        return 'unknown';
+        $type = $described->stringOrNull('dbinfo', 'database_type') ?? '';
+        $version = $described->stringOrNull('dbinfo', 'database_version') ?? '';
+
+        if ($type === '') {
+            return 'unknown';
+        }
+
+        return $version !== '' ? $type . ':' . $version : $type;
     }
 }

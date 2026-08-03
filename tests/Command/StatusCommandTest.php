@@ -52,6 +52,9 @@ final class StatusCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->world));
     }
 
+    /**
+     * @param array<string, bool|string> $args
+     */
     private function runStatus(array $args): CommandTester
     {
         $tester = new CommandTester(new StatusCommand(new VolumeProbe(static fn (array $c): ?string => null)));

@@ -279,6 +279,20 @@ abstract class UpkeepCommand extends Command
         return \is_scalar($value) && $value !== false ? (string) $value : null;
     }
 
+    /**
+     * A value-taking option as an integer, or $default when it was not given.
+     *
+     * Reads the value exactly as an `(int)` cast does, which is what the
+     * numeric flags have always done — the point here is that console input
+     * is narrowed in one place, not that the parsing rule changes.
+     */
+    protected static function intOption(InputInterface $input, string $name, int $default = 0): int
+    {
+        $value = self::stringOption($input, $name);
+
+        return $value !== null ? (int) $value : $default;
+    }
+
     /** A required argument as a string. */
     protected static function stringArgument(InputInterface $input, string $name): string
     {

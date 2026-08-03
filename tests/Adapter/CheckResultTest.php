@@ -62,6 +62,21 @@ final class CheckResultTest extends TestCase
         self::assertSame(CheckStatus::Failed, $result->status);
     }
 
+    /**
+     * A child that reported no exit status at all (CapturedProcess::$exitCode
+     * is null) has not passed: only exit 0 is a pass, and "unknown" is kept as
+     * null rather than flattened onto a sentinel number that a real command
+     * could also return.
+     */
+    public function testCheckWithNoExitStatusIsAFailureRatherThanAPass(): void
+    {
+        $result = CheckResult::fromProcess(CheckType::PhpCs, null, 'killed', 2.0);
+
+        self::assertSame(CheckStatus::Failed, $result->status);
+        self::assertFalse($result->passed());
+        self::assertNull($result->exitCode);
+    }
+
     public function testTimedOutCheckIsAFailureWithTheReasonRecorded(): void
     {
         $result = CheckResult::timedOut(CheckType::PhpUnit, 'partial output', 1800.0, 1800);

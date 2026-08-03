@@ -12,7 +12,16 @@ namespace Upkeep\Adapter;
 final readonly class CapturedProcess
 {
     public function __construct(
-        public int $exitCode,
+        /**
+         * The child's exit status, or null when it produced none at all —
+         * killed before it could report one, or never executed. "Unknown" is
+         * deliberately its own value rather than a sentinel integer: every
+         * number in 0..255 is a status some command really returns, so
+         * flattening the unknown case onto one (the old `?? -1`) would make
+         * it indistinguishable from a real result. Same contract as
+         * Workflow\ExitCode::forChildProcess().
+         */
+        public ?int $exitCode,
         /** Combined stdout + stderr, in stream order as far as the runner sees it. */
         public string $output,
         public bool $timedOut,

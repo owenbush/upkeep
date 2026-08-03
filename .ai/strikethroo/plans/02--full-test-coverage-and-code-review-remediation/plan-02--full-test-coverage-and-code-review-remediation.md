@@ -491,10 +491,34 @@ Operator-visible changes are recorded in `BEHAVIOUR-CHANGES.md` (15 items) and
 the binding rulings in `DECISIONS.md`. Task 019 must document all of them;
 task 012 must assert the new behaviour, not the old.
 
-### Phase 4: Static Analysis to Level Max
+### ✅ Phase 4: Static Analysis to Level Max — completed
 **Parallel Tasks:**
-- Task 010: Reach PHPStan level max across the GitLab and configuration boundary (depends on: 004, 008)
-- Task 011: Reach PHPStan level max across the adapter and remaining namespaces (depends on: 004, 009)
+- ✔️ Task 010: Reach PHPStan level max across the GitLab and configuration boundary (depends on: 004, 008) — `completed`
+- ✔️ Task 011: Reach PHPStan level max across the adapter and remaining namespaces (depends on: 004, 009) — `completed`
+
+**Verified**: `vendor/bin/phpstan analyse --no-progress` reports **`[OK] No errors`**,
+exit 0 — down from 302 at the task 1 baseline. No `phpstan-baseline.neon` exists,
+and `grep -rn "phpstan-ignore\|phpcs:ignore\|codeCoverageIgnore" src/ tests/ bin/`
+returns **nothing**: every one of the 302 errors was fixed at the source, none
+suppressed. PHPUnit 596 tests / 1607 assertions; phpcs clean.
+
+**Boundary-narrowing pattern established**: `array<array-key, mixed>` in at the
+edge, typed value object out — a payload wrapper for fields, a row-narrower for
+collections, `mixed` never crossing inward. Realised as `Gitlab\ApiPayload`,
+`Drupal\ApiPayload`, and `Adapter\EngineDescription`. Task 17 should consider
+whether those three same-vocabulary readers want consolidating.
+
+**Third live fatal found**: `Command\NotesCommand` was missing its
+`GitlabClientFactory` import, so `upkeep notes` raised
+`Error: Class "Upkeep\Command\GitlabClientFactory" not found` on **every**
+invocation. It shipped that way because the class docblock declared it
+"deliberately untested… verified live". Now fixed, imported, and pinned by a
+hermetic test.
+
+**Modelling change worth noting**: `Process::getExitCode()`'s nullable is no
+longer flattened to `-1`. Every value in 0..255 is a status some command really
+returns, so a sentinel is indistinguishable from a real result;
+`CapturedProcess::$exitCode` is now `?int` and "no status" is never a pass.
 
 ### Phase 5: E2E Harness and Coverage Closure
 **Parallel Tasks:**

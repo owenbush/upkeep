@@ -159,9 +159,13 @@ final readonly class BaseArtifactBuilder
         });
 
         if (!$process->isSuccessful()) {
+            // Process::getExitCode() is null when the child reported no status
+            // at all. Named rather than collapsed onto a number, since every
+            // value in 0..255 is a status some command really returns.
+            $exitCode = $process->getExitCode();
             throw new BuildException(sprintf(
                 "Command failed (%s): %s\n%s",
-                $process->getExitCode() ?? -1,
+                $exitCode === null ? 'no exit status' : (string) $exitCode,
                 $process->getCommandLine(),
                 trim($process->getErrorOutput() . "\n" . $process->getOutput()),
             ));

@@ -31,27 +31,31 @@ final readonly class MergeRequest
     ) {
     }
 
+    /**
+     * @param array<array-key, mixed> $data a decoded merge-request JSON object
+     */
     public static function fromApi(array $data): self
     {
-        $title = (string) ($data['title'] ?? '');
+        $payload = new ApiPayload($data);
+        $author = $payload->child('author');
+        $headPipeline = $payload->childArray('head_pipeline');
+        $title = $payload->string('title');
 
         return new self(
-            iid: (int) $data['iid'],
+            iid: $payload->int('iid'),
             title: $title,
-            state: (string) ($data['state'] ?? ''),
-            authorUsername: (string) ($data['author']['username'] ?? ''),
-            authorId: isset($data['author']['id']) ? (int) $data['author']['id'] : null,
-            sourceBranch: (string) ($data['source_branch'] ?? ''),
-            targetBranch: (string) ($data['target_branch'] ?? ''),
-            draft: (bool) ($data['draft'] ?? str_starts_with($title, 'Draft: ')),
-            detailedMergeStatus: isset($data['detailed_merge_status']) ? (string) $data['detailed_merge_status'] : null,
-            headSha: isset($data['sha']) ? (string) $data['sha'] : null,
-            webUrl: (string) ($data['web_url'] ?? ''),
-            description: isset($data['description']) ? (string) $data['description'] : null,
-            headPipeline: isset($data['head_pipeline']) && \is_array($data['head_pipeline'])
-                ? Pipeline::fromApi($data['head_pipeline'])
-                : null,
-            updatedAt: isset($data['updated_at']) ? (string) $data['updated_at'] : null,
+            state: $payload->string('state'),
+            authorUsername: $author?->string('username') ?? '',
+            authorId: $author?->intOrNull('id'),
+            sourceBranch: $payload->string('source_branch'),
+            targetBranch: $payload->string('target_branch'),
+            draft: $payload->bool('draft', str_starts_with($title, 'Draft: ')),
+            detailedMergeStatus: $payload->stringOrNull('detailed_merge_status'),
+            headSha: $payload->stringOrNull('sha'),
+            webUrl: $payload->string('web_url'),
+            description: $payload->stringOrNull('description'),
+            headPipeline: $headPipeline !== null ? Pipeline::fromApi($headPipeline) : null,
+            updatedAt: $payload->stringOrNull('updated_at'),
         );
     }
 

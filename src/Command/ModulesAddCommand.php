@@ -96,7 +96,7 @@ final class ModulesAddCommand extends UpkeepCommand
 
         $coreVersions = array_values(array_filter(array_map(
             trim(...),
-            explode(',', (string) $input->getOption('core-versions')),
+            explode(',', self::stringOption($input, 'core-versions') ?? ''),
         )));
         if ($coreVersions === []) {
             throw new WorkflowException('--core-versions must name at least one core major, e.g. "11" or "10,11".');

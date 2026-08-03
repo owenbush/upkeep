@@ -15,14 +15,19 @@ final readonly class Project
     ) {
     }
 
+    /**
+     * @param array<array-key, mixed> $data a decoded project JSON object
+     */
     public static function fromApi(array $data): self
     {
+        $payload = new ApiPayload($data);
+
         return new self(
-            id: (int) $data['id'],
-            path: (string) ($data['path'] ?? ''),
-            pathWithNamespace: (string) ($data['path_with_namespace'] ?? ''),
-            name: (string) ($data['name'] ?? ''),
-            webUrl: (string) ($data['web_url'] ?? ''),
+            id: $payload->int('id'),
+            path: $payload->string('path'),
+            pathWithNamespace: $payload->string('path_with_namespace'),
+            name: $payload->string('name'),
+            webUrl: $payload->string('web_url'),
         );
     }
 

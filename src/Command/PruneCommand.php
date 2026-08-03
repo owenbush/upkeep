@@ -109,13 +109,12 @@ final class PruneCommand extends UpkeepCommand
         }
 
         try {
-            $olderThan = $input->getOption('older-than') !== null
-                ? Duration::parseToSeconds((string) $input->getOption('older-than'))
-                : null;
+            $olderThanOption = self::stringOption($input, 'older-than');
+            $olderThan = $olderThanOption !== null ? Duration::parseToSeconds($olderThanOption) : null;
         } catch (\InvalidArgumentException $e) {
             throw new WorkflowException($e->getMessage(), 0, $e);
         }
-        $keepLatest = (int) $input->getOption('keep-latest');
+        $keepLatest = self::intOption($input, 'keep-latest');
 
         $cockpit = $this->cockpit($input);
         // Parsed up front, before anything is scanned or any reclaim plan is

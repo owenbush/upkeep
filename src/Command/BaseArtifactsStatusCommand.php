@@ -44,10 +44,10 @@ final class BaseArtifactsStatusCommand extends UpkeepCommand
             array_map(static fn ($r) => [
                 $r->version,
                 $r->complete ? 'complete (canonical)' : 'incomplete: missing ' . implode(', ', $r->missing),
-                $r->meta?->coreVersion ?? '-',
+                $r->meta->coreVersion ?? '-',
                 $r->meta?->builtAt->format('Y-m-d H:i:s T') ?? '-',
-                $r->meta?->phpVersion ?? '-',
-                $r->meta?->dbEngine ?? '-',
+                $r->meta->phpVersion ?? '-',
+                $r->meta->dbEngine ?? '-',
                 ByteFormat::human($r->treeSizeBytes),
                 ByteFormat::human($r->dumpSizeBytes),
             ], $records),

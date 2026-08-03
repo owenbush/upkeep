@@ -69,8 +69,8 @@ final class ModulesAddCommandTest extends TestCase
                     'name' => 'Field Helper',
                     'web_url' => 'https://git.drupalcode.org/project/field_helper',
                 ],
-            ])),
-            new MockResponse(json_encode([])),
+            ], \JSON_THROW_ON_ERROR)),
+            new MockResponse(json_encode([], \JSON_THROW_ON_ERROR)),
         ];
 
         return new GitlabClient(new MockHttpClient(function () use (&$pages) {

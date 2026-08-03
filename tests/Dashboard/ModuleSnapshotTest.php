@@ -9,6 +9,7 @@ use Upkeep\Dashboard\ModuleSnapshot;
 
 final class ModuleSnapshotTest extends TestCase
 {
+    /** @return array<array-key, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -20,6 +21,7 @@ final class ModuleSnapshotTest extends TestCase
         ];
     }
 
+    /** @return array<array-key, mixed> */
     private static function mrPayload(): array
     {
         return [
@@ -43,6 +45,7 @@ final class ModuleSnapshotTest extends TestCase
         ];
     }
 
+    /** @return array<array-key, mixed> */
     private static function issuePayload(): array
     {
         return [

@@ -95,6 +95,9 @@ final class PruneCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->world));
     }
 
+    /**
+     * @param array<string, bool|string> $args
+     */
     private function runPrune(array $args): CommandTester
     {
         $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
@@ -133,7 +136,11 @@ final class PruneCommandTest extends TestCase
 
             public function teardown(Module $module, string $coreMajor): void
             {
-                $this->teardowns[] = [$module->name, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->teardowns = [...$this->teardowns, [$module->name, $coreMajor]];
             }
             public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
             {
