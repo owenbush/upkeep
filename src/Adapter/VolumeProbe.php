@@ -41,7 +41,9 @@ final readonly class VolumeProbe
      */
     public function items(array $treesByProjectName): array
     {
-        $listing = ($this->exec)(['docker', 'volume', 'ls', '--format', sprintf('{{.Name}}\t{{.Label "%s"}}', self::PROJECT_LABEL)]);
+        $listing = ($this->exec)([
+            'docker', 'volume', 'ls', '--format', sprintf('{{.Name}}\t{{.Label "%s"}}', self::PROJECT_LABEL),
+        ]);
         if ($listing === null) {
             return [];
         }

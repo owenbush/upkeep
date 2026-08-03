@@ -292,7 +292,11 @@ final class MergeCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringContainsString('Quit', $display);
         self::assertStringContainsString('Fast-lane action for widget !5', $display);
-        self::assertStringNotContainsString('Fast-lane action for widget !7', $display, 'quit must not prompt for later rows');
+        self::assertStringNotContainsString(
+            'Fast-lane action for widget !7',
+            $display,
+            'quit must not prompt for later rows',
+        );
         self::assertStringContainsString('Merged: 0', $display);
     }
 
@@ -474,7 +478,11 @@ final class MergeCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringContainsString('Merge failed for widget !5', $display);
         self::assertStringContainsString('405', $display);
-        self::assertStringContainsString('Fast-lane action for widget !7', $display, 'a failure must not abort the loop');
+        self::assertStringContainsString(
+            'Fast-lane action for widget !7',
+            $display,
+            'a failure must not abort the loop',
+        );
         self::assertStringContainsString('Merged widget !7', $display);
         self::assertStringContainsString('Merged: 1', $display);
         self::assertStringContainsString('Failed: 1', $display);

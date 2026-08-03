@@ -40,7 +40,13 @@ final class CheckCommand extends AbstractMrCommand
     protected function configure(): void
     {
         $this->configureMrSurface();
-        $this->addOption('fixture', null, InputOption::VALUE_REQUIRED, 'Load this named fixture into the database before running checks (aborts before any check when the fixture is unknown)');
+        $this->addOption(
+            'fixture',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'Load this named fixture into the database before running checks (aborts before any check when the '
+            . 'fixture is unknown)',
+        );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -67,7 +73,7 @@ final class CheckCommand extends AbstractMrCommand
 
             $io->section('Checks');
             $run = $adapter->runChecks($environment);
-        } catch (WorkflowException|AdapterException|RegistryException $e) {
+        } catch (WorkflowException | AdapterException | RegistryException $e) {
             $io->error($e->getMessage());
 
             return ExitCode::INFRASTRUCTURE;
@@ -122,11 +128,18 @@ final class CheckCommand extends AbstractMrCommand
      * missing head SHA (API anomaly) skips caching with a warning rather
      * than storing an entry staleness checks could never match.
      */
-    private function cacheResults(InputInterface $input, SymfonyStyle $io, MrContext $context, CheckRunResult $run): void
-    {
+    private function cacheResults(
+        InputInterface $input,
+        SymfonyStyle $io,
+        MrContext $context,
+        CheckRunResult $run,
+    ): void {
         $sha = $context->mergeRequest->headSha;
         if ($sha === null) {
-            $io->warning('The MR has no head SHA; results were NOT cached (the dashboard could never tell fresh from stale).');
+            $io->warning(
+                'The MR has no head SHA; results were NOT cached (the dashboard could never tell fresh from '
+                . 'stale).',
+            );
 
             return;
         }

@@ -17,11 +17,29 @@ final class GitlabClientMembershipTest extends TestCase
     {
         $pages = [
             new MockResponse(json_encode([
-                ['id' => 1, 'path' => 'conditions_helper', 'path_with_namespace' => 'project/conditions_helper', 'name' => 'Conditions Helper', 'web_url' => 'https://git.drupalcode.org/project/conditions_helper'],
-                ['id' => 2, 'path' => 'sandbox_thing', 'path_with_namespace' => 'sandbox/sandbox_thing', 'name' => 'Sandbox', 'web_url' => 'https://git.drupalcode.org/sandbox/sandbox_thing'],
+                [
+                    'id' => 1,
+                    'path' => 'conditions_helper',
+                    'path_with_namespace' => 'project/conditions_helper',
+                    'name' => 'Conditions Helper',
+                    'web_url' => 'https://git.drupalcode.org/project/conditions_helper',
+                ],
+                [
+                    'id' => 2,
+                    'path' => 'sandbox_thing',
+                    'path_with_namespace' => 'sandbox/sandbox_thing',
+                    'name' => 'Sandbox',
+                    'web_url' => 'https://git.drupalcode.org/sandbox/sandbox_thing',
+                ],
             ])),
             new MockResponse(json_encode([
-                ['id' => 3, 'path' => 'token_or', 'path_with_namespace' => 'project/token_or', 'name' => 'Token OR', 'web_url' => 'https://git.drupalcode.org/project/token_or'],
+                [
+                    'id' => 3,
+                    'path' => 'token_or',
+                    'path_with_namespace' => 'project/token_or',
+                    'name' => 'Token OR',
+                    'web_url' => 'https://git.drupalcode.org/project/token_or',
+                ],
             ])),
             new MockResponse(json_encode([])),
         ];

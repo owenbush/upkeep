@@ -48,8 +48,10 @@ final readonly class WorkingCopyStatus
             return false;
         }
 
-        if (preg_match('/^\d+\.\d+\.x$/', $this->currentBranch) === 1
-            || preg_match('/^\d+\.x$/', $this->currentBranch) === 1) {
+        if (
+            preg_match('/^\d+\.\d+\.x$/', $this->currentBranch) === 1
+            || preg_match('/^\d+\.x$/', $this->currentBranch) === 1
+        ) {
             return false;
         }
 

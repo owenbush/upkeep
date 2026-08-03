@@ -44,9 +44,27 @@ final class ModulesAddCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addArgument('modules', InputArgument::IS_ARRAY, 'Module machine names to register without prompting (must be among your memberships)')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('core-versions', null, InputOption::VALUE_REQUIRED, 'Comma-separated core majors the new entries track (e.g. "10,11")', '11');
+            ->addArgument(
+                'modules',
+                InputArgument::IS_ARRAY,
+                'Module machine names to register without prompting (must be among your memberships)',
+            )
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
+            ->addOption(
+                'core-versions',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Comma-separated core majors the new entries track (e.g. "10,11")',
+                '11',
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -86,7 +104,10 @@ final class ModulesAddCommand extends Command
             return Command::SUCCESS;
         }
 
-        $coreVersions = array_values(array_filter(array_map(trim(...), explode(',', (string) $input->getOption('core-versions')))));
+        $coreVersions = array_values(array_filter(array_map(
+            trim(...),
+            explode(',', (string) $input->getOption('core-versions')),
+        )));
         if ($coreVersions === []) {
             $io->error('--core-versions must name at least one core major, e.g. "11" or "10,11".');
 
@@ -107,12 +128,18 @@ final class ModulesAddCommand extends Command
             }
             $chosen = array_values(array_intersect($requested, array_keys($candidates)));
         } elseif (!$input->isInteractive()) {
-            $io->error('Pass module machine names as arguments when running non-interactive (no prompt available). Example: upkeep modules:add token_or field_helper');
+            $io->error(
+                'Pass module machine names as arguments when running non-interactive (no prompt available). '
+                . 'Example: upkeep modules:add token_or field_helper',
+            );
 
             return Command::FAILURE;
         } else {
             $question = new ChoiceQuestion(
-                sprintf('Which modules should be registered? (comma-separated; %d unregistered membership(s) found)', \count($candidates)),
+                sprintf(
+                    'Which modules should be registered? (comma-separated; %d unregistered membership(s) found)',
+                    \count($candidates),
+                ),
                 array_keys($candidates),
             );
             $question->setMultiselect(true);
@@ -128,7 +155,11 @@ final class ModulesAddCommand extends Command
 
         try {
             $added = (new RegistryEditor($cockpit->registryPath()))->add(array_map(
-                static fn (string $name): Module => new Module($name, $candidates[$name]->pathWithNamespace, $coreVersions),
+                static fn (string $name): Module => new Module(
+                    $name,
+                    $candidates[$name]->pathWithNamespace,
+                    $coreVersions,
+                ),
                 $chosen,
             ));
         } catch (RegistryException $e) {
@@ -156,7 +187,11 @@ final class ModulesAddCommand extends Command
 
         $token = (new TokenResolver())->resolve();
         if ($token === null) {
-            $io->error(sprintf('No GitLab token found. Configure one of: env var %s, config file %s.', TokenResolver::ENV_VAR, TokenResolver::CONFIG_PATH_HINT));
+            $io->error(sprintf(
+                'No GitLab token found. Configure one of: env var %s, config file %s.',
+                TokenResolver::ENV_VAR,
+                TokenResolver::CONFIG_PATH_HINT,
+            ));
 
             return null;
         }

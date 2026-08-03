@@ -57,9 +57,32 @@ abstract class AbstractMrCommand extends Command
         $this
             ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name (see `upkeep modules`)')
             ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID on the module\'s drupalcode project')
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version; must be tracked by the module\'s registry entry. Defaults to the first core version listed there.')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption(
+                'version',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Target core major version; must be tracked by the module\'s registry entry. Defaults to the first '
+                . 'core version listed there.',
+            )
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
+            ->addOption(
+                'projects-root',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
+                    . 'exists, then ~/.upkeep/projects)',
+                    ProjectsRoot::ENV_VAR,
+                ),
+            );
     }
 
     /**
@@ -76,14 +99,18 @@ abstract class AbstractMrCommand extends Command
         $token = $tokens->resolve();
         if ($token === null) {
             throw new WorkflowException(sprintf(
-                'No GitLab token found; MR resolution needs one. Configure one of: %s. (The token is never printed or logged.)',
+                'No GitLab token found; MR resolution needs one. Configure one of: %s. (The token is never printed '
+                . 'or logged.)',
                 $tokens->describeSources(),
             ));
         }
 
         $iidRaw = (string) $input->getArgument('mr');
         if (preg_match('/^\d+$/', $iidRaw) !== 1) {
-            throw new WorkflowException(sprintf('The <mr> argument must be a merge request IID (a positive integer), got "%s".', $iidRaw));
+            throw new WorkflowException(sprintf(
+                'The <mr> argument must be a merge request IID (a positive integer), got "%s".',
+                $iidRaw,
+            ));
         }
 
         $io->writeln(sprintf('Resolving MR !%s of %s via GitLab ...', $iidRaw, $input->getArgument('module')));
@@ -91,7 +118,11 @@ abstract class AbstractMrCommand extends Command
         $version = $input->getOption('version');
 
         return (new MrContextResolver($registry->modules(), new GitlabClient(HttpClient::create(), $token)))
-            ->resolve((string) $input->getArgument('module'), (int) $iidRaw, $version !== null ? (string) $version : null);
+            ->resolve(
+                (string) $input->getArgument('module'),
+                (int) $iidRaw,
+                $version !== null ? (string) $version : null,
+            );
     }
 
     protected function cockpit(InputInterface $input): Cockpit

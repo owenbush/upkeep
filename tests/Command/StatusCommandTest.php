@@ -24,11 +24,18 @@ final class StatusCommandTest extends TestCase
         mkdir($this->cockpit . '/base-artifacts/11/tree', 0755, true);
         file_put_contents($this->cockpit . '/base-artifacts/11/tree/index.php', str_repeat('x', 8192));
         file_put_contents($this->cockpit . '/base-artifacts/11/canonical', '');
-        file_put_contents($this->cockpit . '/registry.yml', "modules:\n  conditions_helper:\n    project: project/conditions_helper\n    core_versions: [\"11\"]\n");
+        file_put_contents(
+            $this->cockpit . '/registry.yml',
+            "modules:\n  conditions_helper:\n    project: project/conditions_helper\n    core_versions: [\"11\"]\n",
+        );
 
         $p = $this->projects . '/upkeep-conditions-helper-d11';
         mkdir($p . '/.ddev/upkeep/materialized', 0755, true);
-        file_put_contents($p . '/.upkeep-env.yml', "module: conditions_helper\ncore_major: '11'\nseed_core_version: 11.2.5\naddon_version: v1.0.0\ncreated_at: '2026-06-01T00:00:00+00:00'\n");
+        file_put_contents(
+            $p . '/.upkeep-env.yml',
+            "module: conditions_helper\ncore_major: '11'\nseed_core_version: 11.2.5\n"
+            . "addon_version: v1.0.0\ncreated_at: '2026-06-01T00:00:00+00:00'\n",
+        );
         file_put_contents($p . '/.ddev/upkeep/materialized/base.sql', str_repeat('s', 4096));
     }
 

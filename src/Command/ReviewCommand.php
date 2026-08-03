@@ -51,7 +51,7 @@ final class ReviewCommand extends AbstractMrCommand
 
             $io->section('Serve');
             $serve = $adapter->serve($environment);
-        } catch (WorkflowException|AdapterException|RegistryException $e) {
+        } catch (WorkflowException | AdapterException | RegistryException $e) {
             $io->error($e->getMessage());
 
             return ExitCode::INFRASTRUCTURE;

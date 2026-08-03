@@ -39,10 +39,34 @@ final class ModulesAddCommandTest extends TestCase
     {
         $pages = [
             new MockResponse(json_encode([
-                ['id' => 1, 'path' => 'conditions_helper', 'path_with_namespace' => 'project/conditions_helper', 'name' => 'Conditions Helper', 'web_url' => 'https://git.drupalcode.org/project/conditions_helper'],
-                ['id' => 2, 'path' => 'token_or', 'path_with_namespace' => 'project/token_or', 'name' => 'Token OR', 'web_url' => 'https://git.drupalcode.org/project/token_or'],
-                ['id' => 3, 'path' => 'playground', 'path_with_namespace' => 'sandbox/playground', 'name' => 'Playground', 'web_url' => 'https://git.drupalcode.org/sandbox/playground'],
-                ['id' => 4, 'path' => 'field_helper', 'path_with_namespace' => 'project/field_helper', 'name' => 'Field Helper', 'web_url' => 'https://git.drupalcode.org/project/field_helper'],
+                [
+                    'id' => 1,
+                    'path' => 'conditions_helper',
+                    'path_with_namespace' => 'project/conditions_helper',
+                    'name' => 'Conditions Helper',
+                    'web_url' => 'https://git.drupalcode.org/project/conditions_helper',
+                ],
+                [
+                    'id' => 2,
+                    'path' => 'token_or',
+                    'path_with_namespace' => 'project/token_or',
+                    'name' => 'Token OR',
+                    'web_url' => 'https://git.drupalcode.org/project/token_or',
+                ],
+                [
+                    'id' => 3,
+                    'path' => 'playground',
+                    'path_with_namespace' => 'sandbox/playground',
+                    'name' => 'Playground',
+                    'web_url' => 'https://git.drupalcode.org/sandbox/playground',
+                ],
+                [
+                    'id' => 4,
+                    'path' => 'field_helper',
+                    'path_with_namespace' => 'project/field_helper',
+                    'name' => 'Field Helper',
+                    'web_url' => 'https://git.drupalcode.org/project/field_helper',
+                ],
             ])),
             new MockResponse(json_encode([])),
         ];
@@ -62,7 +86,10 @@ final class ModulesAddCommandTest extends TestCase
 
         self::assertSame(0, $exit, $tester->getDisplay());
         $display = $tester->getDisplay();
-        self::assertStringNotContainsString('conditions_helper', $tester->getDisplay(true) ? substr($display, (int) strpos($display, '?')) : $display);
+        self::assertStringNotContainsString(
+            'conditions_helper',
+            $tester->getDisplay(true) ? substr($display, (int) strpos($display, '?')) : $display,
+        );
         self::assertStringNotContainsString('playground', $display);
 
         $modules = ModuleRegistry::fromFile($this->cockpit . '/registry.yml')->modules();

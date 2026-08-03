@@ -442,11 +442,20 @@ PSR-12 — 245 errors / 227 warnings in 60 files. PHPStan level max — 302 erro
 Coverage — 64.63% lines (2149/3325), 40.66% classes, 59.20% methods. PHPUnit —
 377 tests / 1015 assertions passing.
 
-### Phase 2: CI Wiring, Style Remediation, and Review
+### ✅ Phase 2: CI Wiring, Style Remediation, and Review — completed
 **Parallel Tasks:**
-- Task 003: Wire quality gates into the CI workflow (depends on: 001, 002)
-- Task 004: Remediate all PSR-12 violations (depends on: 001)
-- Task 005: Conduct the security and best-practice review and produce the findings record (depends on: 001)
+- ✔️ Task 003: Wire quality gates into the CI workflow (depends on: 001, 002) — `completed`
+- ✔️ Task 004: Remediate all PSR-12 violations (depends on: 001) — `completed`
+- ✔️ Task 005: Conduct the security and best-practice review and produce the findings record (depends on: 001) — `completed`
+
+**Verified**: PSR-12 245 errors + 227 warnings → **0/0, exit 0**, with zero
+suppressions added (59 files changed). PHPUnit still 377 tests / 1015
+assertions. Adapter boundary grep silent. `review-findings.md` written with
+**55 findings** (25 security, 30 best-practice; 2 Critical).
+
+**Unverifiable in this environment**: task 003's "green CI run on all three
+matrix legs" criterion — there is no push access to GitHub here. Every workflow
+command was instead run locally on PHP 8.4.24 and its exit code recorded.
 
 ### Phase 3: Findings Remediation
 **Parallel Tasks:**

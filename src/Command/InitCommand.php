@@ -47,12 +47,22 @@ final class InitCommand extends Command
         $cockpit = new Cockpit(rtrim((string) $input->getArgument('dir'), '/'));
 
         if (file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('A cockpit already exists at "%s" (found %s).', $cockpit->root, Cockpit::REGISTRY_FILENAME));
+            $io->error(sprintf(
+                'A cockpit already exists at "%s" (found %s).',
+                $cockpit->root,
+                Cockpit::REGISTRY_FILENAME,
+            ));
 
             return Command::FAILURE;
         }
 
-        foreach ([$cockpit->root, $cockpit->baseArtifactsPath(), $cockpit->fixturesPath(), $cockpit->projectsPath()] as $dir) {
+        $dirs = [
+            $cockpit->root,
+            $cockpit->baseArtifactsPath(),
+            $cockpit->fixturesPath(),
+            $cockpit->projectsPath(),
+        ];
+        foreach ($dirs as $dir) {
             if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
                 $io->error(sprintf('Could not create directory "%s".', $dir));
 

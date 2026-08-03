@@ -303,15 +303,35 @@ final class DashboardCommandTest extends TestCase
         // Register a second module to verify selective refresh.
         file_put_contents(
             $this->cockpit . '/registry.yml',
-            "modules:\n  alpha:\n    project: project/alpha\n    core_versions: [\"11\"]\n  widget:\n    project: project/widget\n    core_versions: [\"11\"]\n",
+            "modules:\n  alpha:\n    project: project/alpha\n    core_versions: [\"11\"]\n"
+            . "  widget:\n    project: project/widget\n    core_versions: [\"11\"]\n",
         );
 
         // Cache both modules.
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('alpha', new ModuleSnapshot(
             new \DateTimeImmutable('-2 hours'),
-            ['id' => 1000, 'path' => 'alpha', 'path_with_namespace' => 'project/alpha', 'name' => 'Alpha', 'web_url' => 'https://git.drupalcode.org/project/alpha'],
-            [['iid' => 1, 'title' => 'Alpha MR', 'state' => 'opened', 'draft' => false, 'author' => ['username' => 'bot', 'id' => 1], 'source_branch' => 'fix', 'target_branch' => '1.x', 'detailed_merge_status' => 'mergeable', 'sha' => self::HEAD_SHA, 'web_url' => 'https://git.drupalcode.org/project/alpha/-/merge_requests/1']],
+            [
+                'id' => 1000,
+                'path' => 'alpha',
+                'path_with_namespace' => 'project/alpha',
+                'name' => 'Alpha',
+                'web_url' => 'https://git.drupalcode.org/project/alpha',
+            ],
+            [
+                [
+                    'iid' => 1,
+                    'title' => 'Alpha MR',
+                    'state' => 'opened',
+                    'draft' => false,
+                    'author' => ['username' => 'bot', 'id' => 1],
+                    'source_branch' => 'fix',
+                    'target_branch' => '1.x',
+                    'detailed_merge_status' => 'mergeable',
+                    'sha' => self::HEAD_SHA,
+                    'web_url' => 'https://git.drupalcode.org/project/alpha/-/merge_requests/1',
+                ],
+            ],
             [],
         ));
         $cache->save('widget', new ModuleSnapshot(

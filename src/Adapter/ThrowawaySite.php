@@ -31,8 +31,13 @@ final readonly class ThrowawaySite
      *
      * @return array{string, string} [php version, db engine identity] of the install environment
      */
-    public function cleanInstallAndDump(string $coreMajor, string $treePath, string $throwawayPath, string $projectName, string $dumpPath): array
-    {
+    public function cleanInstallAndDump(
+        string $coreMajor,
+        string $treePath,
+        string $throwawayPath,
+        string $projectName,
+        string $dumpPath,
+    ): array {
         // Seed the throwaway by tree copy — the task-3-verified-identical path.
         ($this->log)(sprintf('Copying base tree to throwaway install project %s ...', $throwawayPath));
         $this->runner->run(['cp', '-a', $treePath, $throwawayPath]);

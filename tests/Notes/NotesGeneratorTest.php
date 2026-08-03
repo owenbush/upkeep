@@ -79,17 +79,19 @@ final class NotesGeneratorTest extends TestCase
             self::mr(3, 'Fix conditions being ignored on cached pages'),
         ]);
 
-        self::assertSame(<<<'MD'
-            ## conditions_helper — since 1.0.1 (2025-06-01)
+        $expected = "## conditions_helper — since 1.0.1 (2025-06-01)\n"
+            . "\n"
+            . "### Compatibility updates\n"
+            . "\n"
+            . "- Automated Project Update Bot fixes "
+            . "([!1](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/1) by Project-Update-Bot)\n"
+            . "\n"
+            . "### Changes\n"
+            . "\n"
+            . "- Fix conditions being ignored on cached pages "
+            . "([!3](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/3) by owenbush)";
 
-            ### Compatibility updates
-
-            - Automated Project Update Bot fixes ([!1](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/1) by Project-Update-Bot)
-
-            ### Changes
-
-            - Fix conditions being ignored on cached pages ([!3](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/3) by owenbush)
-            MD, $markdown);
+        self::assertSame($expected, $markdown);
     }
 
     public function testBotAuthorIsRecognizedByIdWhenTheUsernameDiffers(): void
@@ -138,19 +140,21 @@ final class NotesGeneratorTest extends TestCase
             self::mr(2, 'Initial feature work'),
         ]);
 
-        self::assertSame(<<<'MD'
-            ## conditions_helper — full merged history (no previous tag)
+        $expected = "## conditions_helper — full merged history (no previous tag)\n"
+            . "\n"
+            . "No previous tag exists; the list below covers every merged merge request.\n"
+            . "\n"
+            . "### Compatibility updates\n"
+            . "\n"
+            . "- Automated Project Update Bot fixes "
+            . "([!1](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/1) by Project-Update-Bot)\n"
+            . "\n"
+            . "### Changes\n"
+            . "\n"
+            . "- Initial feature work "
+            . "([!2](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/2) by owenbush)";
 
-            No previous tag exists; the list below covers every merged merge request.
-
-            ### Compatibility updates
-
-            - Automated Project Update Bot fixes ([!1](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/1) by Project-Update-Bot)
-
-            ### Changes
-
-            - Initial feature work ([!2](https://git.drupalcode.org/project/conditions_helper/-/merge_requests/2) by owenbush)
-            MD, $markdown);
+        self::assertSame($expected, $markdown);
     }
 
     public function testNoTagsAndNoMergesStillExitsCleanlyWithAMessage(): void

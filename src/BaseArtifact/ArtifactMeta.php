@@ -46,7 +46,10 @@ final readonly class ArtifactMeta
         try {
             $builtAt = new \DateTimeImmutable((string) $data['built_at']);
         } catch (\Exception $e) {
-            throw new MetaException(sprintf('Meta YAML key "built_at" is not a parseable timestamp: "%s".', $data['built_at']), previous: $e);
+            throw new MetaException(
+                sprintf('Meta YAML key "built_at" is not a parseable timestamp: "%s".', $data['built_at']),
+                previous: $e,
+            );
         }
 
         return new self(
@@ -73,11 +76,19 @@ final readonly class ArtifactMeta
         $recordedPhp = self::phpMajorMinor($this->phpVersion);
         $livePhp = self::phpMajorMinor($phpVersion);
         if ($recordedPhp !== $livePhp) {
-            $reasons[] = sprintf('PHP version skew: artifact built on %s, environment runs %s.', $recordedPhp, $livePhp);
+            $reasons[] = sprintf(
+                'PHP version skew: artifact built on %s, environment runs %s.',
+                $recordedPhp,
+                $livePhp,
+            );
         }
 
         if ($this->dbEngine !== $dbEngine) {
-            $reasons[] = sprintf('DB engine skew: artifact built on %s, environment runs %s.', $this->dbEngine, $dbEngine);
+            $reasons[] = sprintf(
+                'DB engine skew: artifact built on %s, environment runs %s.',
+                $this->dbEngine,
+                $dbEngine,
+            );
         }
 
         return $reasons;

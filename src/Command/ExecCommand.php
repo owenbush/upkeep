@@ -33,10 +33,36 @@ final class ExecCommand extends Command
     {
         $this
             ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
-            ->addArgument('cmd', InputArgument::IS_ARRAY | InputArgument::REQUIRED, 'Command to run (use -- before the command to separate it from upkeep options)')
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version (defaults to the first tracked version in the registry)')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addArgument(
+                'cmd',
+                InputArgument::IS_ARRAY | InputArgument::REQUIRED,
+                'Command to run (use -- before the command to separate it from upkeep options)',
+            )
+            ->addOption(
+                'version',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Target core major version (defaults to the first tracked version in the registry)',
+            )
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
+            ->addOption(
+                'projects-root',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
+                    . 'exists, then ~/.upkeep/projects)',
+                    ProjectsRoot::ENV_VAR,
+                ),
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -46,7 +72,10 @@ final class ExecCommand extends Command
 
         $name = (string) $input->getArgument('module');
         if (!isset($modules[$name])) {
-            $output->writeln(sprintf('<error>Module "%s" is not registered. Run `upkeep modules` to see what is.</error>', $name));
+            $output->writeln(sprintf(
+                '<error>Module "%s" is not registered. Run `upkeep modules` to see what is.</error>',
+                $name,
+            ));
 
             return Command::FAILURE;
         }
@@ -78,7 +107,12 @@ final class ExecCommand extends Command
         $path = $adapter->resolveEnvPath($name, $coreMajor);
 
         if ($path === null) {
-            $output->writeln(sprintf('<error>No provisioned environment for %s on Drupal %s. Run `upkeep check` or `upkeep review` to create one.</error>', $name, $coreMajor));
+            $output->writeln(sprintf(
+                '<error>No provisioned environment for %s on Drupal %s. Run `upkeep check` or `upkeep review` to '
+                . 'create one.</error>',
+                $name,
+                $coreMajor,
+            ));
 
             return Command::FAILURE;
         }
@@ -96,8 +130,10 @@ final class ExecCommand extends Command
         return new DdevContribAdapter(
             new ArtifactLayout($cockpit->baseArtifactsPath()),
             ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root),
-            new ProcessRunner(static function (): void {}),
-            static function (): void {},
+            new ProcessRunner(static function (): void {
+            }),
+            static function (): void {
+            },
         );
     }
 }

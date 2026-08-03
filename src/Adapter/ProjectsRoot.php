@@ -41,7 +41,8 @@ final readonly class ProjectsRoot
         $home = getenv('HOME');
         if ($home === false || $home === '') {
             throw new AdapterException(sprintf(
-                'Cannot resolve a projects root: $HOME is not set and neither explicit configuration nor $%s was given. Refusing to fall back to a temp dir — Docker providers only mount the home directory.',
+                'Cannot resolve a projects root: $HOME is not set and neither explicit configuration nor $%s was '
+                . 'given. Refusing to fall back to a temp dir — Docker providers only mount the home directory.',
                 self::ENV_VAR,
             ));
         }

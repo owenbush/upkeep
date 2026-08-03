@@ -28,7 +28,11 @@ final class MrContextResolverTest extends TestCase
 
         return new MrContextResolver([
             'conditions_helper' => new Module('conditions_helper', 'project/conditions_helper', ['10', '11']),
-            'field_visibility_conditions' => new Module('field_visibility_conditions', 'project/field_visibility_conditions', ['11']),
+            'field_visibility_conditions' => new Module(
+                'field_visibility_conditions',
+                'project/field_visibility_conditions',
+                ['11'],
+            ),
         ], $client);
     }
 

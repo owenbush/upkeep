@@ -125,7 +125,7 @@ final class GitlabClient
     public function membershipProjects(): array|ApiFailure
     {
         $projects = [];
-        for ($page = 1; ; ++$page) {
+        for ($page = 1;; ++$page) {
             $data = $this->get(
                 $this->apiBase . '/projects?membership=true&simple=true&per_page=100&page=' . $page,
                 $this->browserBase . '/dashboard/projects',
@@ -286,7 +286,10 @@ final class GitlabClient
 
             $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
             if (!\is_array($decoded)) {
-                return new TransportError(sprintf('Unexpected non-JSON-object response (HTTP %d) from %s', $status, $url), $status);
+                return new TransportError(
+                    sprintf('Unexpected non-JSON-object response (HTTP %d) from %s', $status, $url),
+                    $status,
+                );
             }
 
             return $decoded;

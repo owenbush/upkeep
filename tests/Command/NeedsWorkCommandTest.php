@@ -91,23 +91,45 @@ final class NeedsWorkCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'test-token');
     }
 
-    private function populateResults(string $sha, bool $withFailure = true, ?\DateTimeImmutable $recordedAt = null): void
-    {
+    private function populateResults(
+        string $sha,
+        bool $withFailure = true,
+        ?\DateTimeImmutable $recordedAt = null,
+    ): void {
         $dir = $this->cockpit . '/results/widget/7/11';
         mkdir($dir, 0o755, true);
 
         $results = [
-            ['type' => 'phpunit', 'status' => 'passed', 'exit_code' => 0, 'output' => 'OK (42 tests)', 'duration_seconds' => 12.3],
-            ['type' => 'phpstan', 'status' => 'passed', 'exit_code' => 0, 'output' => 'No errors', 'duration_seconds' => 3.1],
+            [
+                'type' => 'phpunit',
+                'status' => 'passed',
+                'exit_code' => 0,
+                'output' => 'OK (42 tests)',
+                'duration_seconds' => 12.3,
+            ],
+            [
+                'type' => 'phpstan',
+                'status' => 'passed',
+                'exit_code' => 0,
+                'output' => 'No errors',
+                'duration_seconds' => 3.1,
+            ],
         ];
 
         if ($withFailure) {
-            $results[] = ['type' => 'phpcs', 'status' => 'failed', 'exit_code' => 2, 'output' => "FILE: src/Plugin/Widget.php\nFOUND 3 ERRORS\n\nLine 14: Missing doc comment", 'duration_seconds' => 1.2];
+            $results[] = [
+                'type' => 'phpcs',
+                'status' => 'failed',
+                'exit_code' => 2,
+                'output' => "FILE: src/Plugin/Widget.php\nFOUND 3 ERRORS\n\nLine 14: Missing doc comment",
+                'duration_seconds' => 1.2,
+            ];
         }
 
         $payload = [
             'sha' => $sha,
-            'recorded_at' => ($recordedAt ?? new \DateTimeImmutable('2024-06-15 09:23:00'))->format(\DateTimeInterface::ATOM),
+            'recorded_at' => ($recordedAt ?? new \DateTimeImmutable('2024-06-15 09:23:00'))
+                ->format(\DateTimeInterface::ATOM),
             'results' => $results,
         ];
 

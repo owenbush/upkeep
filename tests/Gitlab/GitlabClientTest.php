@@ -307,7 +307,12 @@ final class GitlabClientTest extends TestCase
     {
         $client = $this->client([
             self::json(self::botMrPayload([
-                'head_pipeline' => ['id' => 1, 'status' => 'failed', 'sha' => 'abc', 'web_url' => 'https://example.org/p/1'],
+                'head_pipeline' => [
+                    'id' => 1,
+                    'status' => 'failed',
+                    'sha' => 'abc',
+                    'web_url' => 'https://example.org/p/1',
+                ],
             ])),
         ]);
 
@@ -364,7 +369,8 @@ final class GitlabClientTest extends TestCase
         $this->assertInstanceOf(\Upkeep\Gitlab\MergeRequestList::class, $list);
         $this->assertSame('merged', $list->first()?->state);
         $this->assertSame(
-            'https://git.drupalcode.org/api/v4/projects/181714/merge_requests?state=merged&scope=all&per_page=100&updated_after=2026-05-01T10%3A00%3A00%2B00%3A00',
+            'https://git.drupalcode.org/api/v4/projects/181714/merge_requests?state=merged&scope=all&per_page=100'
+            . '&updated_after=2026-05-01T10%3A00%3A00%2B00%3A00',
             $this->requests[0]['url'],
         );
     }

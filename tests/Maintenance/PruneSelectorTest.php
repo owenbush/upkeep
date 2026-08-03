@@ -30,8 +30,12 @@ final class PruneSelectorTest extends TestCase
         ]);
     }
 
-    private function tree(string $name, ?string $age = '60 days', bool $keep = false, string $root = self::PROJECTS): InventoryItem
-    {
+    private function tree(
+        string $name,
+        ?string $age = '60 days',
+        bool $keep = false,
+        string $root = self::PROJECTS,
+    ): InventoryItem {
         return new InventoryItem(
             path: $root . '/' . $name,
             category: Category::ProjectTree,
@@ -120,7 +124,10 @@ final class PruneSelectorTest extends TestCase
             lastUsedAt: $this->now->modify('-400 days'),
         );
 
-        self::assertSame([], $this->selector()->select([$mislabeledTree, $mislabeledSnapshot], PruneScope::All, null, $this->now));
+        self::assertSame(
+            [],
+            $this->selector()->select([$mislabeledTree, $mislabeledSnapshot], PruneScope::All, null, $this->now),
+        );
     }
 
     public function testPathContainingTestsFixturesSegmentIsExcludedRegardlessOfCategory(): void
@@ -161,8 +168,17 @@ final class PruneSelectorTest extends TestCase
         $otherTree = $this->tree('upkeep-other-d11');
 
         foreach ([PruneScope::Trees, PruneScope::Projects, PruneScope::All] as $scope) {
-            $candidates = $this->selector()->select([$tree, $volume, $keptSnapshot, $otherTree], $scope, null, $this->now);
-            self::assertSame([$otherTree], $candidates, 'kept-snapshot escalation failed for scope ' . $scope->value);
+            $candidates = $this->selector()->select(
+                [$tree, $volume, $keptSnapshot, $otherTree],
+                $scope,
+                null,
+                $this->now,
+            );
+            self::assertSame(
+                [$otherTree],
+                $candidates,
+                'kept-snapshot escalation failed for scope ' . $scope->value,
+            );
         }
     }
 
@@ -211,7 +227,11 @@ final class PruneSelectorTest extends TestCase
             ),
             'keep-marked tree' => $this->tree('upkeep-kept-tree-d11', age: '400 days', keep: true),
             'keep-marked snapshot' => $this->snapshot('upkeep-kept-snap-d11', 'kept', '400 days', keep: true),
-            'mislabeled tree under protected root' => $this->tree('11/tree', age: '400 days', root: self::COCKPIT . '/base-artifacts'),
+            'mislabeled tree under protected root' => $this->tree(
+                '11/tree',
+                age: '400 days',
+                root: self::COCKPIT . '/base-artifacts',
+            ),
             'mislabeled snapshot under protected root' => new InventoryItem(
                 path: self::COCKPIT . '/fixtures/evil.sql',
                 category: Category::Snapshot,
@@ -240,7 +260,13 @@ final class PruneSelectorTest extends TestCase
                         $olderThan === null ? 'null' : (string) $olderThan,
                         $keepLatest,
                     );
-                    $candidates = $this->selector()->select($items, $scope, $olderThan, $this->now, keepLatest: $keepLatest);
+                    $candidates = $this->selector()->select(
+                        $items,
+                        $scope,
+                        $olderThan,
+                        $this->now,
+                        keepLatest: $keepLatest,
+                    );
                     foreach ($candidates as $candidate) {
                         self::assertContains(
                             $candidate,
@@ -361,7 +387,13 @@ final class PruneSelectorTest extends TestCase
         $newest = $this->snapshot('upkeep-a-d11', 'newest', '2 days');
         $older = $this->snapshot('upkeep-a-d11', 'older', '3 days');
 
-        $candidates = $this->selector()->select([$kept, $newest, $older], PruneScope::Snapshots, null, $this->now, keepLatest: 1);
+        $candidates = $this->selector()->select(
+            [$kept, $newest, $older],
+            PruneScope::Snapshots,
+            null,
+            $this->now,
+            keepLatest: 1,
+        );
 
         // keep-marked is protected outright; the newest unprotected snapshot
         // fills the keep-latest budget; only the older one is a candidate.
@@ -386,7 +418,13 @@ final class PruneSelectorTest extends TestCase
 
         // keep-latest keeps "new"; age filter then drops nothing older-than-30d? No:
         // both mid and old are older than 30d and outside the keep budget.
-        $candidates = $this->selector()->select([$new, $mid, $old], PruneScope::Snapshots, 30 * 86400, $this->now, keepLatest: 1);
+        $candidates = $this->selector()->select(
+            [$new, $mid, $old],
+            PruneScope::Snapshots,
+            30 * 86400,
+            $this->now,
+            keepLatest: 1,
+        );
 
         self::assertEqualsCanonicalizing([$mid, $old], $candidates);
     }

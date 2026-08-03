@@ -43,11 +43,15 @@ final readonly class Issue
             title: (string) ($data['title'] ?? ''),
             status: $status,
             url: (string) ($data['url'] ?? sprintf('https://www.drupal.org/node/%d', $nid)),
-            project: isset($data['field_project']['machine_name']) ? (string) $data['field_project']['machine_name'] : null,
+            project: isset($data['field_project']['machine_name'])
+                ? (string) $data['field_project']['machine_name']
+                : null,
             priority: $priority,
             version: isset($data['field_issue_version']) ? (string) $data['field_issue_version'] : null,
             component: isset($data['field_issue_component']) ? (string) $data['field_issue_component'] : null,
-            category: self::categoryLabel(isset($data['field_issue_category']) ? (int) $data['field_issue_category'] : null),
+            category: self::categoryLabel(
+                isset($data['field_issue_category']) ? (int) $data['field_issue_category'] : null,
+            ),
             files: self::parseFiles($data),
         );
     }

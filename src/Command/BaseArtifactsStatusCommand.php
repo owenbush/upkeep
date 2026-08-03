@@ -36,7 +36,11 @@ final class BaseArtifactsStatusCommand extends Command
         $cockpit = Cockpit::resolve($input->getOption('cockpit'));
 
         if (!file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('No cockpit found at "%s" (missing %s). Run `upkeep init` first.', $cockpit->root, Cockpit::REGISTRY_FILENAME));
+            $io->error(sprintf(
+                'No cockpit found at "%s" (missing %s). Run `upkeep init` first.',
+                $cockpit->root,
+                Cockpit::REGISTRY_FILENAME,
+            ));
 
             return Command::FAILURE;
         }

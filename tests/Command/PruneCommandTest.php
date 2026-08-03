@@ -87,7 +87,7 @@ final class PruneCommandTest extends TestCase
 
     private function runPrune(array $args): CommandTester
     {
-        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
+        $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
             /** @param list<array{string, string}> $teardowns */
             public function __construct(private array &$teardowns)
             {
@@ -125,8 +125,13 @@ final class PruneCommandTest extends TestCase
             {
                 $this->teardowns[] = [$module->name, $coreMajor];
             }
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
         $tester = new CommandTester(new PruneCommand($adapter, new VolumeProbe(static fn (array $c): ?string => null)));
@@ -146,7 +151,13 @@ final class PruneCommandTest extends TestCase
 
     public function testEveryVariantIsADryRunWithoutYes(): void
     {
-        foreach ([['--trees' => true], ['--snapshots' => true], ['--projects' => true], ['--all' => true]] as $variant) {
+        $variants = [
+            ['--trees' => true],
+            ['--snapshots' => true],
+            ['--projects' => true],
+            ['--all' => true],
+        ];
+        foreach ($variants as $variant) {
             $tester = $this->runPrune($variant);
 
             $tester->assertCommandIsSuccessful();
@@ -176,7 +187,9 @@ final class PruneCommandTest extends TestCase
         $tester->assertCommandIsSuccessful();
         self::assertFileDoesNotExist($this->snapshotPath('older'));
         self::assertFileDoesNotExist($this->snapshotPath('newer'));
-        self::assertFileDoesNotExist($this->projects . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/older.meta');
+        self::assertFileDoesNotExist(
+            $this->projects . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/older.meta',
+        );
         // Protected: keep-marked snapshot, committed dumps, base artifacts.
         self::assertFileExists($this->snapshotPath('kept'));
         self::assertFileExists($this->projects . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz');
@@ -189,7 +202,10 @@ final class PruneCommandTest extends TestCase
         $this->runPrune(['--snapshots' => true, '--yes' => true, '--keep-latest' => '1']);
 
         self::assertFileDoesNotExist($this->snapshotPath('older'));
-        self::assertFileExists($this->snapshotPath('newer'), 'keep-latest=1 must retain the newest unprotected snapshot');
+        self::assertFileExists(
+            $this->snapshotPath('newer'),
+            'keep-latest=1 must retain the newest unprotected snapshot',
+        );
         self::assertFileExists($this->snapshotPath('kept'));
     }
 
@@ -202,7 +218,10 @@ final class PruneCommandTest extends TestCase
         // keep-marked snapshot (escalation), upkeep-kept-env-d11 by its .keep.
         self::assertSame([['conditions_helper', '10']], $this->teardowns);
         self::assertDirectoryExists($this->projects . '/upkeep-kept-env-d11', 'keep-marked environment must survive');
-        self::assertDirectoryExists($this->projects . '/upkeep-conditions-helper-d11', 'environment holding a keep-marked snapshot must survive a tree prune');
+        self::assertDirectoryExists(
+            $this->projects . '/upkeep-conditions-helper-d11',
+            'environment holding a keep-marked snapshot must survive a tree prune',
+        );
         self::assertFileExists($this->snapshotPath('kept'));
         self::assertDirectoryExists($this->cockpit . '/base-artifacts/11');
     }

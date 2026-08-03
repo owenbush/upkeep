@@ -113,7 +113,13 @@ final readonly class BaseArtifactBuilder
         }
 
         try {
-            [$phpVersion, $dbEngine] = $this->installSite->cleanInstallAndDump($coreMajor, $treePath, $throwaway, $projectName, $dumpPath);
+            [$phpVersion, $dbEngine] = $this->installSite->cleanInstallAndDump(
+                $coreMajor,
+                $treePath,
+                $throwaway,
+                $projectName,
+                $dumpPath,
+            );
         } finally {
             $this->installSite->teardown($throwaway, $projectName);
         }
@@ -126,7 +132,8 @@ final readonly class BaseArtifactBuilder
         file_put_contents($this->layout->metaPath($coreMajor), $meta->toYaml());
         file_put_contents(
             $this->layout->canonicalMarkerPath($coreMajor),
-            "This artifact set is canonical: never auto-pruned. Rebuild only via `upkeep base-artifacts:build --force`.\n",
+            "This artifact set is canonical: never auto-pruned. Rebuild only via "
+                . "`upkeep base-artifacts:build --force`.\n",
         );
 
         return $meta;

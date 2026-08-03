@@ -39,17 +39,42 @@ final class EnvPathCommandTest extends TestCase
 
     private function adapter(?string $returnPath): EngineAdapterInterface
     {
-        return new class($returnPath) implements EngineAdapterInterface {
-            public function __construct(private readonly ?string $returnPath) {}
-            public function ensureEnv(Module $module, string $coreMajor): Environment { throw new \BadMethodCallException(); }
-            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void {}
-            public function loadFixture(Environment $environment, string $fixtureName): void {}
-            public function runChecks(Environment $environment, array $checks = []): CheckRunResult { throw new \BadMethodCallException(); }
-            public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException(); }
-            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string { return $this->returnPath; }
-            public function teardown(Module $module, string $coreMajor): void {}
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+        return new class ($returnPath) implements EngineAdapterInterface {
+            public function __construct(private readonly ?string $returnPath)
+            {
+            }
+            public function ensureEnv(Module $module, string $coreMajor): Environment
+            {
+                throw new \BadMethodCallException();
+            }
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+            public function loadFixture(Environment $environment, string $fixtureName): void
+            {
+            }
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult
+            {
+                throw new \BadMethodCallException();
+            }
+            public function serve(Environment $environment): ServeResult
+            {
+                throw new \BadMethodCallException();
+            }
+            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+            {
+                return $this->returnPath;
+            }
+            public function teardown(Module $module, string $coreMajor): void
+            {
+            }
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
     }
 
@@ -65,22 +90,44 @@ final class EnvPathCommandTest extends TestCase
     public function testDefaultsToFirstTrackedCoreVersion(): void
     {
         $calls = [];
-        $adapter = new class($calls) implements EngineAdapterInterface {
+        $adapter = new class ($calls) implements EngineAdapterInterface {
             /** @param list<array{string, string}> $calls */
-            public function __construct(private array &$calls) {}
-            public function ensureEnv(Module $module, string $coreMajor): Environment { throw new \BadMethodCallException(); }
-            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void {}
-            public function loadFixture(Environment $environment, string $fixtureName): void {}
-            public function runChecks(Environment $environment, array $checks = []): CheckRunResult { throw new \BadMethodCallException(); }
-            public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException(); }
+            public function __construct(private array &$calls)
+            {
+            }
+            public function ensureEnv(Module $module, string $coreMajor): Environment
+            {
+                throw new \BadMethodCallException();
+            }
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+            public function loadFixture(Environment $environment, string $fixtureName): void
+            {
+            }
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult
+            {
+                throw new \BadMethodCallException();
+            }
+            public function serve(Environment $environment): ServeResult
+            {
+                throw new \BadMethodCallException();
+            }
             public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
             {
                 $this->calls[] = [$moduleName, $coreMajor];
                 return '/some/path';
             }
-            public function teardown(Module $module, string $coreMajor): void {}
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function teardown(Module $module, string $coreMajor): void
+            {
+            }
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
         $tester = new CommandTester(new EnvPathCommand($adapter));
@@ -92,21 +139,43 @@ final class EnvPathCommandTest extends TestCase
     public function testRespectsExplicitVersionOption(): void
     {
         $calls = [];
-        $adapter = new class($calls) implements EngineAdapterInterface {
-            public function __construct(private array &$calls) {}
-            public function ensureEnv(Module $module, string $coreMajor): Environment { throw new \BadMethodCallException(); }
-            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void {}
-            public function loadFixture(Environment $environment, string $fixtureName): void {}
-            public function runChecks(Environment $environment, array $checks = []): CheckRunResult { throw new \BadMethodCallException(); }
-            public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException(); }
+        $adapter = new class ($calls) implements EngineAdapterInterface {
+            public function __construct(private array &$calls)
+            {
+            }
+            public function ensureEnv(Module $module, string $coreMajor): Environment
+            {
+                throw new \BadMethodCallException();
+            }
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+            public function loadFixture(Environment $environment, string $fixtureName): void
+            {
+            }
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult
+            {
+                throw new \BadMethodCallException();
+            }
+            public function serve(Environment $environment): ServeResult
+            {
+                throw new \BadMethodCallException();
+            }
             public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
             {
                 $this->calls[] = [$moduleName, $coreMajor];
                 return '/some/path';
             }
-            public function teardown(Module $module, string $coreMajor): void {}
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function teardown(Module $module, string $coreMajor): void
+            {
+            }
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
         $tester = new CommandTester(new EnvPathCommand($adapter));

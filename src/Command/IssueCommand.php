@@ -44,7 +44,15 @@ final class IssueCommand extends Command
             ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
             ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID')
             ->addOption('no-open', null, InputOption::VALUE_NONE, 'Show issue details without opening the browser')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR));
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -85,7 +93,8 @@ final class IssueCommand extends Command
         $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
         if ($nid === null) {
             $io->error(sprintf(
-                'No issue number found in MR !%d. Checked title ("%s") and branch ("%s") — neither contains an issue reference.',
+                'No issue number found in MR !%d. Checked title ("%s") and branch ("%s") — neither contains an '
+                . 'issue reference.',
                 $iid,
                 $mr->title,
                 $mr->sourceBranch,
@@ -145,7 +154,11 @@ final class IssueCommand extends Command
     {
         $token = (new TokenResolver())->resolve();
         if ($token === null) {
-            $io->error(sprintf('No GitLab token found. Configure one of: env var %s, config file %s.', TokenResolver::DEFAULT_ENV_VAR, TokenResolver::defaultConfigFile()));
+            $io->error(sprintf(
+                'No GitLab token found. Configure one of: env var %s, config file %s.',
+                TokenResolver::DEFAULT_ENV_VAR,
+                TokenResolver::defaultConfigFile(),
+            ));
 
             return null;
         }

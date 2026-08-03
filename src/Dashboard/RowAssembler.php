@@ -60,7 +60,10 @@ final readonly class RowAssembler
     {
         $cores = $versionFilter === null
             ? $module->coreVersions
-            : array_values(array_filter($module->coreVersions, static fn (string $core): bool => $core === $versionFilter));
+            : array_values(array_filter(
+                $module->coreVersions,
+                static fn (string $core): bool => $core === $versionFilter,
+            ));
         if ($cores === []) {
             return [];
         }

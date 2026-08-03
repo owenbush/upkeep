@@ -218,7 +218,10 @@ final class PatchesCommand extends Command
 
             $gitlabClient ??= $this->gitlabClient ?? $this->buildGitlabClient($io);
             if ($gitlabClient === null) {
-                $io->note('No dashboard cache and no GitLab token — showing all matching issues without cross-referencing MRs.');
+                $io->note(
+                    'No dashboard cache and no GitLab token — showing all matching issues without '
+                    . 'cross-referencing MRs.',
+                );
                 $nids[$name] = [];
                 continue;
             }

@@ -23,7 +23,8 @@ final readonly class ModuleRegistry
     {
         if (!is_file($path)) {
             throw new RegistryException(sprintf(
-                'Module registry not found at "%s". Run "upkeep init" to create a cockpit, or point --cockpit / UPKEEP_COCKPIT at an existing one.',
+                'Module registry not found at "%s". Run "upkeep init" to create a cockpit, or point --cockpit / '
+                    . 'UPKEEP_COCKPIT at an existing one.',
                 $path,
             ));
         }
@@ -31,7 +32,11 @@ final readonly class ModuleRegistry
         try {
             $raw = Yaml::parseFile($path);
         } catch (ParseException $e) {
-            throw new RegistryException(sprintf('Module registry "%s" is not valid YAML: %s', $path, $e->getMessage()), 0, $e);
+            throw new RegistryException(
+                sprintf('Module registry "%s" is not valid YAML: %s', $path, $e->getMessage()),
+                0,
+                $e,
+            );
         }
 
         if (!\is_array($raw) || !\array_key_exists('modules', $raw)) {
@@ -43,7 +48,10 @@ final readonly class ModuleRegistry
 
         $entries = $raw['modules'] ?? [];
         if (!\is_array($entries)) {
-            throw new RegistryException(sprintf('The "modules" key in "%s" must be a mapping of machine name to module definition.', $path));
+            throw new RegistryException(sprintf(
+                'The "modules" key in "%s" must be a mapping of machine name to module definition.',
+                $path,
+            ));
         }
 
         $modules = [];
@@ -57,13 +65,18 @@ final readonly class ModuleRegistry
     private static function buildModule(string $path, string $name, mixed $definition): Module
     {
         if (!\is_array($definition)) {
-            throw new RegistryException(sprintf('Module "%s" in "%s" must be a mapping with "project" and "core_versions" keys.', $name, $path));
+            throw new RegistryException(sprintf(
+                'Module "%s" in "%s" must be a mapping with "project" and "core_versions" keys.',
+                $name,
+                $path,
+            ));
         }
 
         $project = $definition['project'] ?? null;
         if (!\is_string($project) || $project === '') {
             throw new RegistryException(sprintf(
-                'Module "%s" in "%s" is missing a non-empty "project" (its git.drupalcode.org project path, e.g. "project/%s").',
+                'Module "%s" in "%s" is missing a non-empty "project" (its git.drupalcode.org project path, '
+                    . 'e.g. "project/%s").',
                 $name,
                 $path,
                 $name,
@@ -72,7 +85,11 @@ final readonly class ModuleRegistry
 
         $coreVersions = $definition['core_versions'] ?? null;
         if (!\is_array($coreVersions) || $coreVersions === [] || !array_is_list($coreVersions)) {
-            throw new RegistryException(sprintf('Module "%s" in "%s" must declare "core_versions" as a non-empty list (e.g. ["10", "11"]).', $name, $path));
+            throw new RegistryException(sprintf(
+                'Module "%s" in "%s" must declare "core_versions" as a non-empty list (e.g. ["10", "11"]).',
+                $name,
+                $path,
+            ));
         }
 
         return new Module($name, $project, array_map(strval(...), $coreVersions));

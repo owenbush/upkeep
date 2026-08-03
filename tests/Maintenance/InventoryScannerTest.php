@@ -44,10 +44,16 @@ final class InventoryScannerTest extends TestCase
             'last_used_at: \'2026-06-01T00:00:00+00:00\'',
         ]));
         file_put_contents($p . '/.ddev/upkeep/materialized/alpha.sql', str_repeat('a', 100_000));
-        file_put_contents($p . '/.ddev/upkeep/snapshots/alpha.meta', "engine=mariadb:10.11\nmaterialized_at=2026-06-10T00:00:00Z\n");
+        file_put_contents(
+            $p . '/.ddev/upkeep/snapshots/alpha.meta',
+            "engine=mariadb:10.11\nmaterialized_at=2026-06-10T00:00:00Z\n",
+        );
         file_put_contents($p . '/.ddev/upkeep/materialized/beta.sql', str_repeat('b', 50_000));
         file_put_contents($p . '/.ddev/upkeep/materialized/beta.sql.keep', '');
-        file_put_contents($p . '/.ddev/upkeep/snapshots/beta.meta', "engine=mariadb:10.11\nmaterialized_at=2026-06-20T00:00:00Z\n");
+        file_put_contents(
+            $p . '/.ddev/upkeep/snapshots/beta.meta',
+            "engine=mariadb:10.11\nmaterialized_at=2026-06-20T00:00:00Z\n",
+        );
         file_put_contents($p . '/module/tests/fixtures/base.sql.gz', 'committed dump');
 
         // A partial provision: no completion marker dotfile.
@@ -118,7 +124,9 @@ final class InventoryScannerTest extends TestCase
         $alpha = self::byPathSuffix($items, '/materialized/alpha.sql');
         $beta = self::byPathSuffix($items, '/materialized/beta.sql');
 
-        $duWholeTree = (int) exec('du -sk ' . escapeshellarg($this->projectsRoot . '/upkeep-conditions-helper-d11')) * 1024;
+        $duWholeTree = (int) exec(
+            'du -sk ' . escapeshellarg($this->projectsRoot . '/upkeep-conditions-helper-d11'),
+        ) * 1024;
 
         self::assertGreaterThan(0, $tree->sizeBytes);
         self::assertLessThan($duWholeTree, $tree->sizeBytes, 'tree size must not double-count snapshot bytes');

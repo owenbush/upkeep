@@ -30,8 +30,14 @@ final class PruneExecutorTest extends TestCase
         $this->world = sys_get_temp_dir() . '/upkeep-executor-test-' . bin2hex(random_bytes(4));
         mkdir($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized', 0755, true);
         mkdir($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots', 0755, true);
-        file_put_contents($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized/alpha.sql', 'snapshot');
-        file_put_contents($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/alpha.meta', "engine=mariadb\n");
+        file_put_contents(
+            $this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized/alpha.sql',
+            'snapshot',
+        );
+        file_put_contents(
+            $this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/alpha.meta',
+            "engine=mariadb\n",
+        );
     }
 
     protected function tearDown(): void
@@ -41,7 +47,7 @@ final class PruneExecutorTest extends TestCase
 
     private function executor(): PruneExecutor
     {
-        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
+        $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
             /** @param list<array{string, string}> $teardowns */
             public function __construct(private array &$teardowns)
             {
@@ -79,8 +85,13 @@ final class PruneExecutorTest extends TestCase
             {
                 $this->teardowns[] = [$module->name, $coreMajor];
             }
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
         return new PruneExecutor(
@@ -202,14 +213,32 @@ final class PruneExecutorTest extends TestCase
 
     public function testTeardownFailureSkipsItemInsteadOfAborting(): void
     {
-        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
-            public function __construct(private array &$teardowns) {}
-            public function ensureEnv(Module $module, string $coreMajor): Environment { throw new \BadMethodCallException('not used'); }
-            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void {}
-            public function loadFixture(Environment $environment, string $fixtureName): void {}
-            public function runChecks(Environment $environment, array $checks = []): CheckRunResult { throw new \BadMethodCallException('not used'); }
-            public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException('not used'); }
-            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string { return null; }
+        $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
+            public function __construct(private array &$teardowns)
+            {
+            }
+            public function ensureEnv(Module $module, string $coreMajor): Environment
+            {
+                throw new \BadMethodCallException('not used');
+            }
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+            public function loadFixture(Environment $environment, string $fixtureName): void
+            {
+            }
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult
+            {
+                throw new \BadMethodCallException('not used');
+            }
+            public function serve(Environment $environment): ServeResult
+            {
+                throw new \BadMethodCallException('not used');
+            }
+            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+            {
+                return null;
+            }
             public function teardown(Module $module, string $coreMajor): void
             {
                 if ($coreMajor === '11') {
@@ -217,15 +246,21 @@ final class PruneExecutorTest extends TestCase
                 }
                 $this->teardowns[] = [$module->name, $coreMajor];
             }
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
         $executor = new PruneExecutor(
             new PruneSelector(['/cockpit/base-artifacts', '/cockpit/fixtures']),
             $adapter,
             ['conditions_helper' => new Module('conditions_helper', 'project/conditions_helper', ['10', '11'])],
-            static function (): void {},
+            static function (): void {
+            },
         );
 
         $dirty = new InventoryItem(

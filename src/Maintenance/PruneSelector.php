@@ -67,7 +67,8 @@ final readonly class PruneSelector
         // Stable-order by the scope's category order (trees before volumes
         // before snapshots) so the rendered candidate list reads grouped.
         $categoryOrder = array_flip(array_map(static fn (Category $c) => $c->value, $scope->categories()));
-        usort($inScope, static fn (InventoryItem $a, InventoryItem $b): int => $categoryOrder[$a->category->value] <=> $categoryOrder[$b->category->value]);
+        usort($inScope, static fn (InventoryItem $a, InventoryItem $b): int =>
+            $categoryOrder[$a->category->value] <=> $categoryOrder[$b->category->value]);
 
         return $inScope;
     }
@@ -170,7 +171,8 @@ final readonly class PruneSelector
 
         return array_values(array_filter(
             $candidates,
-            static fn (InventoryItem $item): bool => !($item->category === Category::Snapshot && $retained->contains($item)),
+            static fn (InventoryItem $item): bool =>
+                !($item->category === Category::Snapshot && $retained->contains($item)),
         ));
     }
 }

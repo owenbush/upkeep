@@ -21,7 +21,8 @@ use Upkeep\Maintenance\InventoryScanner;
 
 #[AsCommand(
     name: 'status',
-    description: 'Report cockpit state; --disk itemizes real measured disk usage per module, core version, and category.',
+    description: 'Report cockpit state; --disk itemizes real measured disk usage per module, core version, and '
+    . 'category.',
 )]
 final class StatusCommand extends Command
 {
@@ -33,9 +34,32 @@ final class StatusCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addOption('disk', null, InputOption::VALUE_NONE, 'Itemize disk usage (project trees, materialized snapshots, docker volumes, base artifacts, fixture dumps) with totals')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption(
+                'disk',
+                null,
+                InputOption::VALUE_NONE,
+                'Itemize disk usage (project trees, materialized snapshots, docker volumes, base artifacts, '
+                . 'fixture dumps) with totals',
+            )
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
+            ->addOption(
+                'projects-root',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
+                    . 'exists, then ~/.upkeep/projects)',
+                    ProjectsRoot::ENV_VAR,
+                ),
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -44,7 +68,11 @@ final class StatusCommand extends Command
         $cockpit = Cockpit::resolve($input->getOption('cockpit'));
 
         if (!file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('No cockpit found at "%s" (missing %s). Run `upkeep init` first.', $cockpit->root, Cockpit::REGISTRY_FILENAME));
+            $io->error(sprintf(
+                'No cockpit found at "%s" (missing %s). Run `upkeep init` first.',
+                $cockpit->root,
+                Cockpit::REGISTRY_FILENAME,
+            ));
 
             return Command::FAILURE;
         }
@@ -64,7 +92,11 @@ final class StatusCommand extends Command
         if (!$input->getOption('disk')) {
             $io->writeln(sprintf('Cockpit: %s', $cockpit->root));
             $io->writeln(sprintf('Projects root: %s (%d environment(s))', $projectsRoot, \count($trees)));
-            $io->writeln(sprintf('Total tracked disk usage: %s across %d item(s). Use --disk for the breakdown.', ByteFormat::human(array_sum(array_map(static fn (InventoryItem $i) => $i->sizeBytes, $items))), \count($items)));
+            $io->writeln(sprintf(
+                'Total tracked disk usage: %s across %d item(s). Use --disk for the breakdown.',
+                ByteFormat::human(array_sum(array_map(static fn (InventoryItem $i) => $i->sizeBytes, $items))),
+                \count($items),
+            ));
 
             return Command::SUCCESS;
         }
@@ -92,7 +124,11 @@ final class StatusCommand extends Command
             $i->category->label(),
             $i->path,
             self::age($i, $now),
-            $i->keepMarked ? 'keep' : ($i->category === Category::BaseArtifact || $i->category === Category::FixtureDump ? 'canonical' : ''),
+            $i->keepMarked
+                ? 'keep'
+                : ($i->category === Category::BaseArtifact || $i->category === Category::FixtureDump
+                    ? 'canonical'
+                    : ''),
             ByteFormat::human($i->sizeBytes),
         ], $sorted);
 

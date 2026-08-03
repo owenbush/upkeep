@@ -51,7 +51,10 @@ final class ModuleWiringTest extends TestCase
         $once = ModuleWiring::withPathRepository(self::PROJECT_COMPOSER_JSON, './module');
 
         $result = json_decode(ModuleWiring::withPathRepository($once, './module'), true);
-        $pathRepos = array_filter($result['repositories'], static fn (array $repo): bool => ($repo['type'] ?? '') === 'path');
+        $pathRepos = array_filter(
+            $result['repositories'],
+            static fn (array $repo): bool => ($repo['type'] ?? '') === 'path',
+        );
 
         self::assertCount(1, $pathRepos);
     }

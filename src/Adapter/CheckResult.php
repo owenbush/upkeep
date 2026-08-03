@@ -30,7 +30,8 @@ final readonly class CheckResult
     public static function fromProcess(CheckType $type, int $exitCode, string $output, float $durationSeconds): self
     {
         $status = match (true) {
-            $type === CheckType::PhpUnit && preg_match('/No tests (executed|found)/i', $output) === 1 => CheckStatus::NoTests,
+            $type === CheckType::PhpUnit
+                && preg_match('/No tests (executed|found)/i', $output) === 1 => CheckStatus::NoTests,
             $exitCode === 0 => CheckStatus::Passed,
             default => CheckStatus::Failed,
         };
@@ -42,8 +43,12 @@ final readonly class CheckResult
      * A check that exceeded its timebox: a failure with the reason recorded
      * ahead of whatever partial output the run produced.
      */
-    public static function timedOut(CheckType $type, string $partialOutput, float $durationSeconds, int $timeoutSeconds): self
-    {
+    public static function timedOut(
+        CheckType $type,
+        string $partialOutput,
+        float $durationSeconds,
+        int $timeoutSeconds,
+    ): self {
         return new self(
             $type,
             CheckStatus::Failed,

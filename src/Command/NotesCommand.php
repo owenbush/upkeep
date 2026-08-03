@@ -49,7 +49,8 @@ final class NotesCommand extends Command
         $this->addArgument(
             'module',
             InputArgument::REQUIRED,
-            'Module machine name (resolved via the cockpit registry when available) or full project path (e.g. project/conditions_helper)',
+            'Module machine name (resolved via the cockpit registry when available) or full project path (e.g. '
+            . 'project/conditions_helper)',
         );
         $this->addOption(
             'cockpit',

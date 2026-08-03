@@ -55,12 +55,16 @@ final readonly class MrCheckout
         }
 
         if ($currentBranch === null || $currentBranch === '') {
-            throw new AdapterException('Cannot determine the module working copy\'s base branch: HEAD is detached and no base branch is recorded.');
+            throw new AdapterException(
+                'Cannot determine the module working copy\'s base branch: HEAD is detached '
+                . 'and no base branch is recorded.',
+            );
         }
 
         if (preg_match('/^' . self::BRANCH_PREFIX . '\d+$/', $currentBranch) === 1) {
             throw new AdapterException(sprintf(
-                'Cannot determine the module working copy\'s base branch: it sits on MR branch "%s" and no base branch is recorded.',
+                'Cannot determine the module working copy\'s base branch: it sits on MR branch "%s" and no base branch '
+                . 'is recorded.',
                 $currentBranch,
             ));
         }

@@ -76,7 +76,10 @@ final class MergeCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         if (!$input->getOption('fast-lane')) {
-            $io->error('The merge command only operates in fast-lane mode; re-run as `upkeep merge --fast-lane`. It will still prompt per MR — the flag names the workflow, it never skips approval.');
+            $io->error(
+                'The merge command only operates in fast-lane mode; re-run as `upkeep merge --fast-lane`. It will '
+                . 'still prompt per MR — the flag names the workflow, it never skips approval.',
+            );
 
             return Command::INVALID;
         }
@@ -123,11 +126,18 @@ final class MergeCommand extends Command
             // and without one nothing merges — ever. The READY-AUTO rows are
             // reported as skipped instead of silently consuming defaults.
             $io->newLine();
-            $io->writeln('Approval requires an interactive terminal: every merge needs an explicit per-MR "merge" answer, so a non-interactive run merges nothing.');
+            $io->writeln(
+                'Approval requires an interactive terminal: every merge needs an explicit per-MR "merge" answer, '
+                . 'so a non-interactive run merges nothing.',
+            );
             foreach ($ready as $row) {
                 \assert($row->mergeRequest !== null);
                 $tally['skipped']++;
-                $io->writeln(sprintf('Skipped %s !%d (no interactive approval possible).', $row->module, $row->mergeRequest->iid));
+                $io->writeln(sprintf(
+                    'Skipped %s !%d (no interactive approval possible).',
+                    $row->module,
+                    $row->mergeRequest->iid,
+                ));
             }
             $this->renderSummary($io, $tally);
 
@@ -168,8 +178,13 @@ final class MergeCommand extends Command
      *
      * @param array<string, int> $tally
      */
-    private function mergeOne(SymfonyStyle $io, GitlabClient $client, ResultsCache $cache, DashboardRow $row, array &$tally): void
-    {
+    private function mergeOne(
+        SymfonyStyle $io,
+        GitlabClient $client,
+        ResultsCache $cache,
+        DashboardRow $row,
+        array &$tally,
+    ): void {
         \assert($row->project !== null && $row->mergeRequest !== null);
         $iid = $row->mergeRequest->iid;
 

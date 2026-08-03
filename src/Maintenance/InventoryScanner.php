@@ -233,7 +233,10 @@ final readonly class InventoryScanner
     private function snapshotMaterializedAt(string $projectPath, string $name): ?\DateTimeImmutable
     {
         $metaPath = $projectPath . '/' . SnapshotLayout::META_DIR . '/' . $name . '.meta';
-        if (!is_file($metaPath) || preg_match('/^materialized_at=(.+)$/m', (string) file_get_contents($metaPath), $m) !== 1) {
+        if (
+            !is_file($metaPath)
+            || preg_match('/^materialized_at=(.+)$/m', (string) file_get_contents($metaPath), $m) !== 1
+        ) {
             return null;
         }
 

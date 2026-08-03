@@ -28,8 +28,26 @@ final class DashboardCacheTest extends TestCase
     {
         return new ModuleSnapshot(
             $at,
-            ['id' => 42, 'path' => 'widget', 'path_with_namespace' => 'project/widget', 'name' => 'Widget', 'web_url' => 'https://example.com'],
-            [['iid' => 1, 'title' => 'Fix', 'state' => 'opened', 'draft' => false, 'author' => ['username' => 'a', 'id' => 1], 'source_branch' => 'fix', 'target_branch' => '1.x', 'sha' => 'abc', 'web_url' => 'https://example.com/mr/1']],
+            [
+                'id' => 42,
+                'path' => 'widget',
+                'path_with_namespace' => 'project/widget',
+                'name' => 'Widget',
+                'web_url' => 'https://example.com',
+            ],
+            [
+                [
+                    'iid' => 1,
+                    'title' => 'Fix',
+                    'state' => 'opened',
+                    'draft' => false,
+                    'author' => ['username' => 'a', 'id' => 1],
+                    'source_branch' => 'fix',
+                    'target_branch' => '1.x',
+                    'sha' => 'abc',
+                    'web_url' => 'https://example.com/mr/1',
+                ],
+            ],
             [],
         );
     }

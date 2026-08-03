@@ -43,7 +43,8 @@ use Upkeep\Results\ResultsCache;
  */
 #[AsCommand(
     name: 'dashboard',
-    description: 'Show every open MR across registered modules and core versions with CI, local check, and fast-lane status.',
+    description: 'Show every open MR across registered modules and core versions with CI, local check, and '
+    . 'fast-lane status.',
 )]
 final class DashboardCommand extends Command
 {
@@ -164,7 +165,10 @@ final class DashboardCommand extends Command
             foreach ($mrs as $mr) {
                 $cores = $versionFilter === null
                     ? $module->coreVersions
-                    : array_values(array_filter($module->coreVersions, static fn (string $c): bool => $c === $versionFilter));
+                    : array_values(array_filter(
+                        $module->coreVersions,
+                        static fn (string $c): bool => $c === $versionFilter,
+                    ));
 
                 foreach ($cores as $core) {
                     $local = $resultsCache->latest($name, $mr->iid, $core);
@@ -184,7 +188,10 @@ final class DashboardCommand extends Command
             $io->note(
                 $versionFilter === null
                     ? 'No open merge requests across the registered modules.'
-                    : sprintf('No open merge requests targeting core %s across the registered modules.', $versionFilter),
+                    : sprintf(
+                        'No open merge requests targeting core %s across the registered modules.',
+                        $versionFilter,
+                    ),
             );
 
             return Command::SUCCESS;
@@ -197,7 +204,11 @@ final class DashboardCommand extends Command
         foreach ($rows as $row) {
             $cells = $row->toTableCells();
             $nid = $row->mergeRequest !== null
-                ? IssueReference::extract($row->mergeRequest->title, $row->mergeRequest->sourceBranch, $row->mergeRequest->description)
+                ? IssueReference::extract(
+                    $row->mergeRequest->title,
+                    $row->mergeRequest->sourceBranch,
+                    $row->mergeRequest->description,
+                )
                 : null;
             $issueCell = $nid !== null ? (string) $nid : '–';
 
@@ -274,8 +285,11 @@ final class DashboardCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function fetchModule(GitlabClient $client, DrupalOrgClient $drupal, Module $module): ModuleSnapshot|ApiFailure
-    {
+    private function fetchModule(
+        GitlabClient $client,
+        DrupalOrgClient $drupal,
+        Module $module,
+    ): ModuleSnapshot|ApiFailure {
         $project = $client->project($module->project);
         if ($project instanceof ApiFailure) {
             return $project;

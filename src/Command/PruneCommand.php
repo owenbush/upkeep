@@ -28,7 +28,8 @@ use Upkeep\Maintenance\PruneSelector;
 
 #[AsCommand(
     name: 'prune',
-    description: 'Reclaim disposable state (environment trees, engine projects, materialized snapshots). Dry-run by default; never touches base artifacts, keep-marked items, or committed fixture dumps.',
+    description: 'Reclaim disposable state (environment trees, engine projects, materialized snapshots). Dry-run '
+    . 'by default; never touches base artifacts, keep-marked items, or committed fixture dumps.',
 )]
 final class PruneCommand extends Command
 {
@@ -42,15 +43,70 @@ final class PruneCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addOption('trees', null, InputOption::VALUE_NONE, 'Prune disposable environment trees (disposed via the adapter teardown, which also releases the engine project)')
-            ->addOption('snapshots', null, InputOption::VALUE_NONE, 'Prune materialized fixture snapshots (their committed .sql.gz dumps can rebuild them at any time)')
-            ->addOption('projects', null, InputOption::VALUE_NONE, 'Prune whole engine projects: trees plus their docker named volumes, via the adapter teardown')
-            ->addOption('all', null, InputOption::VALUE_NONE, 'Prune everything disposable: trees, volumes, and snapshots')
-            ->addOption('older-than', null, InputOption::VALUE_REQUIRED, 'Only prune items unused for at least this long (e.g. 30d, 12h); items of unknown age are then excluded')
-            ->addOption('keep-latest', null, InputOption::VALUE_REQUIRED, 'Snapshots: keep this many newest snapshots per project regardless of age', '0')
-            ->addOption('yes', 'y', InputOption::VALUE_NONE, 'Actually delete. Without this flag the command is a dry run and deletes NOTHING')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR))
+            ->addOption(
+                'trees',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune disposable environment trees (disposed via the adapter teardown, which also releases the '
+                . 'engine project)',
+            )
+            ->addOption(
+                'snapshots',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune materialized fixture snapshots (their committed .sql.gz dumps can rebuild them at any time)',
+            )
+            ->addOption(
+                'projects',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune whole engine projects: trees plus their docker named volumes, via the adapter teardown',
+            )
+            ->addOption(
+                'all',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune everything disposable: trees, volumes, and snapshots',
+            )
+            ->addOption(
+                'older-than',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Only prune items unused for at least this long (e.g. 30d, 12h); items of unknown age are then '
+                . 'excluded',
+            )
+            ->addOption(
+                'keep-latest',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Snapshots: keep this many newest snapshots per project regardless of age',
+                '0',
+            )
+            ->addOption(
+                'yes',
+                'y',
+                InputOption::VALUE_NONE,
+                'Actually delete. Without this flag the command is a dry run and deletes NOTHING',
+            )
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
+            ->addOption(
+                'projects-root',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
+                    . 'exists, then ~/.upkeep/projects)',
+                    ProjectsRoot::ENV_VAR,
+                ),
+            )
             ->setHelp(<<<'HELP'
                 Dry-run by default: without <info>--yes</info> the command only lists deletion candidates
                 with their reclaimable sizes. Protected regardless of any flag combination:
@@ -77,7 +133,9 @@ final class PruneCommand extends Command
         }
 
         try {
-            $olderThan = $input->getOption('older-than') !== null ? Duration::parseToSeconds((string) $input->getOption('older-than')) : null;
+            $olderThan = $input->getOption('older-than') !== null
+                ? Duration::parseToSeconds((string) $input->getOption('older-than'))
+                : null;
         } catch (\InvalidArgumentException $e) {
             $io->error($e->getMessage());
 
@@ -87,7 +145,11 @@ final class PruneCommand extends Command
 
         $cockpit = Cockpit::resolve($input->getOption('cockpit'));
         if (!file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('No cockpit found at "%s" (missing %s). Run `upkeep init` first.', $cockpit->root, Cockpit::REGISTRY_FILENAME));
+            $io->error(sprintf(
+                'No cockpit found at "%s" (missing %s). Run `upkeep init` first.',
+                $cockpit->root,
+                Cockpit::REGISTRY_FILENAME,
+            ));
 
             return Command::FAILURE;
         }
@@ -103,8 +165,10 @@ final class PruneCommand extends Command
                     $trees[$item->projectName] = $item;
                 }
             }
-            $probe = $this->volumeProbe ?? VolumeProbe::withRunner(new ProcessRunner(static function (string $line): void {
-            }));
+            $probe = $this->volumeProbe ?? VolumeProbe::withRunner(new ProcessRunner(
+                static function (string $line): void {
+                },
+            ));
             $items = [...$items, ...$probe->items($trees)];
         }
 
@@ -130,7 +194,11 @@ final class PruneCommand extends Command
             ], $candidates),
         );
         $total = array_sum(array_map(static fn (InventoryItem $i) => $i->sizeBytes, $candidates));
-        $io->writeln(sprintf('Total reclaimable: %s across %d item(s).', ByteFormat::human($total), \count($candidates)));
+        $io->writeln(sprintf(
+            'Total reclaimable: %s across %d item(s).',
+            ByteFormat::human($total),
+            \count($candidates),
+        ));
 
         if (!$input->getOption('yes')) {
             $io->writeln('');
@@ -147,13 +215,21 @@ final class PruneCommand extends Command
             static fn (string $line) => $io->writeln($line),
         );
 
-        $outcome = (new PruneExecutor($selector, $adapter, $registry->modules(), static fn (string $line) => $io->writeln($line)))
-            ->execute($candidates);
+        $outcome = (new PruneExecutor(
+            $selector,
+            $adapter,
+            $registry->modules(),
+            static fn (string $line) => $io->writeln($line),
+        ))->execute($candidates);
 
         foreach ($outcome->skipped as [$item, $reason]) {
             $io->warning(sprintf('Skipped %s: %s', $item->path, $reason));
         }
-        $io->success(sprintf('Pruned %d item(s), reclaimed %s.', \count($outcome->deleted), ByteFormat::human($outcome->freedBytes)));
+        $io->success(sprintf(
+            'Pruned %d item(s), reclaimed %s.',
+            \count($outcome->deleted),
+            ByteFormat::human($outcome->freedBytes),
+        ));
 
         return Command::SUCCESS;
     }

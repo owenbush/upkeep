@@ -48,8 +48,21 @@ final class NeedsWorkCommand extends Command
         $this
             ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
             ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID')
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version (defaults to first tracked version)')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
+            ->addOption(
+                'version',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Target core major version (defaults to first tracked version)',
+            )
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
             ->addOption('no-open', null, InputOption::VALUE_NONE, 'Do not open the drupal.org issue in the browser')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Print the comment without posting it');
     }

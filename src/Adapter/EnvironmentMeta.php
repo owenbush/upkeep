@@ -54,7 +54,10 @@ final readonly class EnvironmentMeta
         try {
             $createdAt = new \DateTimeImmutable((string) $data['created_at']);
         } catch (\Exception $e) {
-            throw new AdapterException(sprintf('Environment meta key "created_at" is not a parseable timestamp: "%s".', $data['created_at']), previous: $e);
+            throw new AdapterException(sprintf(
+                'Environment meta key "created_at" is not a parseable timestamp: "%s".',
+                $data['created_at'],
+            ), previous: $e);
         }
 
         return new self(
@@ -85,15 +88,27 @@ final readonly class EnvironmentMeta
      *
      * @return list<string>
      */
-    public function staleReasons(string $moduleName, string $coreMajor, string $seedCoreVersion, string $addOnVersion): array
-    {
+    public function staleReasons(
+        string $moduleName,
+        string $coreMajor,
+        string $seedCoreVersion,
+        string $addOnVersion,
+    ): array {
         $reasons = [];
 
         if ($this->moduleName !== $moduleName) {
-            $reasons[] = sprintf('Environment was provisioned for module "%s", requested "%s".', $this->moduleName, $moduleName);
+            $reasons[] = sprintf(
+                'Environment was provisioned for module "%s", requested "%s".',
+                $this->moduleName,
+                $moduleName,
+            );
         }
         if ($this->coreMajor !== $coreMajor) {
-            $reasons[] = sprintf('Environment was provisioned for core %s, requested %s.', $this->coreMajor, $coreMajor);
+            $reasons[] = sprintf(
+                'Environment was provisioned for core %s, requested %s.',
+                $this->coreMajor,
+                $coreMajor,
+            );
         }
         if ($this->seedCoreVersion !== $seedCoreVersion) {
             $reasons[] = sprintf(

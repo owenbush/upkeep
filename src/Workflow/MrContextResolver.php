@@ -71,7 +71,8 @@ final readonly class MrContextResolver
 
         if (!\in_array($requestedCore, $module->coreVersions, true)) {
             throw new WorkflowException(sprintf(
-                'Module "%s" does not track core version "%s". Its registry entry tracks: %s. Add it to core_versions in registry.yml to check against it.',
+                'Module "%s" does not track core version "%s". Its registry entry tracks: %s. Add it to '
+                    . 'core_versions in registry.yml to check against it.',
                 $module->name,
                 $requestedCore,
                 implode(', ', $module->coreVersions),

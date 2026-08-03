@@ -92,7 +92,8 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 $wcStatus = WorkingCopyStatus::inspect($moduleDir, $this->runner);
                 if ($wcStatus->hasLocalWork()) {
                     throw new AdapterException(sprintf(
-                        "Environment %s is stale and needs re-provisioning, but the module working copy has local work:\n  %s\n"
+                        "Environment %s is stale and needs re-provisioning, but the module working "
+                        . "copy has local work:\n  %s\n"
                         . 'Push or stash your work, then re-run.',
                         $projectName,
                         implode("\n  ", $wcStatus->describe()),
@@ -133,7 +134,12 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
         MrCheckout::assertNativeBase($mergeRequest, $baseBranch);
 
-        ($this->log)(sprintf('Applying MR !%d (%s -> %s) into the module working copy ...', $mergeRequest->iid, $mergeRequest->sourceBranch, $mergeRequest->targetBranch));
+        ($this->log)(sprintf(
+            'Applying MR !%d (%s -> %s) into the module working copy ...',
+            $mergeRequest->iid,
+            $mergeRequest->sourceBranch,
+            $mergeRequest->targetBranch,
+        ));
 
         // Step back onto the base first: git refuses to fetch into the
         // currently checked-out branch, which mr-<iid> is on a re-apply.
@@ -146,18 +152,33 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
         $head = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', '--abbrev-ref', 'HEAD']));
         if ($head !== MrCheckout::branchName($mergeRequest->iid)) {
-            throw new AdapterException(sprintf('MR checkout did not stick: working copy is on "%s", expected "%s".', $head, MrCheckout::branchName($mergeRequest->iid)));
+            throw new AdapterException(sprintf(
+                'MR checkout did not stick: working copy is on "%s", expected "%s".',
+                $head,
+                MrCheckout::branchName($mergeRequest->iid),
+            ));
         }
 
         $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
         if ($mergeRequest->headSha !== null && $sha !== $mergeRequest->headSha) {
-            ($this->log)(sprintf('Note: checked-out head %s differs from the MR model\'s head %s — the MR may have moved since it was fetched.', $sha, $mergeRequest->headSha));
+            ($this->log)(sprintf(
+                'Note: checked-out head %s differs from the MR model\'s head %s — the MR may have moved '
+                . 'since it was fetched.',
+                $sha,
+                $mergeRequest->headSha,
+            ));
         }
 
         ($this->log)('Syncing the composer pin to the MR branch (and resolving any dependencies the MR adds) ...');
         $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $head);
 
-        ($this->log)(sprintf('MR !%d applied: working copy on %s at %s (base %s).', $mergeRequest->iid, $head, $sha, $baseBranch));
+        ($this->log)(sprintf(
+            'MR !%d applied: working copy on %s at %s (base %s).',
+            $mergeRequest->iid,
+            $head,
+            $sha,
+            $baseBranch,
+        ));
     }
 
     public function loadFixture(Environment $environment, string $fixtureName): void
@@ -200,7 +221,10 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ($this->log)(sprintf('Ensuring module %s is installed ...', $environment->moduleName));
         $this->runner->run(['ddev', 'drush', 'pm:install', $environment->moduleName, '-y'], $environment->projectPath);
 
-        $login = $this->runner->tryRun(['ddev', 'drush', 'uli', '--uri=' . $environment->primaryUrl], $environment->projectPath);
+        $login = $this->runner->tryRun(
+            ['ddev', 'drush', 'uli', '--uri=' . $environment->primaryUrl],
+            $environment->projectPath,
+        );
 
         return new ServeResult(
             url: $environment->primaryUrl,
@@ -290,13 +314,21 @@ final class DdevContribAdapter implements EngineAdapterInterface
      *
      * @return list<string>
      */
-    private function staleReasons(Module $module, string $coreMajor, ArtifactMeta $artifactMeta, string $projectName, string $projectPath): array
-    {
+    private function staleReasons(
+        Module $module,
+        string $coreMajor,
+        ArtifactMeta $artifactMeta,
+        string $projectName,
+        string $projectPath,
+    ): array {
         $metaPath = $projectPath . '/' . EnvironmentMeta::FILENAME;
         if (!is_file($metaPath)) {
             // The meta dotfile is written as the LAST provisioning step: its
             // absence means an interrupted provision, never a reusable env.
-            return [sprintf('No %s completion marker — a previous provision did not finish.', EnvironmentMeta::FILENAME)];
+            return [sprintf(
+                'No %s completion marker — a previous provision did not finish.',
+                EnvironmentMeta::FILENAME,
+            )];
         }
 
         try {
@@ -316,12 +348,18 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
     private function reuse(Module $module, string $coreMajor, string $projectName, string $projectPath): Environment
     {
-        $described = $this->describe($projectName) ?? throw new AdapterException(sprintf('Engine lost project %s between health check and reuse.', $projectName));
+        $described = $this->describe($projectName) ?? throw new AdapterException(sprintf(
+            'Engine lost project %s between health check and reuse.',
+            $projectName,
+        ));
 
         if (($described['status'] ?? '') !== 'running') {
             ($this->log)(sprintf('Environment %s is stopped — starting it.', $projectName));
             $this->runner->run(['ddev', 'start', '-y'], $projectPath);
-            $described = $this->describe($projectName) ?? throw new AdapterException(sprintf('Project %s did not come back after start.', $projectName));
+            $described = $this->describe($projectName) ?? throw new AdapterException(sprintf(
+                'Project %s did not come back after start.',
+                $projectName,
+            ));
         }
 
         return new Environment(
@@ -334,9 +372,19 @@ final class DdevContribAdapter implements EngineAdapterInterface
         );
     }
 
-    private function provision(Module $module, string $coreMajor, ArtifactMeta $artifactMeta, string $projectName, string $projectPath): Environment
-    {
-        ($this->log)(sprintf('Provisioning environment %s (module %s, Drupal %s) ...', $projectName, $module->name, $coreMajor));
+    private function provision(
+        Module $module,
+        string $coreMajor,
+        ArtifactMeta $artifactMeta,
+        string $projectName,
+        string $projectPath,
+    ): Environment {
+        ($this->log)(sprintf(
+            'Provisioning environment %s (module %s, Drupal %s) ...',
+            $projectName,
+            $module->name,
+            $coreMajor,
+        ));
 
         if (!is_dir($this->projectsRoot) && !mkdir($this->projectsRoot, 0755, true) && !is_dir($this->projectsRoot)) {
             throw new AdapterException(sprintf('Could not create projects root "%s".', $this->projectsRoot));
@@ -347,7 +395,9 @@ final class DdevContribAdapter implements EngineAdapterInterface
             $this->runner->run(['cp', '-a', $this->layout->treePath($coreMajor), $projectPath]);
 
             ($this->log)('Cloning the module working copy ...');
-            $this->runner->run(['git', 'clone', self::GIT_BASE_URL . $module->project . '.git', $projectPath . '/' . self::MODULE_DIR]);
+            $this->runner->run([
+                'git', 'clone', self::GIT_BASE_URL . $module->project . '.git', $projectPath . '/' . self::MODULE_DIR,
+            ]);
 
             ($this->log)('Configuring the engine project ...');
             $this->runner->run([
@@ -357,8 +407,15 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 '--project-name=' . $projectName,
             ], $projectPath);
 
-            ($this->log)(sprintf('Installing engine add-on %s at pinned version %s ...', EngineAddOn::NAME, EngineAddOn::VERSION));
-            $this->runner->run(['ddev', 'add-on', 'get', EngineAddOn::NAME, '--version', EngineAddOn::VERSION], $projectPath);
+            ($this->log)(sprintf(
+                'Installing engine add-on %s at pinned version %s ...',
+                EngineAddOn::NAME,
+                EngineAddOn::VERSION,
+            ));
+            $this->runner->run(
+                ['ddev', 'add-on', 'get', EngineAddOn::NAME, '--version', EngineAddOn::VERSION],
+                $projectPath,
+            );
             $this->adaptAddOnConfig($projectPath);
             $this->ensureFixtureAddOn($projectPath);
 
@@ -375,19 +432,36 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
             // Provisioning health gate: the environment must bootstrap and
             // report the requested core major — read from the project itself.
-            $drupalVersion = trim($this->runner->run(['ddev', 'drush', 'status', '--field=drupal-version'], $projectPath));
+            $drupalVersion = trim($this->runner->run(
+                ['ddev', 'drush', 'status', '--field=drupal-version'],
+                $projectPath,
+            ));
             if (!str_starts_with($drupalVersion, $coreMajor . '.')) {
-                throw new AdapterException(sprintf('Environment %s reports Drupal "%s", expected major %s.', $projectName, $drupalVersion, $coreMajor));
+                throw new AdapterException(sprintf(
+                    'Environment %s reports Drupal "%s", expected major %s.',
+                    $projectName,
+                    $drupalVersion,
+                    $coreMajor,
+                ));
             }
             ($this->log)(sprintf('Environment reports Drupal %s.', $drupalVersion));
 
-            $described = $this->describe($projectName) ?? throw new AdapterException(sprintf('Engine does not report project %s after provisioning.', $projectName));
+            $described = $this->describe($projectName) ?? throw new AdapterException(sprintf(
+                'Engine does not report project %s after provisioning.',
+                $projectName,
+            ));
 
             // Written LAST: the completion marker. A crash before this line
             // leaves no marker, and the next ensure_env re-provisions.
             file_put_contents(
                 $projectPath . '/' . EnvironmentMeta::FILENAME,
-                (new EnvironmentMeta($module->name, $coreMajor, $artifactMeta->coreVersion, EngineAddOn::VERSION, new \DateTimeImmutable()))->toYaml(),
+                (new EnvironmentMeta(
+                    $module->name,
+                    $coreMajor,
+                    $artifactMeta->coreVersion,
+                    EngineAddOn::VERSION,
+                    new \DateTimeImmutable(),
+                ))->toYaml(),
             );
 
             return new Environment(
@@ -428,7 +502,9 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // Pin the exact branch the working copy has checked out: a bare
         // "*@dev" could resolve to a different dev branch published on
         // packages.drupal.org instead of the path repository.
-        $branch = trim($this->runner->run(['git', '-C', $projectPath . '/' . self::MODULE_DIR, 'symbolic-ref', '--short', 'HEAD']));
+        $branch = trim($this->runner->run(
+            ['git', '-C', $projectPath . '/' . self::MODULE_DIR, 'symbolic-ref', '--short', 'HEAD'],
+        ));
         $this->requireWorkingCopyBranch($projectPath, $module->name, $branch);
     }
 
@@ -452,7 +528,8 @@ final class DdevContribAdapter implements EngineAdapterInterface
         $installedPath = sprintf('%s/web/modules/contrib/%s', $projectPath, $moduleName);
         if (!is_link($installedPath)) {
             throw new AdapterException(sprintf(
-                'Module wiring violated the ownership constraint: "%s" is not a symlink into the working copy (composer mirrored the package instead).',
+                'Module wiring violated the ownership constraint: "%s" is not a symlink into the working copy '
+                . '(composer mirrored the package instead).',
                 $installedPath,
             ));
         }
@@ -530,7 +607,9 @@ final class DdevContribAdapter implements EngineAdapterInterface
             // Engine command as shipped: an existing path argument makes it
             // run exactly that directory (host-side path, container cwd is
             // the project root).
-            CheckType::PhpUnit => ['ddev', 'phpunit', sprintf('web/%s/%s', EngineAddOn::PROJECTS_PATH, $environment->moduleName)],
+            CheckType::PhpUnit => [
+                'ddev', 'phpunit', sprintf('web/%s/%s', EngineAddOn::PROJECTS_PATH, $environment->moduleName),
+            ],
             CheckType::EsLint, CheckType::StyleLint => ['ddev', $check->value],
             // The engine's phpcs/phpstan commands derive the target directory
             // from the ddev site name (module-as-project-root assumption),
@@ -539,12 +618,14 @@ final class DdevContribAdapter implements EngineAdapterInterface
             // module instead.
             CheckType::PhpCs => ['ddev', 'exec', 'bash', '-c', implode("\n", [
                 'set -eu',
-                'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
+                'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/'
+                . 'gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
                 sprintf('phpcs -s --report-full --report-summary --report-source %s --ignore=*/.ddev/*', $modulePath),
             ])],
             CheckType::PhpStan => ['ddev', 'exec', 'bash', '-c', implode("\n", [
                 'set -eu',
-                'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
+                'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/'
+                . 'gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
                 "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
                 'test -e phpstan-baseline.neon || touch phpstan-baseline.neon',
                 'phpstan analyze ' . $modulePath,
@@ -576,7 +657,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
             return CheckResult::timedOut(CheckType::FunctionalSmoke, $process->output, $process->durationSeconds, 120);
         }
         if ($process->exitCode !== 0) {
-            return new CheckResult(CheckType::FunctionalSmoke, CheckStatus::Failed, $process->exitCode, 'Request failed: ' . $process->output, $process->durationSeconds);
+            return new CheckResult(
+                CheckType::FunctionalSmoke,
+                CheckStatus::Failed,
+                $process->exitCode,
+                'Request failed: ' . $process->output,
+                $process->durationSeconds,
+            );
         }
 
         $httpCode = trim($process->output);
@@ -610,17 +697,30 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
         $process = $this->runner->capture(['ddev', 'upgrade-status'], $environment->projectPath, self::CHECK_TIMEOUT);
         if ($process->timedOut) {
-            return CheckResult::timedOut(CheckType::Deprecation, $process->output, $process->durationSeconds, self::CHECK_TIMEOUT);
+            return CheckResult::timedOut(
+                CheckType::Deprecation,
+                $process->output,
+                $process->durationSeconds,
+                self::CHECK_TIMEOUT,
+            );
         }
 
-        return CheckResult::fromProcess(CheckType::Deprecation, $process->exitCode, $process->output, $process->durationSeconds);
+        return CheckResult::fromProcess(
+            CheckType::Deprecation,
+            $process->exitCode,
+            $process->output,
+            $process->durationSeconds,
+        );
     }
 
     private function adaptAddOnConfig(string $projectPath): void
     {
         $configPath = $projectPath . '/.ddev/' . EngineAddOn::CONFIG_FILENAME;
         if (!is_file($configPath)) {
-            throw new AdapterException(sprintf('Engine add-on did not install its config at "%s" — cannot adapt it.', $configPath));
+            throw new AdapterException(sprintf(
+                'Engine add-on did not install its config at "%s" — cannot adapt it.',
+                $configPath,
+            ));
         }
         file_put_contents($configPath, EngineAddOn::adaptContribConfig((string) file_get_contents($configPath)));
     }
@@ -634,7 +734,10 @@ final class DdevContribAdapter implements EngineAdapterInterface
     {
         ($this->log)(sprintf('Deleting engine project %s (containers + volumes) ...', $projectName));
         if ($this->runner->tryRun(['ddev', 'delete', '--omit-snapshot', '--yes', $projectName]) === null) {
-            ($this->log)('Engine delete reported a failure (project may not be registered) — continuing with tree removal.');
+            ($this->log)(
+                'Engine delete reported a failure (project may not be registered) — continuing '
+                . 'with tree removal.',
+            );
         }
         if (is_dir($projectPath)) {
             $this->runner->run(['rm', '-rf', $projectPath]);
@@ -672,7 +775,10 @@ final class DdevContribAdapter implements EngineAdapterInterface
         try {
             return ArtifactMeta::fromYaml((string) file_get_contents($metaPath));
         } catch (MetaException $e) {
-            throw new AdapterException(sprintf('Base artifact meta for Drupal %s is unreadable: %s', $coreMajor, $e->getMessage()), previous: $e);
+            throw new AdapterException(
+                sprintf('Base artifact meta for Drupal %s is unreadable: %s', $coreMajor, $e->getMessage()),
+                previous: $e,
+            );
         }
     }
 }

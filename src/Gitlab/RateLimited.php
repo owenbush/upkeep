@@ -16,7 +16,10 @@ final readonly class RateLimited extends ApiFailure
         parent::__construct(
             $retryAfterSeconds === null
                 ? 'Rate limited by the GitLab instance (HTTP 429). Please retry later.'
-                : sprintf('Rate limited by the GitLab instance (HTTP 429). Please retry in %d seconds.', $retryAfterSeconds),
+                : sprintf(
+                    'Rate limited by the GitLab instance (HTTP 429). Please retry in %d seconds.',
+                    $retryAfterSeconds,
+                ),
         );
     }
 }

@@ -24,7 +24,8 @@ use Upkeep\Cockpit\RegistryException;
 
 #[AsCommand(
     name: 'dev',
-    description: 'Prepare an environment for active development: provision if needed, optionally check out a branch, and print the path.',
+    description: 'Prepare an environment for active development: provision if needed, optionally check out a '
+    . 'branch, and print the path.',
 )]
 final class DevCommand extends Command
 {
@@ -37,10 +38,32 @@ final class DevCommand extends Command
     {
         $this
             ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version (defaults to the first tracked version in the registry)')
+            ->addOption(
+                'version',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Target core major version (defaults to the first tracked version in the registry)',
+            )
             ->addOption('branch', null, InputOption::VALUE_REQUIRED, 'Branch to check out in the module working copy')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption(
+                'cockpit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
+            )
+            ->addOption(
+                'projects-root',
+                null,
+                InputOption::VALUE_REQUIRED,
+                sprintf(
+                    'Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it '
+                    . 'exists, then ~/.upkeep/projects)',
+                    ProjectsRoot::ENV_VAR,
+                ),
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

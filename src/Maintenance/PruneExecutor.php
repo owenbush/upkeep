@@ -46,7 +46,8 @@ final readonly class PruneExecutor
             $reason = $this->selector->protectionReason($item);
             if ($reason !== null) {
                 throw new \RuntimeException(sprintf(
-                    'Refusing to prune protected item "%s" (%s) — candidate selection was bypassed; aborting without deleting anything.',
+                    'Refusing to prune protected item "%s" (%s) — candidate selection was bypassed; aborting '
+                        . 'without deleting anything.',
                     $item->path,
                     $reason,
                 ));
@@ -64,11 +65,20 @@ final readonly class PruneExecutor
             }
             $resolved = $this->resolveEnvironment($item);
             if ($resolved === null) {
-                $skipped[] = [$item, 'cannot attribute this tree to a registered (module x core) pair — refusing to guess; tear it down manually'];
+                $skipped[] = [
+                    $item,
+                    'cannot attribute this tree to a registered (module x core) pair — refusing to guess; '
+                        . 'tear it down manually',
+                ];
                 continue;
             }
             [$module, $coreMajor] = $resolved;
-            ($this->log)(sprintf('Tearing down environment %s (module %s, Drupal %s) via the adapter ...', $item->projectName ?? $item->path, $module->name, $coreMajor));
+            ($this->log)(sprintf(
+                'Tearing down environment %s (module %s, Drupal %s) via the adapter ...',
+                $item->projectName ?? $item->path,
+                $module->name,
+                $coreMajor,
+            ));
             try {
                 $this->adapter->teardown($module, $coreMajor);
             } catch (AdapterException $e) {
@@ -89,7 +99,10 @@ final readonly class PruneExecutor
                 $freed += $item->sizeBytes;
                 $deleted[] = $item;
             } else {
-                $skipped[] = [$item, 'volumes are reclaimed via their project\'s teardown; its tree was not pruned in this run'];
+                $skipped[] = [
+                    $item,
+                    'volumes are reclaimed via their project\'s teardown; its tree was not pruned in this run',
+                ];
             }
         }
 
@@ -140,5 +153,4 @@ final readonly class PruneExecutor
 
         return null;
     }
-
 }

@@ -31,7 +31,12 @@ final class BaseArtifactsBuildCommand extends Command
             // Named --core, not --version: Symfony Console reserves -V/--version
             // at the application level (it prints the app version before any
             // command runs), so a command-scoped --version can never be received.
-            ->addOption('core', null, InputOption::VALUE_REQUIRED, 'Drupal core major version to build artifacts for (e.g. 11)')
+            ->addOption(
+                'core',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Drupal core major version to build artifacts for (e.g. 11)',
+            )
             ->addOption('force', null, InputOption::VALUE_NONE, 'Deliberately rebuild over an existing artifact set')
             // Defaults under $HOME, not the system temp dir: the throwaway
             // install project is bind-mounted into the Docker VM, and macOS
@@ -42,14 +47,18 @@ final class BaseArtifactsBuildCommand extends Command
                 'scratch-dir',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Directory for the throwaway site-install project (must be a path your Docker provider mounts, e.g. under your home directory)',
+                'Directory for the throwaway site-install project (must be a path your Docker provider mounts, e.g. '
+                . 'under your home directory)',
                 self::defaultScratchDir(),
             )
             ->addOption(
                 'cockpit',
                 null,
                 InputOption::VALUE_REQUIRED,
-                sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR),
+                sprintf(
+                    'Path to the cockpit directory (defaults to $%s, then the current directory)',
+                    Cockpit::ENV_VAR,
+                ),
             );
     }
 
@@ -59,7 +68,11 @@ final class BaseArtifactsBuildCommand extends Command
         $cockpit = Cockpit::resolve($input->getOption('cockpit'));
 
         if (!file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('No cockpit found at "%s" (missing %s). Run `upkeep init` first.', $cockpit->root, Cockpit::REGISTRY_FILENAME));
+            $io->error(sprintf(
+                'No cockpit found at "%s" (missing %s). Run `upkeep init` first.',
+                $cockpit->root,
+                Cockpit::REGISTRY_FILENAME,
+            ));
 
             return Command::FAILURE;
         }
