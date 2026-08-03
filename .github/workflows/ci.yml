@@ -28,19 +28,11 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --no-progress
 
-      # continue-on-error is temporary: 245 PSR-12 violations currently exist
-      # and remediation is still in progress. Task 18 removes this flag once
-      # the codebase is clean, making this gate blocking.
       - name: Lint (PSR-12)
         run: composer lint
-        continue-on-error: true
 
-      # continue-on-error is temporary: 302 PHPStan errors currently exist
-      # and remediation is still in progress. Task 18 removes this flag once
-      # the codebase is clean, making this gate blocking.
       - name: Static analysis (PHPStan max)
         run: composer analyse
-        continue-on-error: true
 
       - name: Run PHPUnit (with coverage)
         run: vendor/bin/phpunit --coverage-text
