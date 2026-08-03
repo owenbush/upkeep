@@ -36,6 +36,20 @@ vendor/bin/phpunit
 Fast (seconds), no network, no docker: engine interactions are tested against
 fakes of `Adapter\EngineAdapterInterface`, GitLab via mocked HTTP.
 
+Coverage reporting requires a coverage driver — PCOV (preferred; faster,
+line-coverage only) or Xdebug (accepted; also supports branch coverage). With
+PCOV installed and loaded (`php -m | grep pcov`):
+
+```bash
+vendor/bin/phpunit --coverage-text
+```
+
+prints the per-namespace coverage table plus an overall line-coverage summary,
+and also writes an HTML report to `build/coverage-html/`. If PCOV isn't
+auto-enabled in your `php.ini`, pass `-d pcov.enabled=1` on the command line.
+No coverage threshold is enforced by `phpunit.xml.dist` yet, so a run below
+100% still exits 0.
+
 ## Hard rule: the adapter boundary
 
 Engine specifics (ddev, ddev-drupal-contrib, docker, container/volume names)

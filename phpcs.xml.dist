@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<ruleset name="upkeep">
+    <description>PSR-12 coding standard for the upkeep CLI.</description>
+
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="ps"/>
+
+    <file>src</file>
+    <file>bin</file>
+    <file>tests</file>
+
+    <!-- bin/upkeep has no .php extension; include it explicitly. -->
+    <file>bin/upkeep</file>
+
+    <rule ref="PSR12"/>
+</ruleset>
