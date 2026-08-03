@@ -10,6 +10,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\ServeResult;
+use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Adapter\VolumeProbe;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\PruneCommand;
@@ -124,6 +125,8 @@ final class PruneCommandTest extends TestCase
             {
                 $this->teardowns[] = [$module->name, $coreMajor];
             }
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
+            public function checkoutBranch(Environment $environment, string $branch): void {}
         };
 
         $tester = new CommandTester(new PruneCommand($adapter, new VolumeProbe(static fn (array $c): ?string => null)));

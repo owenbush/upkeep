@@ -13,6 +13,7 @@ final readonly class Cockpit
     public const REGISTRY_FILENAME = 'registry.yml';
     public const BASE_ARTIFACTS_DIR = 'base-artifacts';
     public const FIXTURES_DIR = 'fixtures';
+    public const PROJECTS_DIR = 'projects';
     public const ENV_VAR = 'UPKEEP_COCKPIT';
 
     public function __construct(public string $root)
@@ -43,6 +44,11 @@ final readonly class Cockpit
     public function fixturesPath(): string
     {
         return $this->root . '/' . self::FIXTURES_DIR;
+    }
+
+    public function projectsPath(): string
+    {
+        return $this->root . '/' . self::PROJECTS_DIR;
     }
 
     public function loadRegistry(): ModuleRegistry

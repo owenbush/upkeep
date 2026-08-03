@@ -14,7 +14,7 @@ use Upkeep\Cockpit\Cockpit;
 
 #[AsCommand(
     name: 'init',
-    description: 'Scaffold a new cockpit: module registry, base-artifacts/ and fixtures/ directories.',
+    description: 'Scaffold a new cockpit: module registry, base-artifacts/, fixtures/, and projects/ directories.',
 )]
 final class InitCommand extends Command
 {
@@ -52,7 +52,7 @@ final class InitCommand extends Command
             return Command::FAILURE;
         }
 
-        foreach ([$cockpit->root, $cockpit->baseArtifactsPath(), $cockpit->fixturesPath()] as $dir) {
+        foreach ([$cockpit->root, $cockpit->baseArtifactsPath(), $cockpit->fixturesPath(), $cockpit->projectsPath()] as $dir) {
             if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
                 $io->error(sprintf('Could not create directory "%s".', $dir));
 
@@ -63,13 +63,15 @@ final class InitCommand extends Command
         file_put_contents($cockpit->registryPath(), self::REGISTRY_TEMPLATE);
         file_put_contents($cockpit->baseArtifactsPath() . '/.gitkeep', '');
         file_put_contents($cockpit->fixturesPath() . '/.gitkeep', '');
+        file_put_contents($cockpit->projectsPath() . '/.gitkeep', '');
 
         $io->success(sprintf(
-            'Cockpit created at "%s": %s, %s/, %s/.',
+            'Cockpit created at "%s": %s, %s/, %s/, %s/.',
             $cockpit->root,
             Cockpit::REGISTRY_FILENAME,
             Cockpit::BASE_ARTIFACTS_DIR,
             Cockpit::FIXTURES_DIR,
+            Cockpit::PROJECTS_DIR,
         ));
 
         return Command::SUCCESS;

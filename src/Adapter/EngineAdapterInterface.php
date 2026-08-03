@@ -80,6 +80,24 @@ interface EngineAdapterInterface
     public function resolveEnvPath(string $moduleName, string $coreMajor): ?string;
 
     /**
+     * Inspects the module working copy in an existing environment for local
+     * work (uncommitted changes, untracked files, unpushed commits, or a
+     * non-standard branch). Returns null when no provisioned environment
+     * exists for this (module, core) pair.
+     *
+     * Never provisions, starts, or modifies the environment.
+     */
+    public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus;
+
+    /**
+     * Checks out the given branch in the module working copy. Syncs the
+     * Composer pin so the project's dependency resolution stays satisfiable.
+     *
+     * @throws AdapterException when the checkout fails or the working copy is dirty
+     */
+    public function checkoutBranch(Environment $environment, string $branch): void;
+
+    /**
      * Disposes the (module, core major) environment completely: engine
      * project, containers, named volumes, and the on-disk tree. A no-op when
      * the environment does not exist.

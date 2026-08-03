@@ -9,8 +9,10 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\ServeResult;
+use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Adapter\AdapterException;
 use Upkeep\Maintenance\Category;
 use Upkeep\Maintenance\InventoryItem;
 use Upkeep\Maintenance\PruneExecutor;
@@ -77,6 +79,8 @@ final class PruneExecutorTest extends TestCase
             {
                 $this->teardowns[] = [$module->name, $coreMajor];
             }
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
+            public function checkoutBranch(Environment $environment, string $branch): void {}
         };
 
         return new PruneExecutor(
@@ -194,6 +198,59 @@ final class PruneExecutorTest extends TestCase
         self::assertSame([], $this->teardowns);
         self::assertSame(0, $outcome->freedBytes);
         self::assertCount(1, $outcome->skipped);
+    }
+
+    public function testTeardownFailureSkipsItemInsteadOfAborting(): void
+    {
+        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
+            public function __construct(private array &$teardowns) {}
+            public function ensureEnv(Module $module, string $coreMajor): Environment { throw new \BadMethodCallException('not used'); }
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void {}
+            public function loadFixture(Environment $environment, string $fixtureName): void {}
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult { throw new \BadMethodCallException('not used'); }
+            public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException('not used'); }
+            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string { return null; }
+            public function teardown(Module $module, string $coreMajor): void
+            {
+                if ($coreMajor === '11') {
+                    throw new AdapterException('local work detected');
+                }
+                $this->teardowns[] = [$module->name, $coreMajor];
+            }
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
+            public function checkoutBranch(Environment $environment, string $branch): void {}
+        };
+
+        $executor = new PruneExecutor(
+            new PruneSelector(['/cockpit/base-artifacts', '/cockpit/fixtures']),
+            $adapter,
+            ['conditions_helper' => new Module('conditions_helper', 'project/conditions_helper', ['10', '11'])],
+            static function (): void {},
+        );
+
+        $dirty = new InventoryItem(
+            path: $this->world . '/upkeep-conditions-helper-d11',
+            category: Category::ProjectTree,
+            sizeBytes: 4096,
+            module: 'conditions_helper',
+            coreMajor: '11',
+            projectName: 'upkeep-conditions-helper-d11',
+        );
+        $clean = new InventoryItem(
+            path: $this->world . '/upkeep-conditions-helper-d10',
+            category: Category::ProjectTree,
+            sizeBytes: 2048,
+            module: 'conditions_helper',
+            coreMajor: '10',
+            projectName: 'upkeep-conditions-helper-d10',
+        );
+
+        $outcome = $executor->execute([$dirty, $clean]);
+
+        self::assertSame([['conditions_helper', '10']], $this->teardowns);
+        self::assertSame(2048, $outcome->freedBytes);
+        self::assertCount(1, $outcome->skipped);
+        self::assertStringContainsString('local work detected', $outcome->skipped[0][1]);
     }
 
     public function testExecutorRefusesProtectedItemsEvenIfHandedThemDirectly(): void

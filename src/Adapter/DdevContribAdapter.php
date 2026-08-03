@@ -87,6 +87,19 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 return $this->reuse($module, $coreMajor, $projectName, $projectPath);
             }
 
+            $moduleDir = $projectPath . '/' . self::MODULE_DIR;
+            if (is_dir($moduleDir)) {
+                $wcStatus = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+                if ($wcStatus->hasLocalWork()) {
+                    throw new AdapterException(sprintf(
+                        "Environment %s is stale and needs re-provisioning, but the module working copy has local work:\n  %s\n"
+                        . 'Push or stash your work, then re-run.',
+                        $projectName,
+                        implode("\n  ", $wcStatus->describe()),
+                    ));
+                }
+            }
+
             ($this->log)(sprintf('Existing environment %s is stale — re-provisioning:', $projectName));
             foreach ($staleReasons as $reason) {
                 ($this->log)('  - ' . $reason);
@@ -100,6 +113,16 @@ final class DdevContribAdapter implements EngineAdapterInterface
     public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
     {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        $wcStatus = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+        if ($wcStatus->isDirty()) {
+            throw new AdapterException(sprintf(
+                "Cannot apply MR !%d: the module working copy has uncommitted changes:\n  %s\n"
+                . 'Commit or stash your changes first, then re-run.',
+                $mergeRequest->iid,
+                implode("\n  ", $wcStatus->describe()),
+            ));
+        }
 
         $currentBranch = $this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD']);
         $recordedBase = $this->runner->tryRun(['git', '-C', $moduleDir, 'config', '--get', 'upkeep.base-branch']);
@@ -196,6 +219,43 @@ final class DdevContribAdapter implements EngineAdapterInterface
         return $projectPath;
     }
 
+    public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+    {
+        $projectPath = $this->resolveEnvPath($moduleName, $coreMajor);
+        if ($projectPath === null) {
+            return null;
+        }
+
+        $moduleDir = $projectPath . '/' . self::MODULE_DIR;
+        if (!is_dir($moduleDir)) {
+            return null;
+        }
+
+        return WorkingCopyStatus::inspect($moduleDir, $this->runner);
+    }
+
+    public function checkoutBranch(Environment $environment, string $branch): void
+    {
+        $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        $status = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+        if ($status->isDirty()) {
+            throw new AdapterException(sprintf(
+                "Cannot switch branches: the module working copy has uncommitted changes:\n  %s",
+                implode("\n  ", $status->describe()),
+            ));
+        }
+
+        $result = $this->runner->tryRun(['git', '-C', $moduleDir, 'checkout', $branch]);
+        if ($result === null) {
+            $this->runner->run(['git', '-C', $moduleDir, 'fetch', 'origin']);
+            $this->runner->run(['git', '-C', $moduleDir, 'checkout', $branch]);
+        }
+
+        ($this->log)(sprintf('Module working copy on branch "%s".', $branch));
+        $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch);
+    }
+
     public function teardown(Module $module, string $coreMajor): void
     {
         $projectName = ProjectName::for($module->name, $coreMajor);
@@ -205,6 +265,19 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ($this->log)(sprintf('Environment %s does not exist — nothing to tear down.', $projectName));
 
             return;
+        }
+
+        $moduleDir = $projectPath . '/' . self::MODULE_DIR;
+        if (is_dir($moduleDir)) {
+            $status = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+            if ($status->hasLocalWork()) {
+                throw new AdapterException(sprintf(
+                    "Refusing to tear down %s: the module working copy has local work:\n  %s\n"
+                    . 'Push or stash your work first.',
+                    $projectName,
+                    implode("\n  ", $status->describe()),
+                ));
+            }
         }
 
         $this->teardownProject($projectName, $projectPath);

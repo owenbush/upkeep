@@ -59,7 +59,7 @@ abstract class AbstractMrCommand extends Command
             ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID on the module\'s drupalcode project')
             ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version; must be tracked by the module\'s registry entry. Defaults to the first core version listed there.')
             ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
     }
 
     /**
@@ -115,7 +115,7 @@ abstract class AbstractMrCommand extends Command
 
         return new DdevContribAdapter(
             new ArtifactLayout($cockpit->baseArtifactsPath()),
-            ProjectsRoot::resolve($input->getOption('projects-root')),
+            ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root),
             new ProcessRunner($processLog),
             $stageLog,
         );
