@@ -17,6 +17,7 @@ use Upkeep\Adapter\CheckType;
 use Upkeep\Command\MergeCommand;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Results\ResultsCache;
+use Upkeep\Workflow\ExitCode;
 
 /**
  * CommandTester-level tests for `merge --fast-lane`.
@@ -28,6 +29,8 @@ use Upkeep\Results\ResultsCache;
  * records every request; the interactive prompt-loop wiring itself is
  * verified via CommandTester with scripted inputs (setInputs), not by
  * unit-testing Symfony's question helper.
+ *
+ * @phpstan-type ResponseSpec array{payload: array<array-key, mixed>, status: int}
  */
 final class MergeCommandTest extends TestCase
 {
@@ -63,24 +66,31 @@ final class MergeCommandTest extends TestCase
      * per request (instances are single-use). Every request is recorded
      * with its body for the no-write assertions.
      *
-     * @param array<string, array{payload: array, status: int}|list<array{payload: array, status: int}>> $routes
+     * @param array<string, non-empty-list<ResponseSpec>> $routes
      */
     private function client(array $routes): GitlabClient
     {
         $this->requests = [];
-        $factory = function (string $method, string $url, array $options) use (&$routes): MockResponse {
-            $this->requests[] = ['method' => $method, 'url' => $url, 'body' => (string) ($options['body'] ?? '')];
+        // How many specs of each route's queue have been consumed so far.
+        $consumed = [];
+        /** @param array<string, mixed> $options */
+        $factory = function (string $method, string $url, array $options) use ($routes, &$consumed): MockResponse {
+            $body = $options['body'] ?? '';
+            $this->requests[] = [
+                'method' => $method,
+                'url' => $url,
+                'body' => \is_string($body) ? $body : '',
+            ];
             foreach ($routes as $needle => $specs) {
                 if (!str_contains($url, $needle)) {
                     continue;
                 }
-                if (isset($specs['payload'])) {
-                    return self::response($specs);
-                }
-                $spec = \count($specs) > 1 ? array_shift($specs) : $specs[0];
-                $routes[$needle] = $specs;
+                // The route's queue is consumed one spec per request; its
+                // last spec then repeats for every further request.
+                $index = min($consumed[$needle] ?? 0, \count($specs) - 1);
+                $consumed[$needle] = $index + 1;
 
-                return self::response($spec);
+                return self::response($specs[$index]);
             }
 
             throw new \LogicException('Unrouted request in test: ' . $method . ' ' . $url);
@@ -89,13 +99,32 @@ final class MergeCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'glpat-test-token');
     }
 
-    /** @return array{payload: array, status: int} */
+    /**
+     * A route serving this one JSON response to every matching request.
+     *
+     * @param array<array-key, mixed> $payload single object payload or a list of them
+     *
+     * @return non-empty-list<ResponseSpec>
+     */
     private static function json(array $payload, int $status = 200): array
     {
-        return ['payload' => $payload, 'status' => $status];
+        return [['payload' => $payload, 'status' => $status]];
     }
 
-    /** @param array{payload: array, status: int} $spec */
+    /**
+     * A route serving each given response in turn, the last one repeating.
+     *
+     * @param non-empty-list<ResponseSpec>    $first
+     * @param non-empty-list<ResponseSpec> ...$rest
+     *
+     * @return non-empty-list<ResponseSpec>
+     */
+    private static function queue(array $first, array ...$rest): array
+    {
+        return array_merge($first, ...$rest);
+    }
+
+    /** @param ResponseSpec $spec */
     private static function response(array $spec): MockResponse
     {
         return new MockResponse(json_encode($spec['payload'], JSON_THROW_ON_ERROR), [
@@ -104,6 +133,7 @@ final class MergeCommandTest extends TestCase
         ]);
     }
 
+    /** @return array<string, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -115,6 +145,11 @@ final class MergeCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function botMrPayload(int $iid = 5, array $overrides = []): array
     {
         return $overrides + [
@@ -132,6 +167,7 @@ final class MergeCommandTest extends TestCase
         ];
     }
 
+    /** @return array<string, mixed> */
     private static function greenPipeline(string $sha = self::HEAD_SHA): array
     {
         return [
@@ -153,7 +189,11 @@ final class MergeCommandTest extends TestCase
         );
     }
 
-    /** Routes for one healthy READY-AUTO bot MR (!5), most-specific first. */
+    /**
+     * Routes for one healthy READY-AUTO bot MR (!5), most-specific first.
+     *
+     * @return array<string, non-empty-list<ResponseSpec>>
+     */
     private function readyAutoRoutes(): array
     {
         return [
@@ -292,7 +332,11 @@ final class MergeCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringContainsString('Quit', $display);
         self::assertStringContainsString('Fast-lane action for widget !5', $display);
-        self::assertStringNotContainsString('Fast-lane action for widget !7', $display, 'quit must not prompt for later rows');
+        self::assertStringNotContainsString(
+            'Fast-lane action for widget !7',
+            $display,
+            'quit must not prompt for later rows',
+        );
         self::assertStringContainsString('Merged: 0', $display);
     }
 
@@ -303,13 +347,13 @@ final class MergeCommandTest extends TestCase
         $this->storePassingLocal();
         $client = $this->client([
             '/merge_requests/5/merge' => self::json(['message' => 'must not be called'], 500),
-            '/merge_requests/5' => [
+            '/merge_requests/5' => self::queue(
                 self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
                 self::json(self::botMrPayload(5, [
                     'sha' => self::DRIFTED_SHA,
                     'head_pipeline' => self::greenPipeline(self::DRIFTED_SHA),
                 ])),
-            ],
+            ),
             '/merge_requests?' => self::json([self::botMrPayload(5)]),
             '/projects/project%2Fwidget' => self::json(self::projectPayload()),
         ]);
@@ -332,12 +376,12 @@ final class MergeCommandTest extends TestCase
         $this->storePassingLocal();
         $client = $this->client([
             '/merge_requests/5/merge' => self::json(['message' => 'must not be called'], 500),
-            '/merge_requests/5' => [
+            '/merge_requests/5' => self::queue(
                 self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
                 self::json(self::botMrPayload(5, [
                     'head_pipeline' => ['status' => 'failed'] + self::greenPipeline(),
                 ])),
-            ],
+            ),
             '/merge_requests?' => self::json([self::botMrPayload(5)]),
             '/projects/project%2Fwidget' => self::json(self::projectPayload()),
         ]);
@@ -359,13 +403,13 @@ final class MergeCommandTest extends TestCase
         $this->storePassingLocal();
         $client = $this->client([
             '/merge_requests/5/merge' => self::json(['message' => 'must not be called'], 500),
-            '/merge_requests/5' => [
+            '/merge_requests/5' => self::queue(
                 self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
                 self::json(self::botMrPayload(5, [
                     'state' => 'merged',
                     'head_pipeline' => self::greenPipeline(),
                 ])),
-            ],
+            ),
             '/merge_requests?' => self::json([self::botMrPayload(5)]),
             '/projects/project%2Fwidget' => self::json(self::projectPayload()),
         ]);
@@ -385,13 +429,13 @@ final class MergeCommandTest extends TestCase
         $this->storePassingLocal();
         $client = $this->client([
             '/merge_requests/5/merge' => self::json(['message' => 'must not be called'], 500),
-            '/merge_requests/5' => [
+            '/merge_requests/5' => self::queue(
                 self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
                 self::json(self::botMrPayload(5, [
                     'draft' => true,
                     'head_pipeline' => self::greenPipeline(),
                 ])),
-            ],
+            ),
             '/merge_requests?' => self::json([self::botMrPayload(5)]),
             '/projects/project%2Fwidget' => self::json(self::projectPayload()),
         ]);
@@ -413,10 +457,10 @@ final class MergeCommandTest extends TestCase
         $this->storePassingLocal();
         $client = $this->client([
             '/merge_requests/5/merge' => self::json(['message' => 'must not be called'], 500),
-            '/merge_requests/5' => [
+            '/merge_requests/5' => self::queue(
                 self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
                 self::json(['message' => '403 Forbidden'], 403),
-            ],
+            ),
             '/merge_requests?' => self::json([self::botMrPayload(5)]),
             '/projects/project%2Fwidget' => self::json(self::projectPayload()),
         ]);
@@ -470,11 +514,16 @@ final class MergeCommandTest extends TestCase
 
         $tester = $this->runMerge($client, ['merge', 'merge']);
 
-        $tester->assertCommandIsSuccessful();
+        // BP-CMD-04: a run in which a merge failed must not exit 0.
+        self::assertSame(ExitCode::FAILED, $tester->getStatusCode());
         $display = $tester->getDisplay();
         self::assertStringContainsString('Merge failed for widget !5', $display);
         self::assertStringContainsString('405', $display);
-        self::assertStringContainsString('Fast-lane action for widget !7', $display, 'a failure must not abort the loop');
+        self::assertStringContainsString(
+            'Fast-lane action for widget !7',
+            $display,
+            'a failure must not abort the loop',
+        );
         self::assertStringContainsString('Merged widget !7', $display);
         self::assertStringContainsString('Merged: 1', $display);
         self::assertStringContainsString('Failed: 1', $display);
@@ -518,5 +567,70 @@ final class MergeCommandTest extends TestCase
         self::assertStringContainsString('interactive', $display);
         self::assertStringContainsString('Merged: 0', $display);
         self::assertStringContainsString('Skipped: 1', $display);
+    }
+    /**
+     * A rejected credential is the operator's setup, not a verdict about any
+     * one merge request: it takes the infrastructure code, which outranks a
+     * merge failure.
+     */
+    public function testARejectedCredentialExitsWithTheInfrastructureCode(): void
+    {
+        $this->storePassingLocal(5);
+        $client = $this->client([
+            '/merge_requests/5/merge' => self::json(['message' => '401 Unauthorized'], 401),
+            '/merge_requests/5' => self::json(self::botMrPayload(5, ['head_pipeline' => self::greenPipeline()])),
+            '/merge_requests?' => self::json([self::botMrPayload(5)]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = $this->runMerge($client, ['merge']);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $tester->getStatusCode());
+        self::assertStringContainsString('Merge failed for widget !5', $tester->getDisplay());
+    }
+
+    /** Bad usage attempts nothing, so it is an infrastructure outcome, not a verdict. */
+    public function testOmittingFastLaneIsAnInfrastructureFailure(): void
+    {
+        $tester = new CommandTester(new MergeCommand());
+        $exit = $tester->execute(['--cockpit' => $this->cockpit]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('only operates in fast-lane mode', $tester->getDisplay());
+    }
+
+    /**
+     * A module GitLab cannot even be asked about produces a row with no merge
+     * request behind it. It has to be listed under "needs a human" — silently
+     * dropping it would let a module quietly fall out of the fast lane and
+     * look, run after run, as though it simply had nothing open — and it must
+     * never be offered for merge, because there is nothing to merge.
+     */
+    public function testAModuleWhoseMergeRequestsAreUnavailableIsListedAndNeverOffered(): void
+    {
+        $client = $this->client([
+            '/projects/project%2Fwidget' => self::json(['message' => '403 Forbidden'], 403),
+        ]);
+
+        $tester = $this->runMerge($client);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('widget: merge requests unavailable — n/a (403)', $display);
+        self::assertStringContainsString('No READY-AUTO rows', $display);
+        self::assertStringNotContainsString('Fast-lane action', $display, 'no prompt may be offered');
+        self::assertSame([], $this->putRequests(), 'no API write may happen');
+    }
+
+    public function testACleanRunWithNothingEligibleExitsOk(): void
+    {
+        $client = $this->client([
+            '/merge_requests?' => self::json([]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = $this->runMerge($client);
+
+        self::assertSame(ExitCode::OK, $tester->getStatusCode());
     }
 }

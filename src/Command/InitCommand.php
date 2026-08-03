@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Cockpit\Cockpit;
+use Upkeep\Filesystem\FilesystemException;
+use Upkeep\Filesystem\FileWriter;
+use Upkeep\Workflow\ExitCode;
 
 #[AsCommand(
     name: 'init',
     description: 'Scaffold a new cockpit: module registry, base-artifacts/, fixtures/, and projects/ directories.',
 )]
-final class InitCommand extends Command
+final class InitCommand extends UpkeepCommand
 {
     private const REGISTRY_TEMPLATE = <<<'YAML'
         # Upkeep cockpit module registry.
@@ -41,29 +43,47 @@ final class InitCommand extends Command
         $this->addArgument('dir', InputArgument::OPTIONAL, 'Directory to create the cockpit in', '.');
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
-        $cockpit = new Cockpit(rtrim((string) $input->getArgument('dir'), '/'));
+        $cockpit = new Cockpit(self::stringArgument($input, 'dir'));
 
-        if (file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('A cockpit already exists at "%s" (found %s).', $cockpit->root, Cockpit::REGISTRY_FILENAME));
-
-            return Command::FAILURE;
+        // is_file, not file_exists: a *directory* named registry.yml is not a
+        // cockpit, and claiming it is would send the user looking for one.
+        // The write below is what reports that path as unusable.
+        if (is_file($cockpit->registryPath())) {
+            throw new FilesystemException(sprintf(
+                'A cockpit already exists at "%s" (found %s).',
+                $cockpit->root,
+                Cockpit::REGISTRY_FILENAME,
+            ));
         }
 
-        foreach ([$cockpit->root, $cockpit->baseArtifactsPath(), $cockpit->fixturesPath(), $cockpit->projectsPath()] as $dir) {
-            if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-                $io->error(sprintf('Could not create directory "%s".', $dir));
+        $dirs = [
+            $cockpit->root,
+            $cockpit->baseArtifactsPath(),
+            $cockpit->fixturesPath(),
+            $cockpit->projectsPath(),
+        ];
 
-                return Command::FAILURE;
+        // Every write is checked: a cockpit reported as created but missing
+        // its registry.yml is the worst possible outcome here, because the
+        // next command reports "Module registry not found" instead.
+        try {
+            foreach ($dirs as $dir) {
+                FileWriter::ensureDirectory($dir, FileWriter::MODE_SHARED_DIR);
             }
-        }
 
-        file_put_contents($cockpit->registryPath(), self::REGISTRY_TEMPLATE);
-        file_put_contents($cockpit->baseArtifactsPath() . '/.gitkeep', '');
-        file_put_contents($cockpit->fixturesPath() . '/.gitkeep', '');
-        file_put_contents($cockpit->projectsPath() . '/.gitkeep', '');
+            FileWriter::write($cockpit->registryPath(), self::REGISTRY_TEMPLATE, FileWriter::MODE_SHARED);
+            FileWriter::write($cockpit->baseArtifactsPath() . '/.gitkeep', '', FileWriter::MODE_SHARED);
+            FileWriter::write($cockpit->fixturesPath() . '/.gitkeep', '', FileWriter::MODE_SHARED);
+            FileWriter::write($cockpit->projectsPath() . '/.gitkeep', '', FileWriter::MODE_SHARED);
+        } catch (FilesystemException $e) {
+            throw new FilesystemException(
+                sprintf('Could not scaffold the cockpit at "%s": %s', $cockpit->root, $e->getMessage()),
+                0,
+                $e,
+            );
+        }
 
         $io->success(sprintf(
             'Cockpit created at "%s": %s, %s/, %s/, %s/.',
@@ -74,6 +94,6 @@ final class InitCommand extends Command
             Cockpit::PROJECTS_DIR,
         ));
 
-        return Command::SUCCESS;
+        return ExitCode::OK;
     }
 }

@@ -48,8 +48,10 @@ final readonly class WorkingCopyStatus
             return false;
         }
 
-        if (preg_match('/^\d+\.\d+\.x$/', $this->currentBranch) === 1
-            || preg_match('/^\d+\.x$/', $this->currentBranch) === 1) {
+        if (
+            preg_match('/^\d+\.\d+\.x$/', $this->currentBranch) === 1
+            || preg_match('/^\d+\.x$/', $this->currentBranch) === 1
+        ) {
             return false;
         }
 
@@ -104,7 +106,7 @@ final readonly class WorkingCopyStatus
     /**
      * Inspects the git state of a module working copy directory.
      */
-    public static function inspect(string $moduleDir, ProcessRunner $runner): self
+    public static function inspect(string $moduleDir, CommandRunner $runner): self
     {
         $hasStagedChanges = false;
         $hasUnstagedChanges = false;

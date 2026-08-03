@@ -20,7 +20,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          coverage: none
+          coverage: pcov
 
       - name: Validate composer.json
         run: composer validate --strict
@@ -28,8 +28,14 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --no-progress
 
-      - name: Run PHPUnit
-        run: vendor/bin/phpunit
+      - name: Lint (PSR-12)
+        run: composer lint
+
+      - name: Static analysis (PHPStan max)
+        run: composer analyse
+
+      - name: Run PHPUnit (with coverage)
+        run: vendor/bin/phpunit --coverage-text
 
       - name: Smoke-test the binary
         run: ./bin/upkeep list

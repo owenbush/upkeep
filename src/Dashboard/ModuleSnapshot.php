@@ -18,9 +18,10 @@ use Upkeep\Gitlab\Project;
 final readonly class ModuleSnapshot
 {
     /**
-     * @param array              $projectData  raw GitLab project API payload
-     * @param list<array>        $mrData       raw GitLab MR detail API payloads
-     * @param array<int, ?array> $issueData    raw drupal.org issue API payloads keyed by nid (null = fetch failed)
+     * @param array<array-key, mixed>                  $projectData raw GitLab project API payload
+     * @param list<array<array-key, mixed>>            $mrData      raw GitLab MR detail API payloads
+     * @param array<int, array<array-key, mixed>|null> $issueData   raw drupal.org issue API payloads keyed by nid
+     *                                                              (a null entry records a lookup that failed)
      */
     public function __construct(
         public \DateTimeImmutable $fetchedAt,
@@ -66,22 +67,74 @@ final readonly class ModuleSnapshot
             return null;
         }
 
-        if (!\is_array($data) || !isset($data['fetched_at'], $data['project'], $data['merge_requests'])) {
+        if (!\is_array($data)) {
+            return null;
+        }
+
+        // A cache file is untrusted input like any other: it is on disk, it
+        // outlives the format that wrote it, and a half-shaped one must read
+        // as "no cache" (the caller then refetches) rather than reach the
+        // models as mixed.
+        $fetchedAtRaw = $data['fetched_at'] ?? null;
+        $projectData = $data['project'] ?? null;
+        $mrData = $data['merge_requests'] ?? null;
+        if (!\is_string($fetchedAtRaw) || !\is_array($projectData) || !\is_array($mrData)) {
             return null;
         }
 
         try {
-            $fetchedAt = new \DateTimeImmutable((string) $data['fetched_at']);
+            $fetchedAt = new \DateTimeImmutable($fetchedAtRaw);
         } catch (\Exception) {
             return null;
         }
 
         return new self(
             $fetchedAt,
-            $data['project'],
-            $data['merge_requests'],
-            $data['issues'] ?? [],
+            $projectData,
+            self::payloadList($mrData),
+            self::payloadsByNid($data['issues'] ?? null),
         );
+    }
+
+    /**
+     * @param array<array-key, mixed> $raw
+     *
+     * @return list<array<array-key, mixed>>
+     */
+    private static function payloadList(array $raw): array
+    {
+        $payloads = [];
+        foreach ($raw as $entry) {
+            if (\is_array($entry)) {
+                $payloads[] = $entry;
+            }
+        }
+
+        return $payloads;
+    }
+
+    /**
+     * Issue payloads keyed by node id. A null entry is meaningful — it records
+     * that the issue was looked up and the lookup failed — so it is kept,
+     * while an unusable key or a non-object payload is dropped.
+     *
+     * @return array<int, array<array-key, mixed>|null>
+     */
+    private static function payloadsByNid(mixed $raw): array
+    {
+        if (!\is_array($raw)) {
+            return [];
+        }
+
+        $payloads = [];
+        foreach ($raw as $nid => $entry) {
+            if (!\is_int($nid) || ($entry !== null && !\is_array($entry))) {
+                continue;
+            }
+            $payloads[$nid] = $entry;
+        }
+
+        return $payloads;
     }
 
     public function ageLabel(\DateTimeImmutable $now): string

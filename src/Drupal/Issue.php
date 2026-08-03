@@ -23,32 +23,38 @@ final readonly class Issue
     ) {
     }
 
+    /**
+     * @param array<array-key, mixed> $data a decoded drupal.org issue payload
+     */
     public static function fromApi(array $data): ?self
     {
-        $nid = $data['nid'] ?? null;
+        $payload = new ApiPayload($data);
+
+        // An issue without a usable node id, or with a status upkeep does not
+        // understand, is not an issue it can reason about — no partial model
+        // is built for it.
+        $nid = $payload->intOrNull('nid');
         if ($nid === null) {
             return null;
         }
 
-        $statusId = $data['field_issue_status'] ?? null;
-        $status = $statusId !== null ? IssueStatus::tryFrom((int) $statusId) : null;
+        $statusId = $payload->intOrNull('field_issue_status');
+        $status = $statusId !== null ? IssueStatus::tryFrom($statusId) : null;
         if ($status === null) {
             return null;
         }
 
-        $priority = isset($data['field_issue_priority']) ? (int) $data['field_issue_priority'] : null;
-
         return new self(
-            nid: (int) $nid,
-            title: (string) ($data['title'] ?? ''),
+            nid: $nid,
+            title: $payload->string('title'),
             status: $status,
-            url: (string) ($data['url'] ?? sprintf('https://www.drupal.org/node/%d', $nid)),
-            project: isset($data['field_project']['machine_name']) ? (string) $data['field_project']['machine_name'] : null,
-            priority: $priority,
-            version: isset($data['field_issue_version']) ? (string) $data['field_issue_version'] : null,
-            component: isset($data['field_issue_component']) ? (string) $data['field_issue_component'] : null,
-            category: self::categoryLabel(isset($data['field_issue_category']) ? (int) $data['field_issue_category'] : null),
-            files: self::parseFiles($data),
+            url: $payload->stringOrNull('url') ?? sprintf('https://www.drupal.org/node/%d', $nid),
+            project: $payload->child('field_project')?->stringOrNull('machine_name'),
+            priority: $payload->intOrNull('field_issue_priority'),
+            version: $payload->stringOrNull('field_issue_version'),
+            component: $payload->stringOrNull('field_issue_component'),
+            category: self::categoryLabel($payload->intOrNull('field_issue_category')),
+            files: self::parseFiles($payload),
         );
     }
 
@@ -133,18 +139,21 @@ final readonly class Issue
         };
     }
 
-    /** @return list<IssueFile> */
-    private static function parseFiles(array $data): array
+    /**
+     * The API returns attachments either as a plain list or wrapped in the
+     * Drupal 7 field-language envelope (`{"und": [...]}`) depending on the
+     * endpoint; both are read.
+     *
+     * @return list<IssueFile>
+     */
+    private static function parseFiles(ApiPayload $payload): array
     {
-        $raw = $data['field_issue_files'] ?? [];
-
-        if (isset($raw['und']) && \is_array($raw['und'])) {
-            $raw = $raw['und'];
-        }
-
-        if (!\is_array($raw)) {
+        $attachments = $payload->child('field_issue_files');
+        if ($attachments === null) {
             return [];
         }
+
+        $raw = $attachments->childArray('und') ?? $payload->childArray('field_issue_files') ?? [];
 
         $files = [];
         foreach ($raw as $entry) {

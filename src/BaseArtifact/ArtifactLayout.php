@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Upkeep\BaseArtifact;
 
+use Upkeep\Filesystem\FilesystemException;
+
 /**
  * Resolves the canonical on-disk layout of per-core-version base artifacts:
  *
@@ -58,7 +60,13 @@ final readonly class ArtifactLayout
     /**
      * Core-major version directories present on disk, sorted numerically.
      *
+     * An unreadable directory is NOT reported as an empty one: "no base
+     * artifacts" and "cannot tell what base artifacts there are" lead to
+     * different, and differently dangerous, decisions downstream.
+     *
      * @return list<string>
+     *
+     * @throws FilesystemException when the directory exists but cannot be listed
      */
     public function versionsOnDisk(): array
     {
@@ -66,8 +74,16 @@ final readonly class ArtifactLayout
             return [];
         }
 
+        $entries = is_readable($this->baseArtifactsDir) ? scandir($this->baseArtifactsDir) : false;
+        if ($entries === false) {
+            throw new FilesystemException(sprintf(
+                'Cannot list the base artifacts in "%s" — the directory is not readable.',
+                $this->baseArtifactsDir,
+            ));
+        }
+
         $versions = [];
-        foreach (scandir($this->baseArtifactsDir) ?: [] as $entry) {
+        foreach ($entries as $entry) {
             if (preg_match(self::VERSION_PATTERN, $entry) === 1 && is_dir($this->baseArtifactsDir . '/' . $entry)) {
                 $versions[] = $entry;
             }

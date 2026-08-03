@@ -5,20 +5,17 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
-use Symfony\Component\Process\Process;
-use Upkeep\Cockpit\Cockpit;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Gitlab\GitlabClientFactory;
+use Upkeep\Workflow\ExitCode;
+use Upkeep\Workflow\WorkflowException;
 
 /**
  * Show the drupal.org issue linked to a merge request and open it in the
@@ -29,7 +26,7 @@ use Upkeep\Gitlab\TokenResolver;
     name: 'issue',
     description: 'Show and open the drupal.org issue linked to a merge request.',
 )]
-final class IssueCommand extends Command
+final class IssueCommand extends UpkeepCommand
 {
     public function __construct(
         private readonly ?GitlabClient $gitlabClient = null,
@@ -40,58 +37,46 @@ final class IssueCommand extends Command
 
     protected function configure(): void
     {
-        $this
-            ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
-            ->addArgument('mr', InputArgument::REQUIRED, 'Merge request IID')
-            ->addOption('no-open', null, InputOption::VALUE_NONE, 'Show issue details without opening the browser')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR));
+        $this->addModuleArgument()
+            ->addMrArgument()
+            ->addNoOpenOption()
+            ->addCockpitOption();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
+        $modules = $this->modules($this->cockpit($input));
+        $module = self::requireModule($modules, self::stringArgument($input, 'module'));
+        $iid = self::mrIid($input);
 
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        $modules = $cockpit->loadRegistry()->modules();
-
-        $name = (string) $input->getArgument('module');
-        if (!isset($modules[$name])) {
-            $io->error(sprintf('Module "%s" is not registered.', $name));
-
-            return Command::FAILURE;
-        }
-
-        $gitlab = $this->gitlabClient ?? $this->buildGitlabClient($io);
+        $gitlab = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);
         if ($gitlab === null) {
-            return Command::FAILURE;
+            return ExitCode::INFRASTRUCTURE;
         }
 
-        $module = $modules[$name];
         $project = $gitlab->project($module->project);
         if ($project instanceof ApiFailure) {
-            $io->error('Could not resolve project: ' . $project->message);
-
-            return Command::FAILURE;
+            throw new WorkflowException(
+                sprintf('Could not resolve project [%s]: %s', $project->shortCode(), $project->message),
+            );
         }
 
-        $iid = (int) $input->getArgument('mr');
         $mr = $gitlab->mergeRequest($project, $iid);
         if ($mr instanceof ApiFailure) {
-            $io->error(sprintf('Could not fetch MR !%d: %s', $iid, $mr->message));
-
-            return Command::FAILURE;
+            throw new WorkflowException(
+                sprintf('Could not fetch MR !%d [%s]: %s', $iid, $mr->shortCode(), $mr->message),
+            );
         }
 
         $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
         if ($nid === null) {
-            $io->error(sprintf(
-                'No issue number found in MR !%d. Checked title ("%s") and branch ("%s") — neither contains an issue reference.',
+            throw new WorkflowException(sprintf(
+                'No issue number found in MR !%d. Checked title ("%s") and branch ("%s") — neither contains an '
+                . 'issue reference.',
                 $iid,
                 $mr->title,
                 $mr->sourceBranch,
             ));
-
-            return Command::FAILURE;
         }
 
         $issueUrl = IssueReference::issueUrl($nid);
@@ -127,29 +112,13 @@ final class IssueCommand extends Command
         $io->newLine();
 
         if (!$input->getOption('no-open')) {
-            $opener = \PHP_OS_FAMILY === 'Darwin' ? 'open' : 'xdg-open';
-            $process = new Process([$opener, $issueUrl]);
-            $process->run();
-
-            if ($process->isSuccessful()) {
+            if (BrowserOpener::open($issueUrl)) {
                 $io->success('Opened in browser. Change the status on the drupal.org issue page.');
             } else {
                 $io->writeln(sprintf('Could not open browser automatically. Visit: %s', $issueUrl));
             }
         }
 
-        return Command::SUCCESS;
-    }
-
-    private function buildGitlabClient(SymfonyStyle $io): ?GitlabClient
-    {
-        $token = (new TokenResolver())->resolve();
-        if ($token === null) {
-            $io->error(sprintf('No GitLab token found. Configure one of: env var %s, config file %s.', TokenResolver::DEFAULT_ENV_VAR, TokenResolver::defaultConfigFile()));
-
-            return null;
-        }
-
-        return new GitlabClient(HttpClient::create(), $token);
+        return ExitCode::OK;
     }
 }

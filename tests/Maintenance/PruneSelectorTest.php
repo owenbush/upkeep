@@ -22,6 +22,24 @@ final class PruneSelectorTest extends TestCase
         $this->now = new \DateTimeImmutable('2026-07-30T12:00:00Z');
     }
 
+    /**
+     * Builds a fixture timestamp $age before the frozen "now".
+     *
+     * DateTimeImmutable::modify() returns false for an unparseable modifier on
+     * PHP 8.2 and throws from 8.3 onward. These fixtures only ever pass valid
+     * intervals, but analysis covers the whole supported range, so the branch
+     * that cannot happen is stated rather than assumed away.
+     */
+    private function ago(string $age): \DateTimeImmutable
+    {
+        $moved = $this->now->modify('-' . $age);
+        if ($moved === false) {
+            self::fail(sprintf('Test fixture "%s" is not a valid date modifier.', $age));
+        }
+
+        return $moved;
+    }
+
     private function selector(): PruneSelector
     {
         return new PruneSelector([
@@ -30,8 +48,12 @@ final class PruneSelectorTest extends TestCase
         ]);
     }
 
-    private function tree(string $name, ?string $age = '60 days', bool $keep = false, string $root = self::PROJECTS): InventoryItem
-    {
+    private function tree(
+        string $name,
+        ?string $age = '60 days',
+        bool $keep = false,
+        string $root = self::PROJECTS,
+    ): InventoryItem {
         return new InventoryItem(
             path: $root . '/' . $name,
             category: Category::ProjectTree,
@@ -39,7 +61,7 @@ final class PruneSelectorTest extends TestCase
             module: 'conditions_helper',
             coreMajor: '11',
             projectName: $name,
-            lastUsedAt: $age === null ? null : $this->now->modify('-' . $age),
+            lastUsedAt: $age === null ? null : $this->ago($age),
             keepMarked: $keep,
         );
     }
@@ -53,7 +75,7 @@ final class PruneSelectorTest extends TestCase
             module: 'conditions_helper',
             coreMajor: '11',
             projectName: $project,
-            lastUsedAt: $this->now->modify('-' . $age),
+            lastUsedAt: $this->ago($age),
             keepMarked: $keep,
         );
     }
@@ -67,7 +89,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::BaseArtifact,
             sizeBytes: 999999,
             coreMajor: '11',
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         foreach (PruneScope::cases() as $scope) {
@@ -83,13 +105,13 @@ final class PruneSelectorTest extends TestCase
             category: Category::FixtureDump,
             sizeBytes: 100,
             module: 'conditions_helper',
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
         $libraryDump = new InventoryItem(
             path: self::COCKPIT . '/fixtures/shared.sql.gz',
             category: Category::FixtureDump,
             sizeBytes: 100,
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         foreach (PruneScope::cases() as $scope) {
@@ -117,10 +139,13 @@ final class PruneSelectorTest extends TestCase
             path: self::COCKPIT . '/fixtures/evil.sql',
             category: Category::Snapshot,
             sizeBytes: 5,
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
-        self::assertSame([], $this->selector()->select([$mislabeledTree, $mislabeledSnapshot], PruneScope::All, null, $this->now));
+        self::assertSame(
+            [],
+            $this->selector()->select([$mislabeledTree, $mislabeledSnapshot], PruneScope::All, null, $this->now),
+        );
     }
 
     public function testPathContainingTestsFixturesSegmentIsExcludedRegardlessOfCategory(): void
@@ -129,7 +154,7 @@ final class PruneSelectorTest extends TestCase
             path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
             category: Category::Snapshot,
             sizeBytes: 5,
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         self::assertSame([], $this->selector()->select([$mislabeled], PruneScope::All, null, $this->now));
@@ -155,14 +180,23 @@ final class PruneSelectorTest extends TestCase
             category: Category::ProjectVolume,
             sizeBytes: 200,
             projectName: 'upkeep-conditions-helper-d11',
-            lastUsedAt: $this->now->modify('-60 days'),
+            lastUsedAt: $this->ago('60 days'),
         );
         $keptSnapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '10 days', keep: true);
         $otherTree = $this->tree('upkeep-other-d11');
 
         foreach ([PruneScope::Trees, PruneScope::Projects, PruneScope::All] as $scope) {
-            $candidates = $this->selector()->select([$tree, $volume, $keptSnapshot, $otherTree], $scope, null, $this->now);
-            self::assertSame([$otherTree], $candidates, 'kept-snapshot escalation failed for scope ' . $scope->value);
+            $candidates = $this->selector()->select(
+                [$tree, $volume, $keptSnapshot, $otherTree],
+                $scope,
+                null,
+                $this->now,
+            );
+            self::assertSame(
+                [$otherTree],
+                $candidates,
+                'kept-snapshot escalation failed for scope ' . $scope->value,
+            );
         }
     }
 
@@ -194,29 +228,33 @@ final class PruneSelectorTest extends TestCase
                 category: Category::BaseArtifact,
                 sizeBytes: 1,
                 coreMajor: '11',
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'committed module dump' => new InventoryItem(
                 path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
                 category: Category::FixtureDump,
                 sizeBytes: 1,
                 module: 'conditions_helper',
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'library fixture dump' => new InventoryItem(
                 path: self::COCKPIT . '/fixtures/shared.sql.gz',
                 category: Category::FixtureDump,
                 sizeBytes: 1,
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'keep-marked tree' => $this->tree('upkeep-kept-tree-d11', age: '400 days', keep: true),
             'keep-marked snapshot' => $this->snapshot('upkeep-kept-snap-d11', 'kept', '400 days', keep: true),
-            'mislabeled tree under protected root' => $this->tree('11/tree', age: '400 days', root: self::COCKPIT . '/base-artifacts'),
+            'mislabeled tree under protected root' => $this->tree(
+                '11/tree',
+                age: '400 days',
+                root: self::COCKPIT . '/base-artifacts',
+            ),
             'mislabeled snapshot under protected root' => new InventoryItem(
                 path: self::COCKPIT . '/fixtures/evil.sql',
                 category: Category::Snapshot,
                 sizeBytes: 1,
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'tree escalated by its kept snapshot' => $this->tree('upkeep-kept-snap-d11', age: '400 days'),
             'volume escalated by its kept snapshot' => new InventoryItem(
@@ -224,7 +262,7 @@ final class PruneSelectorTest extends TestCase
                 category: Category::ProjectVolume,
                 sizeBytes: 1,
                 projectName: 'upkeep-kept-snap-d11',
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
         ];
         $decoyTree = $this->tree('upkeep-decoy-d11', age: '400 days');
@@ -240,7 +278,13 @@ final class PruneSelectorTest extends TestCase
                         $olderThan === null ? 'null' : (string) $olderThan,
                         $keepLatest,
                     );
-                    $candidates = $this->selector()->select($items, $scope, $olderThan, $this->now, keepLatest: $keepLatest);
+                    $candidates = $this->selector()->select(
+                        $items,
+                        $scope,
+                        $olderThan,
+                        $this->now,
+                        keepLatest: $keepLatest,
+                    );
                     foreach ($candidates as $candidate) {
                         self::assertContains(
                             $candidate,
@@ -271,7 +315,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::ProjectVolume,
             sizeBytes: 200,
             projectName: 'upkeep-conditions-helper-d11',
-            lastUsedAt: $this->now->modify('-60 days'),
+            lastUsedAt: $this->ago('60 days'),
         );
 
         $candidates = $this->selector()->select([$tree, $snapshot, $volume], PruneScope::Trees, null, $this->now);
@@ -287,7 +331,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::ProjectVolume,
             sizeBytes: 200,
             projectName: 'upkeep-conditions-helper-d11',
-            lastUsedAt: $this->now->modify('-60 days'),
+            lastUsedAt: $this->ago('60 days'),
         );
         $snapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '60 days');
 
@@ -361,7 +405,13 @@ final class PruneSelectorTest extends TestCase
         $newest = $this->snapshot('upkeep-a-d11', 'newest', '2 days');
         $older = $this->snapshot('upkeep-a-d11', 'older', '3 days');
 
-        $candidates = $this->selector()->select([$kept, $newest, $older], PruneScope::Snapshots, null, $this->now, keepLatest: 1);
+        $candidates = $this->selector()->select(
+            [$kept, $newest, $older],
+            PruneScope::Snapshots,
+            null,
+            $this->now,
+            keepLatest: 1,
+        );
 
         // keep-marked is protected outright; the newest unprotected snapshot
         // fills the keep-latest budget; only the older one is a candidate.
@@ -386,8 +436,112 @@ final class PruneSelectorTest extends TestCase
 
         // keep-latest keeps "new"; age filter then drops nothing older-than-30d? No:
         // both mid and old are older than 30d and outside the keep budget.
-        $candidates = $this->selector()->select([$new, $mid, $old], PruneScope::Snapshots, 30 * 86400, $this->now, keepLatest: 1);
+        $candidates = $this->selector()->select(
+            [$new, $mid, $old],
+            PruneScope::Snapshots,
+            30 * 86400,
+            $this->now,
+            keepLatest: 1,
+        );
 
         self::assertEqualsCanonicalizing([$mid, $old], $candidates);
+    }
+
+    /**
+     * Protection used to be a lexical string prefix on both sides. An item
+     * reaching the executor under an equivalent-but-differently-spelled path
+     * — a `..` sequence, or a symlinked component — would then not match the
+     * protected prefix and would be deleted.
+     */
+    public function testProtectionCompareUsesPathIdentityNotStringSpelling(): void
+    {
+        $world = (string) realpath(sys_get_temp_dir()) . '/upkeep-selector-paths-' . bin2hex(random_bytes(4));
+        mkdir($world . '/cockpit/base-artifacts/11', 0o700, true);
+        mkdir($world . '/cockpit/other', 0o700, true);
+        symlink($world . '/cockpit/base-artifacts', $world . '/link');
+
+        try {
+            $selector = new PruneSelector([$world . '/cockpit/base-artifacts']);
+
+            $viaTraversal = new InventoryItem(
+                path: $world . '/cockpit/other/../base-artifacts/11',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            );
+            $viaSymlink = new InventoryItem(
+                path: $world . '/link/11',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            );
+
+            self::assertNotNull($selector->protectionReason($viaTraversal));
+            self::assertNotNull($selector->protectionReason($viaSymlink));
+        } finally {
+            exec('rm -rf ' . escapeshellarg($world));
+        }
+    }
+
+    public function testCanonicalCategoriesNameWhyTheyCanNeverBeDeleted(): void
+    {
+        // protectionReason() is public because the executor re-asserts it
+        // immediately before deleting. Its reason for the two canonical
+        // categories is what the operator is shown when a candidate list that
+        // bypassed selection is refused, so it must name the category and not
+        // just be non-null.
+        $selector = $this->selector();
+
+        self::assertSame('canonical base artifact', $selector->protectionReason(new InventoryItem(
+            path: self::PROJECTS . '/somewhere/11',
+            category: Category::BaseArtifact,
+            sizeBytes: 1,
+        )));
+        self::assertSame('committed fixture dump', $selector->protectionReason(new InventoryItem(
+            path: self::PROJECTS . '/somewhere/dump.sql.gz',
+            category: Category::FixtureDump,
+            sizeBytes: 1,
+        )));
+    }
+
+    public function testAProtectedRootThatCannotBeCanonicalisedStillProtectsLexically(): void
+    {
+        // A root spelled with a traversal segment below a directory that does
+        // not exist cannot be resolved to a real location at all. Failing to
+        // canonicalise must not silently drop the protection: the lexical
+        // prefix test can only ever protect more, never less.
+        $unresolvable = '/no-such-root/../base-artifacts';
+        $selector = new PruneSelector([$unresolvable]);
+
+        self::assertSame(
+            'under protected root ' . $unresolvable,
+            $selector->protectionReason(new InventoryItem(
+                path: $unresolvable . '/11',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            )),
+        );
+        self::assertNull($selector->protectionReason(new InventoryItem(
+            path: '/no-such-root/../base-artifacts-old/11',
+            category: Category::ProjectTree,
+            sizeBytes: 1,
+        )));
+    }
+
+    public function testASiblingSharingAStringPrefixWithAProtectedRootIsNotProtected(): void
+    {
+        $world = (string) realpath(sys_get_temp_dir()) . '/upkeep-selector-sib-' . bin2hex(random_bytes(4));
+        mkdir($world . '/base-artifacts', 0o700, true);
+        mkdir($world . '/base-artifacts-old', 0o700, true);
+
+        try {
+            $selector = new PruneSelector([$world . '/base-artifacts']);
+
+            self::assertNull($selector->protectionReason(new InventoryItem(
+                path: $world . '/base-artifacts-old',
+                category: Category::ProjectTree,
+                sizeBytes: 1,
+            )));
+        } finally {
+            exec('rm -rf ' . escapeshellarg($world));
+        }
     }
 }

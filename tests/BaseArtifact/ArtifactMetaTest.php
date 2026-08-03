@@ -43,7 +43,10 @@ final class ArtifactMetaTest extends TestCase
         $this->expectException(MetaException::class);
         $this->expectExceptionMessage('php_version');
 
-        ArtifactMeta::fromYaml("core_version: 11.4.4\ncore_major: '11'\ndb_engine: mariadb\nbuilt_at: '2026-07-29T14:02:11+00:00'\n");
+        ArtifactMeta::fromYaml(
+            "core_version: 11.4.4\ncore_major: '11'\n"
+            . "db_engine: mariadb\nbuilt_at: '2026-07-29T14:02:11+00:00'\n",
+        );
     }
 
     public function testRejectsMalformedYaml(): void
@@ -65,6 +68,9 @@ final class ArtifactMetaTest extends TestCase
         $this->expectException(MetaException::class);
         $this->expectExceptionMessage('built_at');
 
-        ArtifactMeta::fromYaml("core_version: 11.4.4\ncore_major: '11'\nphp_version: 8.3.30\ndb_engine: mariadb\nbuilt_at: 'not a date'\n");
+        ArtifactMeta::fromYaml(
+            "core_version: 11.4.4\ncore_major: '11'\nphp_version: 8.3.30\n"
+            . "db_engine: mariadb\nbuilt_at: 'not a date'\n",
+        );
     }
 }

@@ -15,28 +15,46 @@ final class StatusCommandTest extends TestCase
     private string $cockpit;
     private string $projects;
 
+    private string|false $originalHome;
+
     protected function setUp(): void
     {
-        $this->world = sys_get_temp_dir() . '/upkeep-status-cmd-test-' . bin2hex(random_bytes(4));
+        $this->world = (string) realpath(sys_get_temp_dir()) . '/upkeep-status-cmd-test-' . bin2hex(random_bytes(4));
+        // The projects root must resolve under $HOME (Docker providers only
+        // mount the home directory). Point $HOME at the temp world so the
+        // fixture stays in sys_get_temp_dir() and the real home is untouched.
+        $this->originalHome = getenv('HOME');
+        putenv('HOME=' . $this->world);
         $this->cockpit = $this->world . '/cockpit';
         $this->projects = $this->world . '/projects';
 
         mkdir($this->cockpit . '/base-artifacts/11/tree', 0755, true);
         file_put_contents($this->cockpit . '/base-artifacts/11/tree/index.php', str_repeat('x', 8192));
         file_put_contents($this->cockpit . '/base-artifacts/11/canonical', '');
-        file_put_contents($this->cockpit . '/registry.yml', "modules:\n  conditions_helper:\n    project: project/conditions_helper\n    core_versions: [\"11\"]\n");
+        file_put_contents(
+            $this->cockpit . '/registry.yml',
+            "modules:\n  conditions_helper:\n    project: project/conditions_helper\n    core_versions: [\"11\"]\n",
+        );
 
         $p = $this->projects . '/upkeep-conditions-helper-d11';
         mkdir($p . '/.ddev/upkeep/materialized', 0755, true);
-        file_put_contents($p . '/.upkeep-env.yml', "module: conditions_helper\ncore_major: '11'\nseed_core_version: 11.2.5\naddon_version: v1.0.0\ncreated_at: '2026-06-01T00:00:00+00:00'\n");
+        file_put_contents(
+            $p . '/.upkeep-env.yml',
+            "module: conditions_helper\ncore_major: '11'\nseed_core_version: 11.2.5\n"
+            . "addon_version: v1.0.0\ncreated_at: '2026-06-01T00:00:00+00:00'\n",
+        );
         file_put_contents($p . '/.ddev/upkeep/materialized/base.sql', str_repeat('s', 4096));
     }
 
     protected function tearDown(): void
     {
+        putenv($this->originalHome === false ? 'HOME' : 'HOME=' . $this->originalHome);
         exec('rm -rf ' . escapeshellarg($this->world));
     }
 
+    /**
+     * @param array<string, bool|string> $args
+     */
     private function runStatus(array $args): CommandTester
     {
         $tester = new CommandTester(new StatusCommand(new VolumeProbe(static fn (array $c): ?string => null)));
@@ -70,5 +88,44 @@ final class StatusCommandTest extends TestCase
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('Total tracked disk usage', $tester->getDisplay());
         self::assertStringNotContainsString('Category', $tester->getDisplay());
+    }
+
+    /**
+     * A kept environment is flagged in the PROTECTION column, because that
+     * column is what tells the maintainer why `upkeep prune` will leave a
+     * particular tree alone. Base artifacts carry the same protection without
+     * a marker: they are canonical by construction.
+     */
+    public function testAKeptEnvironmentIsShownAsProtectedAlongsideTheCanonicalArtifacts(): void
+    {
+        touch($this->projects . '/upkeep-conditions-helper-d11/.keep');
+
+        $tester = $this->runStatus(['--disk' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('keep', $display);
+        self::assertStringContainsString('canonical', $display);
+    }
+
+    /**
+     * Part of the inventory that could not be read is reported, not silently
+     * folded into the totals as if it were empty. A symlinked snapshot store
+     * is skipped deliberately — prune deletes what the inventory reports, and
+     * nothing outside the environment tree is that environment's snapshot —
+     * so the operator has to be told the number is short.
+     */
+    public function testAnUnreadablePartOfTheInventoryIsWarnedAboutRatherThanCountedAsEmpty(): void
+    {
+        $project = $this->projects . '/upkeep-conditions-helper-d11';
+        exec('rm -rf ' . escapeshellarg($project . '/.ddev/upkeep/materialized'));
+        symlink($this->world, $project . '/.ddev/upkeep/materialized');
+
+        $tester = $this->runStatus(['--disk' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('is a symlink — skipped', $display);
+        self::assertStringNotContainsString('materialized snapshot', $display);
     }
 }

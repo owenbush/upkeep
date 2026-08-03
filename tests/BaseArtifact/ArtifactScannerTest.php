@@ -7,6 +7,7 @@ namespace Upkeep\Tests\BaseArtifact;
 use PHPUnit\Framework\TestCase;
 use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\ArtifactScanner;
+use Upkeep\Filesystem\FilesystemException;
 
 final class ArtifactScannerTest extends TestCase
 {
@@ -78,6 +79,45 @@ final class ArtifactScannerTest extends TestCase
         );
     }
 
+    public function testAVersionDirectoryWithNoTreeAtAllReportsTheTreeAsMissing(): void
+    {
+        // The clearest way a build is interrupted: the version directory exists
+        // (so prune protects it) but the resolve never produced a tree. The
+        // status report has to name that, and size it as nothing.
+        mkdir($this->layout->versionDir('11'), 0o755, true);
+        file_put_contents($this->layout->dumpPath('11'), str_repeat('z', 2048));
+        file_put_contents($this->layout->metaPath('11'), self::META_11);
+        file_put_contents($this->layout->canonicalMarkerPath('11'), "canonical\n");
+
+        $record = (new ArtifactScanner($this->layout))->scan()[0];
+
+        self::assertFalse($record->complete);
+        self::assertSame([ArtifactLayout::TREE_DIR . '/'], $record->missing);
+        self::assertSame(0, $record->treeSizeBytes);
+        self::assertSame(2048, $record->dumpSizeBytes);
+    }
+
+    public function testTheSizeWalkStaysInsideTheTreeAndCountsOnlyRealFiles(): void
+    {
+        // Symlinks are deliberately not followed, so a symlinked directory is
+        // reported as a leaf that is not a file. Counting through it would
+        // attribute someone else's bytes to the artifact — and empty
+        // directories must contribute nothing either, or two identical trees
+        // measure differently.
+        $this->makeCompleteVersion('11', self::META_11);
+        $outside = $this->dir . '/outside-the-tree';
+        mkdir($outside, 0o755, true);
+        file_put_contents($outside . '/huge.bin', str_repeat('q', 50_000));
+
+        symlink($outside, $this->layout->treePath('11') . '/linked');
+        symlink($outside . '/nothing-here', $this->layout->treePath('11') . '/dangling');
+        mkdir($this->layout->treePath('11') . '/web/sites/default/files', 0o755, true);
+
+        $record = (new ArtifactScanner($this->layout))->scan()[0];
+
+        self::assertSame(102, $record->treeSizeBytes);
+    }
+
     public function testMalformedMetaMarksSetIncomplete(): void
     {
         $this->makeCompleteVersion('11', '{{{ not yaml');
@@ -102,5 +142,40 @@ final class ArtifactScannerTest extends TestCase
     public function testEmptyBaseDirYieldsNoRecords(): void
     {
         self::assertSame([], (new ArtifactScanner($this->layout))->scan());
+    }
+
+    /**
+     * An unreadable subtree must cost an accurate size, not the whole
+     * `base-artifacts:status` command.
+     */
+    public function testAnUnreadableSubdirectoryUnderCountsInsteadOfThrowing(): void
+    {
+        $this->makeCompleteVersion('11', self::META_11);
+        $locked = $this->layout->treePath('11') . '/vendor';
+        chmod($locked, 0o000);
+
+        try {
+            $records = (new ArtifactScanner($this->layout))->scan();
+
+            self::assertCount(1, $records);
+            self::assertTrue($records[0]->complete);
+            self::assertGreaterThan(0, $records[0]->treeSizeBytes);
+        } finally {
+            chmod($locked, 0o755);
+        }
+    }
+
+    public function testAnUnreadableBaseArtifactsDirectoryIsReportedRatherThanReadAsEmpty(): void
+    {
+        $this->makeCompleteVersion('11', self::META_11);
+        chmod($this->dir, 0o000);
+
+        try {
+            $this->expectException(FilesystemException::class);
+            $this->expectExceptionMessageMatches('#' . preg_quote($this->dir, '#') . '#');
+            (new ArtifactScanner($this->layout))->scan();
+        } finally {
+            chmod($this->dir, 0o755);
+        }
     }
 }

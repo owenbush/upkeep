@@ -28,6 +28,7 @@ final readonly class SnapshotLayout
             return null;
         }
 
-        return \dirname($materializedDir) . '/' . basename(self::META_DIR) . '/' . basename($artifactPath, '.sql') . '.meta';
+        return \dirname($materializedDir) . '/' . basename(self::META_DIR) . '/'
+            . basename($artifactPath, '.sql') . '.meta';
     }
 }

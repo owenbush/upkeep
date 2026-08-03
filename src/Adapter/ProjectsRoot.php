@@ -11,16 +11,34 @@ namespace Upkeep\Adapter;
  * environment variable, a projects/ directory inside the cockpit (if it
  * exists), then `~/.upkeep/projects`.
  *
- * The default deliberately lives under $HOME and there is no temp-dir
- * fallback: environments are bind-mounted into the Docker VM, and macOS
- * providers (colima, Docker Desktop) only share the home directory by
- * default — a projects root under /tmp can never start.
+ * Every one of those sources is then canonicalised and required to stay under
+ * $HOME (see MountablePath): environments are bind-mounted into the Docker VM,
+ * and macOS providers only share the home directory by default, so a projects
+ * root outside it can never start. That is a functional requirement, not only
+ * a hardening measure, and it applies to the explicit flag and the environment
+ * variable exactly as it applies to the default.
  */
 final readonly class ProjectsRoot
 {
     public const ENV_VAR = 'UPKEEP_PROJECTS_ROOT';
 
+    private const WHAT = 'projects root';
+
+    /**
+     * @return string the canonical projects root
+     *
+     * @throws AdapterException when the root cannot be resolved or lies outside $HOME
+     */
     public static function resolve(?string $explicit, ?string $cockpitRoot = null): string
+    {
+        return MountablePath::requireUnderHome(
+            self::candidate($explicit, $cockpitRoot),
+            self::WHAT,
+            self::howToSet(),
+        );
+    }
+
+    private static function candidate(?string $explicit, ?string $cockpitRoot): string
     {
         if ($explicit !== null && $explicit !== '') {
             return $explicit;
@@ -31,21 +49,18 @@ final readonly class ProjectsRoot
             return $env;
         }
 
-        if ($cockpitRoot !== null) {
-            $cockpitProjects = $cockpitRoot . '/projects';
+        if ($cockpitRoot !== null && $cockpitRoot !== '') {
+            $cockpitProjects = rtrim($cockpitRoot, '/') . '/projects';
             if (is_dir($cockpitProjects)) {
                 return $cockpitProjects;
             }
         }
 
-        $home = getenv('HOME');
-        if ($home === false || $home === '') {
-            throw new AdapterException(sprintf(
-                'Cannot resolve a projects root: $HOME is not set and neither explicit configuration nor $%s was given. Refusing to fall back to a temp dir — Docker providers only mount the home directory.',
-                self::ENV_VAR,
-            ));
-        }
+        return MountablePath::home(self::WHAT, self::howToSet()) . '/.upkeep/projects';
+    }
 
-        return $home . '/.upkeep/projects';
+    private static function howToSet(): string
+    {
+        return '--projects-root or $' . self::ENV_VAR;
     }
 }

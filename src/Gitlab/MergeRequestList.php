@@ -17,9 +17,13 @@ final readonly class MergeRequestList implements \Countable, \IteratorAggregate
     ) {
     }
 
+    /**
+     * @param list<array<array-key, mixed>> $items merge-request JSON objects,
+     *   already narrowed to a list of objects by GitlabClient
+     */
     public static function fromApi(array $items): self
     {
-        return new self(array_map(MergeRequest::fromApi(...), array_values($items)));
+        return new self(array_map(MergeRequest::fromApi(...), $items));
     }
 
     /**

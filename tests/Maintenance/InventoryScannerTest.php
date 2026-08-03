@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Upkeep\Tests\Maintenance;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Cockpit\Cockpit;
 use Upkeep\Maintenance\Category;
@@ -44,10 +45,16 @@ final class InventoryScannerTest extends TestCase
             'last_used_at: \'2026-06-01T00:00:00+00:00\'',
         ]));
         file_put_contents($p . '/.ddev/upkeep/materialized/alpha.sql', str_repeat('a', 100_000));
-        file_put_contents($p . '/.ddev/upkeep/snapshots/alpha.meta', "engine=mariadb:10.11\nmaterialized_at=2026-06-10T00:00:00Z\n");
+        file_put_contents(
+            $p . '/.ddev/upkeep/snapshots/alpha.meta',
+            "engine=mariadb:10.11\nmaterialized_at=2026-06-10T00:00:00Z\n",
+        );
         file_put_contents($p . '/.ddev/upkeep/materialized/beta.sql', str_repeat('b', 50_000));
         file_put_contents($p . '/.ddev/upkeep/materialized/beta.sql.keep', '');
-        file_put_contents($p . '/.ddev/upkeep/snapshots/beta.meta', "engine=mariadb:10.11\nmaterialized_at=2026-06-20T00:00:00Z\n");
+        file_put_contents(
+            $p . '/.ddev/upkeep/snapshots/beta.meta',
+            "engine=mariadb:10.11\nmaterialized_at=2026-06-20T00:00:00Z\n",
+        );
         file_put_contents($p . '/module/tests/fixtures/base.sql.gz', 'committed dump');
 
         // A partial provision: no completion marker dotfile.
@@ -118,7 +125,9 @@ final class InventoryScannerTest extends TestCase
         $alpha = self::byPathSuffix($items, '/materialized/alpha.sql');
         $beta = self::byPathSuffix($items, '/materialized/beta.sql');
 
-        $duWholeTree = (int) exec('du -sk ' . escapeshellarg($this->projectsRoot . '/upkeep-conditions-helper-d11')) * 1024;
+        $duWholeTree = (int) exec(
+            'du -sk ' . escapeshellarg($this->projectsRoot . '/upkeep-conditions-helper-d11'),
+        ) * 1024;
 
         self::assertGreaterThan(0, $tree->sizeBytes);
         self::assertLessThan($duWholeTree, $tree->sizeBytes, 'tree size must not double-count snapshot bytes');
@@ -179,5 +188,157 @@ final class InventoryScannerTest extends TestCase
         $scanner = new InventoryScanner(new Cockpit($this->world . '/nope'), $this->world . '/also-nope');
 
         self::assertSame([], $scanner->scan());
+    }
+
+    /**
+     * glob() resolves through symlinked path components, so a symlinked
+     * materialized/ directory would enumerate files outside the environment
+     * tree — and prune would then unlink them.
+     */
+    public function testASymlinkedMaterializedDirectoryIsNotEnumerated(): void
+    {
+        $elsewhere = $this->world . '/elsewhere';
+        mkdir($elsewhere, 0o700, true);
+        file_put_contents($elsewhere . '/not-ours.sql', 'someone else\'s data');
+
+        $project = $this->projectsRoot . '/upkeep-symlinked-d11';
+        mkdir($project . '/.ddev/upkeep', 0o700, true);
+        symlink($elsewhere, $project . '/.ddev/upkeep/materialized');
+
+        foreach ($this->scan() as $item) {
+            self::assertStringNotContainsString('not-ours.sql', $item->path);
+        }
+    }
+
+    public function testAnUnreadableDirectoryIsWarnedAboutRatherThanReportedAsEmpty(): void
+    {
+        chmod($this->cockpitRoot . '/fixtures', 0o000);
+
+        try {
+            $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+            $scanner->scan();
+
+            self::assertNotSame([], $scanner->warnings());
+            self::assertStringContainsString('/fixtures', implode("\n", $scanner->warnings()));
+        } finally {
+            chmod($this->cockpitRoot . '/fixtures', 0o755);
+        }
+    }
+
+    public function testAnUnreadableProjectsRootIsWarnedAboutRatherThanReportedAsNoEnvironments(): void
+    {
+        chmod($this->projectsRoot, 0o000);
+
+        try {
+            $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+            $items = $scanner->scan();
+
+            // Under-reporting fails safe for prune, but "there are no
+            // environments" and "I could not look" must not read the same.
+            foreach ($items as $item) {
+                self::assertStringNotContainsString('/projects/', $item->path);
+            }
+            self::assertStringContainsString($this->projectsRoot, implode("\n", $scanner->warnings()));
+        } finally {
+            chmod($this->projectsRoot, 0o755);
+        }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function unusableMetaProvider(): array
+    {
+        return [
+            'malformed YAML' => ["module: [conditions_helper\ncore_major: '11'\n"],
+            'not a mapping' => ["just a string\n"],
+        ];
+    }
+
+    #[DataProvider('unusableMetaProvider')]
+    public function testAnUnusableEnvMetaDotfileDegradesToUnknownAttributionNotAFailedScan(string $meta): void
+    {
+        // A partial or hand-mangled provision is still disk usage the operator
+        // needs to see; only its attribution and age are unknown.
+        $project = $this->projectsRoot . '/upkeep-mangled-d11';
+        mkdir($project, 0o755, true);
+        file_put_contents($project . '/.upkeep-env.yml', $meta);
+
+        $item = self::byPathSuffix($this->scan(), '/upkeep-mangled-d11');
+
+        self::assertSame(Category::ProjectTree, $item->category);
+        self::assertNull($item->module);
+        self::assertNull($item->coreMajor);
+        self::assertNull($item->lastUsedAt);
+    }
+
+    public function testAnUnparseableLastUsedAtReadsAsUnknownAgeRatherThanNow(): void
+    {
+        // Age drives prune --older-than. A timestamp that cannot be parsed must
+        // yield "unknown", which the selector excludes, rather than a date that
+        // would make the environment look prunable.
+        $project = $this->projectsRoot . '/upkeep-badstamp-d11';
+        mkdir($project, 0o755, true);
+        file_put_contents($project . '/.upkeep-env.yml', implode("\n", [
+            'module: badstamp',
+            "core_major: '11'",
+            "last_used_at: 'not a timestamp'",
+        ]));
+
+        $item = self::byPathSuffix($this->scan(), '/upkeep-badstamp-d11');
+
+        self::assertSame('badstamp', $item->module);
+        self::assertNull($item->lastUsedAt);
+    }
+
+    public function testLastUsedAtIsPreferredOverCreatedAtAndCreatedAtRemainsTheFallback(): void
+    {
+        // Task 7 behaviour change: .upkeep-env.yml now carries last_used_at,
+        // stamped at provision and re-stamped on reuse. An environment written
+        // before that (created_at only) must still report an age rather than
+        // reading as unknown and never expiring.
+        $legacy = $this->projectsRoot . '/upkeep-legacy-d11';
+        mkdir($legacy, 0o755, true);
+        file_put_contents($legacy . '/.upkeep-env.yml', implode("\n", [
+            'module: legacy',
+            "core_major: '11'",
+            "created_at: '2026-01-02T03:04:05+00:00'",
+        ]));
+
+        $items = $this->scan();
+        $reused = self::byPathSuffix($items, '/upkeep-conditions-helper-d11');
+
+        self::assertSame(
+            '2026-06-01T00:00:00+00:00',
+            $reused->lastUsedAt?->format(\DateTimeInterface::ATOM),
+            'last_used_at must win over the older created_at.',
+        );
+        self::assertSame(
+            '2026-01-02T03:04:05+00:00',
+            self::byPathSuffix($items, '/upkeep-legacy-d11')->lastUsedAt?->format(\DateTimeInterface::ATOM),
+        );
+    }
+
+    public function testACleanScanReportsNoWarnings(): void
+    {
+        $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+        $scanner->scan();
+
+        self::assertSame([], $scanner->warnings());
+    }
+
+    public function testAnUnreadableBaseArtifactsDirectoryDegradesToAWarningRatherThanFailingThePruneScan(): void
+    {
+        chmod($this->cockpitRoot . '/base-artifacts', 0o000);
+
+        try {
+            $scanner = new InventoryScanner(new Cockpit($this->cockpitRoot), $this->projectsRoot);
+            $items = $scanner->scan();
+
+            self::assertNotSame([], $items, 'The rest of the inventory must still be reported.');
+            self::assertStringContainsString('/base-artifacts', implode("\n", $scanner->warnings()));
+        } finally {
+            chmod($this->cockpitRoot . '/base-artifacts', 0o755);
+        }
     }
 }

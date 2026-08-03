@@ -18,9 +18,19 @@ final class ComposerLock
             throw new MetaException('composer.lock is not valid JSON: ' . $e->getMessage(), previous: $e);
         }
 
-        foreach ($lock['packages'] ?? [] as $package) {
-            if (($package['name'] ?? null) === 'drupal/core' && is_string($package['version'] ?? null)) {
-                return $package['version'];
+        // A lock file is untrusted input: only a package entry that is an
+        // object naming drupal/core with a string version answers the
+        // question. Anything else falls through to the failure below rather
+        // than being coerced into a version that was never resolved.
+        $packages = is_array($lock) ? ($lock['packages'] ?? null) : null;
+        foreach (is_array($packages) ? $packages : [] as $package) {
+            if (!is_array($package) || ($package['name'] ?? null) !== 'drupal/core') {
+                continue;
+            }
+
+            $version = $package['version'] ?? null;
+            if (is_string($version)) {
+                return $version;
             }
         }
 

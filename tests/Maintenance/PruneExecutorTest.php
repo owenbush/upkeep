@@ -30,8 +30,14 @@ final class PruneExecutorTest extends TestCase
         $this->world = sys_get_temp_dir() . '/upkeep-executor-test-' . bin2hex(random_bytes(4));
         mkdir($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized', 0755, true);
         mkdir($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots', 0755, true);
-        file_put_contents($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized/alpha.sql', 'snapshot');
-        file_put_contents($this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/alpha.meta', "engine=mariadb\n");
+        file_put_contents(
+            $this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized/alpha.sql',
+            'snapshot',
+        );
+        file_put_contents(
+            $this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/alpha.meta',
+            "engine=mariadb\n",
+        );
     }
 
     protected function tearDown(): void
@@ -41,7 +47,18 @@ final class PruneExecutorTest extends TestCase
 
     private function executor(): PruneExecutor
     {
-        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
+        return new PruneExecutor(
+            new PruneSelector(['/cockpit/base-artifacts', '/cockpit/fixtures']),
+            $this->adapter(),
+            ['conditions_helper' => new Module('conditions_helper', 'project/conditions_helper', ['10', '11'])],
+            static function (string $line): void {
+            },
+        );
+    }
+
+    private function adapter(): EngineAdapterInterface
+    {
+        return new class ($this->teardowns) implements EngineAdapterInterface {
             /** @param list<array{string, string}> $teardowns */
             public function __construct(private array &$teardowns)
             {
@@ -77,19 +94,20 @@ final class PruneExecutorTest extends TestCase
 
             public function teardown(Module $module, string $coreMajor): void
             {
-                $this->teardowns[] = [$module->name, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->teardowns = [...$this->teardowns, [$module->name, $coreMajor]];
             }
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
-
-        return new PruneExecutor(
-            new PruneSelector(['/cockpit/base-artifacts', '/cockpit/fixtures']),
-            $adapter,
-            ['conditions_helper' => new Module('conditions_helper', 'project/conditions_helper', ['10', '11'])],
-            static function (string $line): void {
-            },
-        );
     }
 
     public function testTreeCandidateIsTornDownThroughTheAdapter(): void
@@ -202,30 +220,59 @@ final class PruneExecutorTest extends TestCase
 
     public function testTeardownFailureSkipsItemInsteadOfAborting(): void
     {
-        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
-            public function __construct(private array &$teardowns) {}
-            public function ensureEnv(Module $module, string $coreMajor): Environment { throw new \BadMethodCallException('not used'); }
-            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void {}
-            public function loadFixture(Environment $environment, string $fixtureName): void {}
-            public function runChecks(Environment $environment, array $checks = []): CheckRunResult { throw new \BadMethodCallException('not used'); }
-            public function serve(Environment $environment): ServeResult { throw new \BadMethodCallException('not used'); }
-            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string { return null; }
+        $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
+            /** @param list<array{string, string}> $teardowns */
+            public function __construct(private array &$teardowns)
+            {
+            }
+            public function ensureEnv(Module $module, string $coreMajor): Environment
+            {
+                throw new \BadMethodCallException('not used');
+            }
+            public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+            public function loadFixture(Environment $environment, string $fixtureName): void
+            {
+            }
+            public function runChecks(Environment $environment, array $checks = []): CheckRunResult
+            {
+                throw new \BadMethodCallException('not used');
+            }
+            public function serve(Environment $environment): ServeResult
+            {
+                throw new \BadMethodCallException('not used');
+            }
+            public function resolveEnvPath(string $moduleName, string $coreMajor): ?string
+            {
+                return null;
+            }
             public function teardown(Module $module, string $coreMajor): void
             {
                 if ($coreMajor === '11') {
                     throw new AdapterException('local work detected');
                 }
-                $this->teardowns[] = [$module->name, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->teardowns = [...$this->teardowns, [$module->name, $coreMajor]];
             }
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
         $executor = new PruneExecutor(
             new PruneSelector(['/cockpit/base-artifacts', '/cockpit/fixtures']),
             $adapter,
             ['conditions_helper' => new Module('conditions_helper', 'project/conditions_helper', ['10', '11'])],
-            static function (): void {},
+            static function (): void {
+            },
         );
 
         $dirty = new InventoryItem(
@@ -251,6 +298,96 @@ final class PruneExecutorTest extends TestCase
         self::assertSame(2048, $outcome->freedBytes);
         self::assertCount(1, $outcome->skipped);
         self::assertStringContainsString('local work detected', $outcome->skipped[0][1]);
+    }
+
+    /**
+     * prune is the only destructive command and its report is the operator's
+     * only feedback. Over-reporting reclaimed space on a deletion that did not
+     * happen is the wrong direction for a defect.
+     */
+    public function testASnapshotThatCannotBeRemovedIsSkippedNotReportedAsFreedSpace(): void
+    {
+        $dir = $this->world . '/upkeep-conditions-helper-d11/.ddev/upkeep/materialized';
+        $artifact = $dir . '/alpha.sql';
+        $snapshot = new InventoryItem(
+            path: $artifact,
+            category: Category::Snapshot,
+            sizeBytes: 8,
+            module: 'conditions_helper',
+            projectName: 'upkeep-conditions-helper-d11',
+        );
+        chmod($dir, 0o500);
+
+        try {
+            $outcome = $this->executor()->execute([$snapshot]);
+
+            self::assertFileExists($artifact);
+            self::assertSame(0, $outcome->freedBytes, 'Bytes that were not reclaimed must not be reported as freed.');
+            self::assertSame([], $outcome->deleted);
+            self::assertCount(1, $outcome->skipped);
+            self::assertStringContainsString('could not be removed', $outcome->skipped[0][1]);
+        } finally {
+            chmod($dir, 0o700);
+        }
+    }
+
+    public function testASnapshotWhoseSidecarSurvivesIsStillReclaimedAndTheLeftoverIsReported(): void
+    {
+        // The sidecar lives in a different directory from the artifact, so it
+        // can be unremovable on its own. The snapshot bytes really were
+        // reclaimed, so the run must count them — but the operator is told the
+        // .meta was left behind rather than being silently lied to.
+        $project = $this->world . '/upkeep-conditions-helper-d11';
+        $artifact = $project . '/.ddev/upkeep/materialized/alpha.sql';
+        $metaDir = $project . '/.ddev/upkeep/snapshots';
+        $lines = [];
+        $executor = new PruneExecutor(
+            new PruneSelector([]),
+            $this->adapter(),
+            [],
+            static function (string $line) use (&$lines): void {
+                $lines[] = $line;
+            },
+        );
+        chmod($metaDir, 0o500);
+
+        try {
+            $outcome = $executor->execute([new InventoryItem(
+                path: $artifact,
+                category: Category::Snapshot,
+                sizeBytes: 8,
+                projectName: 'upkeep-conditions-helper-d11',
+            )]);
+
+            self::assertFileDoesNotExist($artifact);
+            self::assertFileExists($metaDir . '/alpha.meta');
+            self::assertSame(8, $outcome->freedBytes);
+            self::assertCount(1, $outcome->deleted);
+            self::assertStringContainsString('sidecar', implode("\n", $lines));
+        } finally {
+            chmod($metaDir, 0o700);
+        }
+    }
+
+    public function testATreeAttributedToAnUnregisteredModuleIsStillTornDownThroughTheAdapter(): void
+    {
+        // The dotfile attribution is authoritative: an environment provisioned
+        // for a module that has since been removed from registry.yml must still
+        // be disposable, and never with a bare rm -rf.
+        $tree = new InventoryItem(
+            path: $this->world . '/upkeep-conditions-helper-d11',
+            category: Category::ProjectTree,
+            sizeBytes: 4096,
+            module: 'deregistered_module',
+            coreMajor: '10',
+            projectName: 'upkeep-deregistered-module-d10',
+        );
+
+        $outcome = $this->executor()->execute([$tree]);
+
+        self::assertSame([['deregistered_module', '10']], $this->teardowns);
+        self::assertSame(4096, $outcome->freedBytes);
+        self::assertSame([], $outcome->skipped);
     }
 
     public function testExecutorRefusesProtectedItemsEvenIfHandedThemDirectly(): void

@@ -11,6 +11,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Workflow\ExitCode;
 
 final class PatchesCommandTest extends TestCase
 {
@@ -33,6 +34,7 @@ final class PatchesCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->cockpit));
     }
 
+    /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, \JSON_THROW_ON_ERROR), [
@@ -41,6 +43,7 @@ final class PatchesCommandTest extends TestCase
         ]);
     }
 
+    /** @param array<string, mixed> $mrOverrides */
     private function gitlabClientWithMrs(array $mrOverrides = []): GitlabClient
     {
         $project = [
@@ -76,6 +79,7 @@ final class PatchesCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'test-token');
     }
 
+    /** @param list<array<string, mixed>> $issues */
     private function drupalClientWithIssues(array $issues): DrupalOrgClient
     {
         $factory = static function (string $method, string $url) use ($issues): MockResponse {
@@ -88,6 +92,11 @@ final class PatchesCommandTest extends TestCase
         return new DrupalOrgClient(new MockHttpClient($factory));
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function issuePayload(array $overrides = []): array
     {
         return $overrides + [
@@ -223,7 +232,7 @@ final class PatchesCommandTest extends TestCase
         $tester = new CommandTester(new PatchesCommand($drupal, $gitlab));
         $exit = $tester->execute(['--cockpit' => $this->cockpit, '--module' => 'nope']);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 
@@ -269,6 +278,80 @@ final class PatchesCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringNotContainsString('#3467675', $display);
         self::assertStringContainsString('#3489012', $display);
+    }
+
+    /**
+     * The scan asks drupal.org for Needs Review and RTBC, and the STATUS
+     * column has to tell them apart — an RTBC orphan is the one a maintainer
+     * acts on first. A node whose own status is neither (drupal.org's index
+     * lags its nodes, so a just-retitled issue comes back under a status it no
+     * longer holds) is still listed, uncoloured, rather than dropped.
+     */
+    public function testTheStatusColumnDistinguishesRtbcFromReviewAndToleratesNeither(): void
+    {
+        $drupal = $this->drupalClientWithIssues([
+            self::issuePayload(['nid' => 3489012, 'field_issue_status' => '14']),
+            self::issuePayload(['nid' => 3489013, 'field_issue_status' => '8']),
+            self::issuePayload(['nid' => 3489014, 'field_issue_status' => '13']),
+        ]);
+
+        $tester = new CommandTester(new PatchesCommand($drupal, $this->gitlabClientWithMrs()));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('RTBC', $display);
+        self::assertStringContainsString('review', $display);
+        self::assertStringContainsString('needs work', $display);
+        self::assertStringContainsString('3 issues without MRs', $display);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, int>}>
+     */
+    public static function gitlabLookupFailures(): iterable
+    {
+        yield 'the project cannot be resolved' => [['/projects/' => 404]];
+        yield 'the merge-request list is closed' => [['/merge_requests?' => 403]];
+    }
+
+    /**
+     * GitLab is only ever consulted here to *subtract* issues that already
+     * have an MR, so when it cannot answer the scan degrades to showing
+     * everything rather than failing. Over-reporting is the safe direction:
+     * the maintainer sees one issue too many, never one too few, and the
+     * command still exits 0 exactly as the no-token degraded mode does.
+     *
+     * @param array<string, int> $failing URL substring => HTTP status to answer with
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('gitlabLookupFailures')]
+    public function testAGitlabFailureDegradesToShowingEveryIssueRatherThanFailing(array $failing): void
+    {
+        $project = ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'];
+        $factory = static function (string $method, string $url) use ($failing, $project): MockResponse {
+            foreach ($failing as $needle => $status) {
+                if (str_contains($url, $needle)) {
+                    return self::json(['message' => 'refused by the test'], $status);
+                }
+            }
+
+            return self::json($project);
+        };
+
+        // 3467675 is the issue the MR list would have linked, so a working
+        // cross-reference would have filtered it out.
+        $drupal = $this->drupalClientWithIssues([
+            self::issuePayload(['nid' => 3467675, 'title' => 'Make URL field required']),
+        ]);
+
+        $tester = new CommandTester(new PatchesCommand(
+            $drupal,
+            new GitlabClient(new MockHttpClient($factory), 'test-token'),
+        ));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        self::assertStringContainsString('#3467675', $tester->getDisplay());
     }
 
     public function testSummaryLineShowsCountAndModules(): void

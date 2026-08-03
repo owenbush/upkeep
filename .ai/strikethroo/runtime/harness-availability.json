@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "harnesses": {
+    "codex": {
+      "available": false,
+      "observedAt": 1785774653672,
+      "expiresAt": 1785774953672,
+      "reason": "spawn codex ENOENT"
+    },
+    "cursor": {
+      "available": false,
+      "observedAt": 1785774653676,
+      "expiresAt": 1785774953676,
+      "reason": "spawn cursor-agent ENOENT"
+    },
+    "gemini": {
+      "available": false,
+      "observedAt": 1785774653677,
+      "expiresAt": 1785774953677,
+      "reason": "spawn gemini ENOENT"
+    },
+    "copilot": {
+      "available": false,
+      "observedAt": 1785774653678,
+      "expiresAt": 1785774953678,
+      "reason": "spawn copilot ENOENT"
+    },
+    "opencode": {
+      "available": false,
+      "observedAt": 1785774653679,
+      "expiresAt": 1785774953679,
+      "reason": "spawn opencode ENOENT"
+    }
+  }
+}

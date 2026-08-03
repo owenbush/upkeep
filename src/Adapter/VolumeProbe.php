@@ -23,15 +23,52 @@ final readonly class VolumeProbe
     private const COMPOSE_PROJECT_PREFIX = 'ddev-';
 
     /**
+     * Docker reports volume sizes in SI notation (go-units), never binary —
+     * "1.5GB" is 1.5e9 bytes, not 1.5 * 2^30. The table is total over the units
+     * the size regex admits, which is why the lookup needs no fallback: the
+     * regex and this table are the two halves of one decision and must be
+     * changed together.
+     */
+    private const SI_MULTIPLIERS = [
+        'B' => 1,
+        'KB' => 1000,
+        'MB' => 1000000,
+        'GB' => 1000000000,
+        'TB' => 1000000000000,
+    ];
+
+    /**
      * @param \Closure(list<string>): ?string $exec runs a command, returns stdout or null on failure
      */
     public function __construct(private \Closure $exec)
     {
     }
 
-    public static function withRunner(ProcessRunner $runner): self
+    public static function withRunner(CommandRunner $runner): self
     {
         return new self(static fn (array $command): ?string => $runner->tryRun($command, timeout: 120));
+    }
+
+    /**
+     * The volume items for a whole scanned inventory: picks out the project
+     * trees, indexes them by engine project name, and probes for their
+     * volumes. Both the status and prune surfaces need exactly this, so the
+     * indexing lives here rather than being written out at each call site.
+     *
+     * @param list<InventoryItem> $inventory everything the scanner found
+     *
+     * @return list<InventoryItem> one ProjectVolume item per matching volume
+     */
+    public function itemsForInventory(array $inventory): array
+    {
+        $trees = [];
+        foreach ($inventory as $item) {
+            if ($item->category === Category::ProjectTree && $item->projectName !== null) {
+                $trees[$item->projectName] = $item;
+            }
+        }
+
+        return $this->items($trees);
     }
 
     /**
@@ -41,7 +78,9 @@ final readonly class VolumeProbe
      */
     public function items(array $treesByProjectName): array
     {
-        $listing = ($this->exec)(['docker', 'volume', 'ls', '--format', sprintf('{{.Name}}\t{{.Label "%s"}}', self::PROJECT_LABEL)]);
+        $listing = ($this->exec)([
+            'docker', 'volume', 'ls', '--format', sprintf('{{.Name}}\t{{.Label "%s"}}', self::PROJECT_LABEL),
+        ]);
         if ($listing === null) {
             return [];
         }
@@ -109,7 +148,7 @@ final readonly class VolumeProbe
                 continue;
             }
             if (preg_match('/^(\S+)\s+\d+\s+([\d.]+)\s*([kKMGT]?B)\s*$/', trim($line), $m) === 1) {
-                $sizes[$m[1]] = self::siToBytes((float) $m[2], $m[3]);
+                $sizes[$m[1]] = (int) round((float) $m[2] * self::SI_MULTIPLIERS[strtoupper($m[3])]);
             } elseif (trim($line) !== '' && !str_starts_with(trim($line), 'VOLUME NAME')) {
                 // A non-matching non-empty line ends the section (next header).
                 $inVolumeSection = $sizes === [];
@@ -117,19 +156,5 @@ final readonly class VolumeProbe
         }
 
         return $sizes;
-    }
-
-    private static function siToBytes(float $value, string $unit): int
-    {
-        $multiplier = match (strtoupper($unit)) {
-            'B' => 1,
-            'KB' => 1000,
-            'MB' => 1000 ** 2,
-            'GB' => 1000 ** 3,
-            'TB' => 1000 ** 4,
-            default => 1,
-        };
-
-        return (int) round($value * $multiplier);
     }
 }

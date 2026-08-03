@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Upkeep\Tests\Dashboard;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Dashboard\ModuleSnapshot;
 
 final class ModuleSnapshotTest extends TestCase
 {
+    /** @return array<array-key, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -20,6 +22,7 @@ final class ModuleSnapshotTest extends TestCase
         ];
     }
 
+    /** @return array<array-key, mixed> */
     private static function mrPayload(): array
     {
         return [
@@ -43,6 +46,7 @@ final class ModuleSnapshotTest extends TestCase
         ];
     }
 
+    /** @return array<array-key, mixed> */
     private static function issuePayload(): array
     {
         return [
@@ -166,6 +170,73 @@ final class ModuleSnapshotTest extends TestCase
     public function testFromJsonRejectsMissingFields(): void
     {
         self::assertNull(ModuleSnapshot::fromJson('{"fetched_at": "2026-01-01T00:00:00+00:00"}'));
+    }
+
+    /**
+     * A cache file is untrusted input: it is on disk, it outlives the format
+     * that wrote it, and anything half-shaped must read as "no cache" so the
+     * caller re-fetches — never as a partial model reaching the dashboard.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function unusableCacheFiles(): iterable
+    {
+        yield 'not JSON at all' => ['not json'];
+        yield 'JSON, but not an object' => ['[1, 2, 3]'];
+        yield 'JSON scalar' => ['42'];
+        yield 'missing project and merge_requests' => ['{"fetched_at": "2026-01-01T00:00:00+00:00"}'];
+        yield 'fetched_at is not a string' => ['{"fetched_at": 1767225600, "project": {}, "merge_requests": []}'];
+        yield 'fetched_at is not a date' => ['{"fetched_at": "whenever", "project": {}, "merge_requests": []}'];
+        yield 'project is a scalar' => ['{"fetched_at": "2026-01-01T00:00:00+00:00", "project": 1,'
+            . ' "merge_requests": []}'];
+    }
+
+    #[DataProvider('unusableCacheFiles')]
+    public function testAnyHalfShapedCacheFileReadsAsNoCache(string $json): void
+    {
+        self::assertNull(ModuleSnapshot::fromJson($json));
+    }
+
+    public function testUnusableEntriesInsideAReadableCacheFileAreDroppedNotPropagated(): void
+    {
+        // The envelope is fine, so the snapshot loads — but the individual
+        // merge-request and issue entries are still validated one by one. A
+        // null issue entry is meaningful (the lookup was made and failed) and
+        // must survive; a scalar payload or an unusable key must not.
+        $json = json_encode([
+            'fetched_at' => '2026-07-31T10:00:00+00:00',
+            'project' => self::projectPayload(),
+            'merge_requests' => [self::mrPayload(), 'not-a-payload'],
+            'issues' => [
+                '3467675' => self::issuePayload(),
+                'not-a-nid' => self::issuePayload(),
+                '3467676' => null,
+                '3467677' => 'not-a-payload',
+            ],
+        ], \JSON_THROW_ON_ERROR);
+
+        $snapshot = ModuleSnapshot::fromJson($json);
+
+        self::assertNotNull($snapshot);
+        self::assertCount(1, $snapshot->mergeRequests());
+        self::assertNotNull($snapshot->issue(3467675));
+        self::assertNull($snapshot->issue(3467676));
+        self::assertNull($snapshot->issue(3467677));
+    }
+
+    public function testAnIssuesSectionThatIsNotAMappingLeavesTheSnapshotWithNoIssues(): void
+    {
+        $json = json_encode([
+            'fetched_at' => '2026-07-31T10:00:00+00:00',
+            'project' => self::projectPayload(),
+            'merge_requests' => [],
+            'issues' => 'nonsense',
+        ], \JSON_THROW_ON_ERROR);
+
+        $snapshot = ModuleSnapshot::fromJson($json);
+
+        self::assertNotNull($snapshot);
+        self::assertNull($snapshot->issue(3467675));
     }
 
     public function testAgeLabelJustNow(): void

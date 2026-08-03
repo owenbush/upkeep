@@ -35,12 +35,20 @@ final readonly class IssueFile
         return null;
     }
 
+    /**
+     * An attachment entry, which the API returns either wrapped in a "file"
+     * envelope or flat. Without a name and a URL there is nothing to download
+     * or classify, so such an entry is no file at all.
+     *
+     * @param array<array-key, mixed> $data
+     */
     public static function fromApi(array $data): ?self
     {
-        $file = $data['file'] ?? $data;
+        $payload = new ApiPayload($data);
+        $file = $payload->child('file') ?? $payload;
 
-        $name = (string) ($file['filename'] ?? $file['name'] ?? '');
-        $url = (string) ($file['url'] ?? '');
+        $name = $file->stringOrNull('filename') ?? $file->string('name');
+        $url = $file->string('url');
 
         if ($name === '' || $url === '') {
             return null;
@@ -49,8 +57,8 @@ final readonly class IssueFile
         return new self(
             name: $name,
             url: $url,
-            size: isset($file['filesize']) ? (int) $file['filesize'] : 0,
-            timestamp: isset($file['timestamp']) ? (int) $file['timestamp'] : 0,
+            size: $file->int('filesize'),
+            timestamp: $file->int('timestamp'),
         );
     }
 

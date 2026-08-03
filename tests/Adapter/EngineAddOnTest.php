@@ -6,6 +6,7 @@ namespace Upkeep\Tests\Adapter;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
+use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\EngineAddOn;
 
 final class EngineAddOnTest extends TestCase
@@ -38,25 +39,39 @@ final class EngineAddOnTest extends TestCase
     public function testRemovesTheModuleAsProjectPostStartHook(): void
     {
         $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        self::assertIsArray($adapted);
 
         self::assertArrayNotHasKey('hooks', $adapted);
     }
 
     public function testRepointsProjectsPathAtTheComposerInstalledModuleLocation(): void
     {
-        $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        $webEnvironment = self::adaptedWebEnvironment();
 
-        self::assertContains('DRUPAL_PROJECTS_PATH=modules/contrib', $adapted['web_environment']);
-        self::assertNotContains('DRUPAL_PROJECTS_PATH=modules/custom', $adapted['web_environment']);
+        self::assertContains('DRUPAL_PROJECTS_PATH=modules/contrib', $webEnvironment);
+        self::assertNotContains('DRUPAL_PROJECTS_PATH=modules/custom', $webEnvironment);
     }
 
     public function testPreservesTheEngineTestRunnerEnvironment(): void
     {
-        $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        $webEnvironment = self::adaptedWebEnvironment();
 
-        self::assertContains('SIMPLETEST_DB=mysql://db:db@db/db', $adapted['web_environment']);
-        self::assertContains('SIMPLETEST_BASE_URL=http://web', $adapted['web_environment']);
-        self::assertContains('BROWSERTEST_OUTPUT_BASE_URL=${DDEV_PRIMARY_URL}', $adapted['web_environment']);
+        self::assertContains('SIMPLETEST_DB=mysql://db:db@db/db', $webEnvironment);
+        self::assertContains('SIMPLETEST_BASE_URL=http://web', $webEnvironment);
+        self::assertContains('BROWSERTEST_OUTPUT_BASE_URL=${DDEV_PRIMARY_URL}', $webEnvironment);
+    }
+
+    /** @return array<array-key, mixed> the adapted config's web_environment block */
+    private static function adaptedWebEnvironment(): array
+    {
+        $adapted = Yaml::parse(EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG));
+        self::assertIsArray($adapted);
+        self::assertArrayHasKey('web_environment', $adapted);
+
+        $webEnvironment = $adapted['web_environment'];
+        self::assertIsArray($webEnvironment);
+
+        return $webEnvironment;
     }
 
     public function testKeepsTheDdevGeneratedMarkerSoReGetsStayDetectable(): void
@@ -69,5 +84,22 @@ final class EngineAddOnTest extends TestCase
         $once = EngineAddOn::adaptContribConfig(self::SHIPPED_CONFIG);
 
         self::assertSame($once, EngineAddOn::adaptContribConfig($once));
+    }
+
+    /**
+     * A future add-on release could ship something other than a mapping (or
+     * an empty file). Adapting it would silently produce a config that drops
+     * the whole web_environment block, so it is refused instead.
+     */
+    public function testAConfigThatIsNotAMappingIsRefusedRatherThanAdapted(): void
+    {
+        foreach (['', 'just a scalar'] as $shipped) {
+            try {
+                EngineAddOn::adaptContribConfig($shipped);
+                self::fail('Expected a non-mapping add-on config to be refused.');
+            } catch (AdapterException $e) {
+                self::assertStringContainsString('not a YAML mapping', $e->getMessage());
+            }
+        }
     }
 }

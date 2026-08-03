@@ -15,6 +15,8 @@ use Upkeep\Adapter\VolumeProbe;
 use Upkeep\Cockpit\Module;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Tests\Support\StubEngineAdapterFactory;
+use Upkeep\Workflow\ExitCode;
 
 final class PruneCommandTest extends TestCase
 {
@@ -25,10 +27,17 @@ final class PruneCommandTest extends TestCase
     /** @var list<array{string, string}> */
     private array $teardowns = [];
 
+    private string|false $originalHome;
+
     protected function setUp(): void
     {
         $this->teardowns = [];
-        $this->world = sys_get_temp_dir() . '/upkeep-prune-cmd-test-' . bin2hex(random_bytes(4));
+        $this->world = (string) realpath(sys_get_temp_dir()) . '/upkeep-prune-cmd-test-' . bin2hex(random_bytes(4));
+        // The projects root must resolve under $HOME (Docker providers only
+        // mount the home directory). Point $HOME at the temp world so the
+        // fixture stays in sys_get_temp_dir() and the real home is untouched.
+        $this->originalHome = getenv('HOME');
+        putenv('HOME=' . $this->world);
         $this->cockpit = $this->world . '/cockpit';
         $this->projects = $this->world . '/projects';
 
@@ -82,12 +91,16 @@ final class PruneCommandTest extends TestCase
 
     protected function tearDown(): void
     {
+        putenv($this->originalHome === false ? 'HOME' : 'HOME=' . $this->originalHome);
         exec('rm -rf ' . escapeshellarg($this->world));
     }
 
+    /**
+     * @param array<string, bool|string> $args
+     */
     private function runPrune(array $args): CommandTester
     {
-        $adapter = new class($this->teardowns) implements EngineAdapterInterface {
+        $adapter = new class ($this->teardowns) implements EngineAdapterInterface {
             /** @param list<array{string, string}> $teardowns */
             public function __construct(private array &$teardowns)
             {
@@ -123,13 +136,25 @@ final class PruneCommandTest extends TestCase
 
             public function teardown(Module $module, string $coreMajor): void
             {
-                $this->teardowns[] = [$module->name, $coreMajor];
+                // Read-modify-write, not `[] =`: the property is a reference
+                // alias to the test's own array, which is where the
+                // assertion reads the recording from — so appending in
+                // place would look write-only to static analysis.
+                $this->teardowns = [...$this->teardowns, [$module->name, $coreMajor]];
             }
-            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus { return null; }
-            public function checkoutBranch(Environment $environment, string $branch): void {}
+            public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
+            {
+                return null;
+            }
+            public function checkoutBranch(Environment $environment, string $branch): void
+            {
+            }
         };
 
-        $tester = new CommandTester(new PruneCommand($adapter, new VolumeProbe(static fn (array $c): ?string => null)));
+        $tester = new CommandTester(new PruneCommand(
+            new StubEngineAdapterFactory($adapter),
+            new VolumeProbe(static fn (array $c): ?string => null),
+        ));
         $tester->execute([
             '--cockpit' => $this->cockpit,
             '--projects-root' => $this->projects,
@@ -146,7 +171,13 @@ final class PruneCommandTest extends TestCase
 
     public function testEveryVariantIsADryRunWithoutYes(): void
     {
-        foreach ([['--trees' => true], ['--snapshots' => true], ['--projects' => true], ['--all' => true]] as $variant) {
+        $variants = [
+            ['--trees' => true],
+            ['--snapshots' => true],
+            ['--projects' => true],
+            ['--all' => true],
+        ];
+        foreach ($variants as $variant) {
             $tester = $this->runPrune($variant);
 
             $tester->assertCommandIsSuccessful();
@@ -176,7 +207,9 @@ final class PruneCommandTest extends TestCase
         $tester->assertCommandIsSuccessful();
         self::assertFileDoesNotExist($this->snapshotPath('older'));
         self::assertFileDoesNotExist($this->snapshotPath('newer'));
-        self::assertFileDoesNotExist($this->projects . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/older.meta');
+        self::assertFileDoesNotExist(
+            $this->projects . '/upkeep-conditions-helper-d11/.ddev/upkeep/snapshots/older.meta',
+        );
         // Protected: keep-marked snapshot, committed dumps, base artifacts.
         self::assertFileExists($this->snapshotPath('kept'));
         self::assertFileExists($this->projects . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz');
@@ -189,7 +222,10 @@ final class PruneCommandTest extends TestCase
         $this->runPrune(['--snapshots' => true, '--yes' => true, '--keep-latest' => '1']);
 
         self::assertFileDoesNotExist($this->snapshotPath('older'));
-        self::assertFileExists($this->snapshotPath('newer'), 'keep-latest=1 must retain the newest unprotected snapshot');
+        self::assertFileExists(
+            $this->snapshotPath('newer'),
+            'keep-latest=1 must retain the newest unprotected snapshot',
+        );
         self::assertFileExists($this->snapshotPath('kept'));
     }
 
@@ -202,7 +238,10 @@ final class PruneCommandTest extends TestCase
         // keep-marked snapshot (escalation), upkeep-kept-env-d11 by its .keep.
         self::assertSame([['conditions_helper', '10']], $this->teardowns);
         self::assertDirectoryExists($this->projects . '/upkeep-kept-env-d11', 'keep-marked environment must survive');
-        self::assertDirectoryExists($this->projects . '/upkeep-conditions-helper-d11', 'environment holding a keep-marked snapshot must survive a tree prune');
+        self::assertDirectoryExists(
+            $this->projects . '/upkeep-conditions-helper-d11',
+            'environment holding a keep-marked snapshot must survive a tree prune',
+        );
         self::assertFileExists($this->snapshotPath('kept'));
         self::assertDirectoryExists($this->cockpit . '/base-artifacts/11');
     }
@@ -221,16 +260,62 @@ final class PruneCommandTest extends TestCase
     {
         $tester = $this->runPrune(['--trees' => true, '--older-than' => '30']);
 
-        self::assertSame(1, $tester->getStatusCode());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $tester->getStatusCode());
         self::assertStringContainsString('Invalid duration', $tester->getDisplay());
+    }
+
+    /**
+     * A tree upkeep cannot attribute to a registered (module x core) pair is
+     * reported and left alone, not guessed at. Teardown goes through the
+     * engine and needs to know *what* it is tearing down; deleting the
+     * directory blind would leave the engine's containers and volumes behind.
+     * The run still succeeds — everything attributable was reclaimed.
+     */
+    public function testAnUnattributableTreeIsWarnedAboutAndLeftOnDiskWhileTheRestIsPruned(): void
+    {
+        // No .upkeep-env.yml, and no (module x core) in the registry produces
+        // this project name — d12 is not a tracked core version.
+        $orphan = $this->projects . '/upkeep-conditions-helper-d12';
+        mkdir($orphan, 0755, true);
+
+        $tester = $this->runPrune(['--trees' => true, '--yes' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Skipped', $display);
+        self::assertStringContainsString('refusing to guess', $display);
+        self::assertStringContainsString('Pruned 1 item(s)', $display);
+        self::assertDirectoryExists($orphan);
+        // The attributable environment was still torn down in the same run.
+        self::assertSame([['conditions_helper', '10']], $this->teardowns);
+    }
+
+    /**
+     * An under-reported inventory can only under-delete, so the run continues
+     * — but the operator is told what could not be looked at, because a prune
+     * that silently skipped half the disk would read as "nothing left to
+     * reclaim".
+     */
+    public function testAnUnreadablePartOfTheInventoryIsWarnedAboutBeforeThePlanIsShown(): void
+    {
+        $project = $this->projects . '/upkeep-conditions-helper-d11';
+        exec('rm -rf ' . escapeshellarg($project . '/.ddev/upkeep/materialized'));
+        symlink($this->world, $project . '/.ddev/upkeep/materialized');
+
+        $tester = $this->runPrune(['--snapshots' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('is a symlink — skipped', $display);
+        self::assertStringNotContainsString('older.sql', $display);
     }
 
     public function testRequiresExactlyOneScopeFlag(): void
     {
         $none = $this->runPrune([]);
-        self::assertSame(1, $none->getStatusCode());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $none->getStatusCode());
 
         $two = $this->runPrune(['--trees' => true, '--snapshots' => true]);
-        self::assertSame(1, $two->getStatusCode());
+        self::assertSame(ExitCode::INFRASTRUCTURE, $two->getStatusCode());
     }
 }

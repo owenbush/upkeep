@@ -26,6 +26,22 @@ final class FastLaneGateTest extends TestCase
 {
     private const HEAD_SHA = 'abc123def456abc123def456abc123def456abcd';
 
+    /**
+     * @param array{
+     *     iid?: int,
+     *     title?: string,
+     *     state?: string,
+     *     authorUsername?: string,
+     *     authorId?: int|null,
+     *     sourceBranch?: string,
+     *     targetBranch?: string,
+     *     draft?: bool,
+     *     detailedMergeStatus?: string|null,
+     *     headSha?: string|null,
+     *     webUrl?: string,
+     *     headPipeline?: Pipeline|null,
+     * } $overrides
+     */
     private function mr(array $overrides = []): MergeRequest
     {
         $defaults = [
@@ -258,6 +274,59 @@ final class FastLaneGateTest extends TestCase
 
         self::assertSame(GateStatus::Blocked, $verdict->status);
         self::assertSame(['ci-red', 'local-failed:phpunit'], $verdict->reasons);
+    }
+
+    /**
+     * The BLOCKED/REVIEW boundary. A red pipeline is the only fact that
+     * escalates past REVIEW, and it does so independently of everything else:
+     * whichever other denials are present, and however many, the status must
+     * still be BLOCKED — the two outcomes route differently for the operator,
+     * so the boundary cannot depend on reason ordering or count.
+     */
+    public function testRedCiBlocksWhateverElseDeniedTheRowAndNothingElseEverBlocks(): void
+    {
+        $red = $this->pipeline(PipelineStatus::Failed);
+        $blocked = (new FastLaneGate())->classify(
+            $this->mr(['authorUsername' => 'owenbush', 'authorId' => 1, 'draft' => true, 'headPipeline' => $red]),
+            '11',
+            null,
+        );
+
+        self::assertSame(GateStatus::Blocked, $blocked->status);
+        self::assertSame(['not-bot-author', 'draft', 'ci-red', 'local-missing'], $blocked->reasons);
+        self::assertSame('BLOCKED not-bot-author, draft, ci-red, local-missing', $blocked->describe());
+
+        // Every other single deviation, alone or combined, stops at REVIEW.
+        foreach (
+            [
+            'no pipeline' => ['headPipeline' => null],
+            'unfinished pipeline' => ['headPipeline' => $this->pipeline(PipelineStatus::Running)],
+            'draft' => ['draft' => true],
+            'human author' => ['authorUsername' => 'owenbush', 'authorId' => 1],
+            ] as $label => $overrides
+        ) {
+            $verdict = (new FastLaneGate())->classify($this->mr($overrides), '11', $this->local());
+            self::assertSame(GateStatus::Review, $verdict->status, $label);
+        }
+    }
+
+    /**
+     * The READY-AUTO/REVIEW boundary on local evidence: freshness is an exact
+     * SHA identity, never a prefix or a substring. A result recorded against a
+     * head whose SHA merely starts the same way is evidence about a different
+     * commit.
+     */
+    public function testLocalEvidenceMustMatchTheHeadShaExactlyAndNotMerelyByPrefix(): void
+    {
+        $gate = new FastLaneGate();
+
+        $exact = $gate->classify($this->mr(), '11', $this->local(sha: self::HEAD_SHA));
+        $prefix = $gate->classify($this->mr(), '11', $this->local(sha: substr(self::HEAD_SHA, 0, 12)));
+        $extended = $gate->classify($this->mr(), '11', $this->local(sha: self::HEAD_SHA . 'ff'));
+
+        self::assertSame(GateStatus::ReadyAuto, $exact->status);
+        self::assertSame(['local-stale'], $prefix->reasons);
+        self::assertSame(['local-stale'], $extended->reasons);
     }
 
     public function testDraftBotMrWithNoPipelineAndNoLocalResultsAccumulatesAllThreeDenials(): void

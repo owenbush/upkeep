@@ -34,22 +34,44 @@ final class ExitCodeTest extends TestCase
         self::assertSame(ExitCode::OK, ExitCode::forRun($run));
     }
 
-    public function testAnySingleFailureMapsToChecksFailed(): void
+    public function testAnySingleFailureMapsToFailed(): void
     {
         $run = new CheckRunResult([
             self::check(CheckType::PhpUnit, CheckStatus::Failed),
             self::check(CheckType::PhpCs, CheckStatus::Passed),
         ]);
 
-        self::assertSame(ExitCode::CHECKS_FAILED, ExitCode::forRun($run));
+        self::assertSame(ExitCode::FAILED, ExitCode::forRun($run));
     }
 
     public function testTheThreeCodesAreDistinctAndStable(): void
     {
-        // Scripting contract: 0 all-green, 1 red checks, 2 infrastructure.
+        // Scripting contract: 0 the command did what was asked, 1 the work it
+        // supervised failed, 2 upkeep could not do the job.
         self::assertSame(0, ExitCode::OK);
-        self::assertSame(1, ExitCode::CHECKS_FAILED);
+        self::assertSame(1, ExitCode::FAILED);
         self::assertSame(2, ExitCode::INFRASTRUCTURE);
+    }
+
+    public function testASucceedingChildProcessMapsToOk(): void
+    {
+        self::assertSame(ExitCode::OK, ExitCode::forChildProcess(0));
+    }
+
+    /**
+     * Every non-zero child code collapses to 1: a wrapped command exiting 2
+     * must never be readable as an upkeep infrastructure failure.
+     */
+    public function testEveryNonZeroChildCodeCollapsesToFailed(): void
+    {
+        foreach ([1, 2, 42, 127, 255] as $code) {
+            self::assertSame(ExitCode::FAILED, ExitCode::forChildProcess($code), sprintf('child %d', $code));
+        }
+    }
+
+    public function testAChildThatNeverRanIsAnInfrastructureFailure(): void
+    {
+        self::assertSame(ExitCode::INFRASTRUCTURE, ExitCode::forChildProcess(null));
     }
 
     private static function check(CheckType $type, CheckStatus $status): CheckResult

@@ -5,99 +5,90 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Process\Process;
-use Upkeep\Adapter\DdevContribAdapter;
-use Upkeep\Adapter\EngineAdapterInterface;
-use Upkeep\Adapter\ProcessRunner;
-use Upkeep\Adapter\ProjectsRoot;
-use Upkeep\BaseArtifact\ArtifactLayout;
-use Upkeep\Cockpit\Cockpit;
+use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\EngineAdapterFactory;
+use Upkeep\Security\CredentialEnvironment;
+use Upkeep\Workflow\ExitCode;
 
+/**
+ * Run an arbitrary command inside a module's environment directory.
+ *
+ * Exit codes follow the CLI-wide contract rather than the child's raw code:
+ * 0 the command succeeded, 1 it exited non-zero, 2 upkeep could not run it
+ * (unregistered module, untracked core, no provisioned environment, or a
+ * child that never started). See Workflow\ExitCode.
+ */
 #[AsCommand(
     name: 'exec',
     description: 'Run a command in a module\'s environment directory.',
 )]
-final class ExecCommand extends Command
+final class ExecCommand extends UpkeepCommand
 {
-    public function __construct(private readonly ?EngineAdapterInterface $adapter = null)
+    public function __construct(private readonly EngineAdapterFactory $engines)
     {
         parent::__construct();
     }
 
     protected function configure(): void
     {
-        $this
-            ->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name')
-            ->addArgument('cmd', InputArgument::IS_ARRAY | InputArgument::REQUIRED, 'Command to run (use -- before the command to separate it from upkeep options)')
-            ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version (defaults to the first tracked version in the registry)')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+        $this->addModuleArgument()
+            ->addArgument(
+                'cmd',
+                InputArgument::IS_ARRAY | InputArgument::REQUIRED,
+                'Command to run (use -- before the command to separate it from upkeep options)',
+            );
+        $this->addTargetCoreOption()
+            ->addCockpitOption()
+            ->addProjectsRootOption();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    /** stdout belongs to the wrapped command; upkeep's own words go to stderr. */
+    protected function diagnosticsOnStderr(): bool
     {
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        $modules = $cockpit->loadRegistry()->modules();
+        return true;
+    }
 
-        $name = (string) $input->getArgument('module');
-        if (!isset($modules[$name])) {
-            $output->writeln(sprintf('<error>Module "%s" is not registered. Run `upkeep modules` to see what is.</error>', $name));
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
+    {
+        $cockpit = $this->cockpit($input);
+        $name = self::stringArgument($input, 'module');
+        $module = self::requireModule($this->modules($cockpit), $name);
+        $coreMajor = self::targetCore($input, $module);
 
-            return Command::FAILURE;
-        }
-
-        $module = $modules[$name];
-        $version = $input->getOption('version');
-        $coreMajor = $version !== null ? (string) $version : $module->coreVersions[0] ?? null;
-
-        if ($coreMajor === null || !\in_array($coreMajor, $module->coreVersions, true)) {
-            $output->writeln(sprintf(
-                '<error>Core version %s is not tracked for %s (tracked: %s).</error>',
-                $coreMajor ?? '(none)',
-                $name,
-                implode(', ', $module->coreVersions),
-            ));
-
-            return Command::FAILURE;
-        }
-
+        // Never empty: `cmd` is a REQUIRED array argument, so the console
+        // refuses the invocation ("Not enough arguments") before perform() is
+        // reached. A guard here would be a branch nothing can take.
         /** @var list<string> $cmd */
         $cmd = $input->getArgument('cmd');
-        if ($cmd === []) {
-            $output->writeln('<error>No command given. Usage: upkeep exec <module> -- <command...></error>');
 
-            return Command::FAILURE;
-        }
+        $adapter = $this->engines->create(
+            $cockpit,
+            self::stringOption($input, 'projects-root'),
+            static function (): void {
+            },
+            static function (): void {
+            },
+        );
 
-        $adapter = $this->adapter ?? $this->buildAdapter($cockpit, $input);
         $path = $adapter->resolveEnvPath($name, $coreMajor);
-
         if ($path === null) {
-            $output->writeln(sprintf('<error>No provisioned environment for %s on Drupal %s. Run `upkeep check` or `upkeep review` to create one.</error>', $name, $coreMajor));
-
-            return Command::FAILURE;
+            throw new AdapterException(sprintf(
+                'No provisioned environment for %s on Drupal %s. Run `upkeep check` or `upkeep review` to create one.',
+                $name,
+                $coreMajor,
+            ));
         }
 
-        $process = new Process($cmd, $path, timeout: null);
+        $process = new Process($cmd, $path, CredentialEnvironment::scrubbed(), timeout: null);
         $process->run(static function (string $type, string $buffer) use ($output): void {
             $output->write($buffer);
         });
 
-        return $process->getExitCode() ?? Command::FAILURE;
-    }
-
-    private function buildAdapter(Cockpit $cockpit, InputInterface $input): EngineAdapterInterface
-    {
-        return new DdevContribAdapter(
-            new ArtifactLayout($cockpit->baseArtifactsPath()),
-            ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root),
-            new ProcessRunner(static function (): void {}),
-            static function (): void {},
-        );
+        return ExitCode::forChildProcess($process->getExitCode());
     }
 }

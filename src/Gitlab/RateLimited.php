@@ -12,11 +12,28 @@ final readonly class RateLimited extends ApiFailure
 {
     public function __construct(
         public ?int $retryAfterSeconds = null,
+        ?string $browserUrl = null,
     ) {
         parent::__construct(
             $retryAfterSeconds === null
                 ? 'Rate limited by the GitLab instance (HTTP 429). Please retry later.'
-                : sprintf('Rate limited by the GitLab instance (HTTP 429). Please retry in %d seconds.', $retryAfterSeconds),
+                : sprintf(
+                    'Rate limited by the GitLab instance (HTTP 429). Please retry in %d seconds.',
+                    $retryAfterSeconds,
+                ),
+            429,
+            $browserUrl,
         );
+    }
+
+    public function shortCode(): string
+    {
+        return 'rate-limited';
+    }
+
+    /** Transient by definition — never memoized for the rest of the run. */
+    public function isTransient(): bool
+    {
+        return true;
     }
 }

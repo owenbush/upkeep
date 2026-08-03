@@ -10,6 +10,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Workflow\ExitCode;
 
 final class NeedsWorkCommandTest extends TestCase
 {
@@ -32,6 +33,7 @@ final class NeedsWorkCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->cockpit));
     }
 
+    /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, \JSON_THROW_ON_ERROR), [
@@ -40,6 +42,7 @@ final class NeedsWorkCommandTest extends TestCase
         ]);
     }
 
+    /** @return array<string, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -51,6 +54,11 @@ final class NeedsWorkCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function mrPayload(array $overrides = []): array
     {
         return $overrides + [
@@ -66,6 +74,10 @@ final class NeedsWorkCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed>                          $mrOverrides
+     * @param (callable(string, string): MockResponse)|null $noteHandler serves POSTed notes
+     */
     private function gitlabClient(array $mrOverrides = [], ?callable $noteHandler = null): GitlabClient
     {
         $project = self::projectPayload();
@@ -91,23 +103,45 @@ final class NeedsWorkCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'test-token');
     }
 
-    private function populateResults(string $sha, bool $withFailure = true, ?\DateTimeImmutable $recordedAt = null): void
-    {
+    private function populateResults(
+        string $sha,
+        bool $withFailure = true,
+        ?\DateTimeImmutable $recordedAt = null,
+    ): void {
         $dir = $this->cockpit . '/results/widget/7/11';
         mkdir($dir, 0o755, true);
 
         $results = [
-            ['type' => 'phpunit', 'status' => 'passed', 'exit_code' => 0, 'output' => 'OK (42 tests)', 'duration_seconds' => 12.3],
-            ['type' => 'phpstan', 'status' => 'passed', 'exit_code' => 0, 'output' => 'No errors', 'duration_seconds' => 3.1],
+            [
+                'type' => 'phpunit',
+                'status' => 'passed',
+                'exit_code' => 0,
+                'output' => 'OK (42 tests)',
+                'duration_seconds' => 12.3,
+            ],
+            [
+                'type' => 'phpstan',
+                'status' => 'passed',
+                'exit_code' => 0,
+                'output' => 'No errors',
+                'duration_seconds' => 3.1,
+            ],
         ];
 
         if ($withFailure) {
-            $results[] = ['type' => 'phpcs', 'status' => 'failed', 'exit_code' => 2, 'output' => "FILE: src/Plugin/Widget.php\nFOUND 3 ERRORS\n\nLine 14: Missing doc comment", 'duration_seconds' => 1.2];
+            $results[] = [
+                'type' => 'phpcs',
+                'status' => 'failed',
+                'exit_code' => 2,
+                'output' => "FILE: src/Plugin/Widget.php\nFOUND 3 ERRORS\n\nLine 14: Missing doc comment",
+                'duration_seconds' => 1.2,
+            ];
         }
 
         $payload = [
             'sha' => $sha,
-            'recorded_at' => ($recordedAt ?? new \DateTimeImmutable('2024-06-15 09:23:00'))->format(\DateTimeInterface::ATOM),
+            'recorded_at' => ($recordedAt ?? new \DateTimeImmutable('2024-06-15 09:23:00'))
+                ->format(\DateTimeInterface::ATOM),
             'results' => $results,
         ];
 
@@ -179,7 +213,7 @@ final class NeedsWorkCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         $display = $tester->getDisplay();
         self::assertStringContainsString('No cached check results', $display);
         self::assertStringContainsString('upkeep check', $display);
@@ -225,7 +259,7 @@ final class NeedsWorkCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('Could not post comment', $tester->getDisplay());
     }
 
@@ -265,6 +299,85 @@ final class NeedsWorkCommandTest extends TestCase
         self::assertStringContainsString('pass', $display);
     }
 
+    /**
+     * An MR GitLab reports without a head SHA cannot be matched exactly, so
+     * the lookup falls back to the latest result for the (module, MR, core) —
+     * and, with no SHA to compare against, does not cry stale. The alternative
+     * would be refusing to comment at all on an API anomaly the maintainer
+     * cannot fix.
+     */
+    public function testAnMrWithNoHeadShaStillFindsItsLatestCachedResult(): void
+    {
+        $this->populateResults('abc12345deadbeef');
+
+        $posted = false;
+        $gitlab = $this->gitlabClient(['sha' => null], function () use (&$posted): MockResponse {
+            $posted = true;
+
+            return self::json(['id' => 1], 201);
+        });
+
+        $tester = new CommandTester(new NeedsWorkCommand($gitlab));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+        ]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        self::assertTrue($posted, 'the cached result is still found without a head SHA');
+        self::assertStringNotContainsString('the MR is now at', $tester->getDisplay());
+    }
+
+    /**
+     * The comment is the record of what was actually run, so a check that
+     * could not run is reported as such rather than as a pass. "no tests" and
+     * "unavailable" are not failures — they must not render as **FAIL** — but
+     * they are not evidence of green either.
+     */
+    public function testChecksThatDidNotRunAreReportedByNameRatherThanAsPassOrFail(): void
+    {
+        $dir = $this->cockpit . '/results/widget/7/11';
+        mkdir($dir, 0o755, true);
+        file_put_contents($dir . '/abc12345deadbeef.json', json_encode([
+            'sha' => 'abc12345deadbeef',
+            'recorded_at' => (new \DateTimeImmutable('2024-06-15 09:23:00'))->format(\DateTimeInterface::ATOM),
+            'results' => [
+                // No duration recorded: an em dash, not a misleading "0.0s".
+                [
+                    'type' => 'phpunit',
+                    'status' => 'no-tests',
+                    'exit_code' => 0,
+                    'output' => '',
+                    'duration_seconds' => 0,
+                ],
+                [
+                    'type' => 'phpstan',
+                    'status' => 'unavailable',
+                    'exit_code' => null,
+                    'output' => '',
+                    'duration_seconds' => 0,
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $tester = new CommandTester(new NeedsWorkCommand($this->gitlabClient()));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--dry-run' => true,
+        ]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('| phpunit | no tests | — |', $display);
+        self::assertStringContainsString('| phpstan | unavailable | — |', $display);
+        self::assertStringNotContainsString('**FAIL**', $display);
+        self::assertStringNotContainsString('<details>', $display);
+    }
+
     public function testFailsForUnregisteredModule(): void
     {
         $tester = new CommandTester(new NeedsWorkCommand($this->gitlabClient()));
@@ -275,7 +388,7 @@ final class NeedsWorkCommandTest extends TestCase
             '--no-open' => true,
         ]);
 
-        self::assertSame(1, $exit);
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('not registered', $tester->getDisplay());
     }
 }

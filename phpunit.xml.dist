@@ -16,4 +16,19 @@
       <directory>src</directory>
     </include>
   </source>
+  <coverage>
+    <report>
+      <html outputDirectory="build/coverage-html"/>
+    </report>
+  </coverage>
+  <!--
+    PHPUnit 11.5 has no native minimum-coverage threshold, so the 100% line
+    coverage requirement is enforced by this extension. It lives here rather
+    than in a CI flag so a bare `vendor/bin/phpunit` enforces it identically.
+  -->
+  <extensions>
+    <bootstrap class="Upkeep\Tests\Support\CoverageThresholdExtension">
+      <parameter name="minimumLineCoverage" value="100"/>
+    </bootstrap>
+  </extensions>
 </phpunit>

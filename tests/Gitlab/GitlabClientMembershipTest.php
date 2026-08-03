@@ -17,13 +17,31 @@ final class GitlabClientMembershipTest extends TestCase
     {
         $pages = [
             new MockResponse(json_encode([
-                ['id' => 1, 'path' => 'conditions_helper', 'path_with_namespace' => 'project/conditions_helper', 'name' => 'Conditions Helper', 'web_url' => 'https://git.drupalcode.org/project/conditions_helper'],
-                ['id' => 2, 'path' => 'sandbox_thing', 'path_with_namespace' => 'sandbox/sandbox_thing', 'name' => 'Sandbox', 'web_url' => 'https://git.drupalcode.org/sandbox/sandbox_thing'],
-            ])),
+                [
+                    'id' => 1,
+                    'path' => 'conditions_helper',
+                    'path_with_namespace' => 'project/conditions_helper',
+                    'name' => 'Conditions Helper',
+                    'web_url' => 'https://git.drupalcode.org/project/conditions_helper',
+                ],
+                [
+                    'id' => 2,
+                    'path' => 'sandbox_thing',
+                    'path_with_namespace' => 'sandbox/sandbox_thing',
+                    'name' => 'Sandbox',
+                    'web_url' => 'https://git.drupalcode.org/sandbox/sandbox_thing',
+                ],
+            ], JSON_THROW_ON_ERROR)),
             new MockResponse(json_encode([
-                ['id' => 3, 'path' => 'token_or', 'path_with_namespace' => 'project/token_or', 'name' => 'Token OR', 'web_url' => 'https://git.drupalcode.org/project/token_or'],
-            ])),
-            new MockResponse(json_encode([])),
+                [
+                    'id' => 3,
+                    'path' => 'token_or',
+                    'path_with_namespace' => 'project/token_or',
+                    'name' => 'Token OR',
+                    'web_url' => 'https://git.drupalcode.org/project/token_or',
+                ],
+            ], JSON_THROW_ON_ERROR)),
+            new MockResponse(json_encode([], JSON_THROW_ON_ERROR)),
         ];
         $requested = [];
         $http = new MockHttpClient(function (string $method, string $url) use (&$pages, &$requested) {
@@ -36,7 +54,6 @@ final class GitlabClientMembershipTest extends TestCase
 
         self::assertIsArray($projects);
         self::assertCount(3, $projects);
-        self::assertContainsOnlyInstancesOf(Project::class, $projects);
         self::assertSame(['project/conditions_helper', 'sandbox/sandbox_thing', 'project/token_or'], array_map(
             static fn (Project $p): string => $p->pathWithNamespace,
             $projects,

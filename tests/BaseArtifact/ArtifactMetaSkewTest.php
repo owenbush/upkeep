@@ -11,7 +11,13 @@ final class ArtifactMetaSkewTest extends TestCase
 {
     private function meta(): ArtifactMeta
     {
-        return new ArtifactMeta('11.4.4', '11', '8.3.30', 'mariadb:10.11', new \DateTimeImmutable('2026-07-29T14:02:11+00:00'));
+        return new ArtifactMeta(
+            '11.4.4',
+            '11',
+            '8.3.30',
+            'mariadb:10.11',
+            new \DateTimeImmutable('2026-07-29T14:02:11+00:00'),
+        );
     }
 
     public function testNoSkewForMatchingEnvironment(): void

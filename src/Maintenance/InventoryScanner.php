@@ -10,6 +10,7 @@ use Upkeep\Adapter\EnvironmentMeta;
 use Upkeep\Adapter\SnapshotLayout;
 use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\Cockpit\Cockpit;
+use Upkeep\Filesystem\FilesystemException;
 
 /**
  * Walks the cockpit and the projects root and produces the typed disk
@@ -31,8 +32,13 @@ use Upkeep\Cockpit\Cockpit;
  *
  * Docker volumes are NOT scanned here — they come from VolumeProbe, since
  * they only exist engine-side.
+ *
+ * An unreadable directory is deliberately NOT the same thing as an empty one.
+ * For prune, under-reporting fails safe (nothing is over-deleted), so a scan
+ * never aborts on one — but it records a warning naming the directory, so the
+ * operator can tell "there is nothing here" from "I could not look".
  */
-final readonly class InventoryScanner
+final class InventoryScanner
 {
     public const KEEP_MARKER = '.keep';
 
@@ -40,13 +46,21 @@ final readonly class InventoryScanner
     private const MODULE_FIXTURES_DIR = 'module/tests/fixtures';
 
     /**
-     * @param \Closure(string): int $sizer bytes-on-disk measure, defaults to `du -sk`
+     * Bytes-on-disk measure for one path, defaulting to `du -sk`.
+     *
+     * @var \Closure(string): int
      */
-    private \Closure $sizer;
+    private readonly \Closure $sizer;
 
+    /** @var list<string> */
+    private array $warnings = [];
+
+    /**
+     * @param (\Closure(string): int)|null $sizer
+     */
     public function __construct(
-        private Cockpit $cockpit,
-        private string $projectsRoot,
+        private readonly Cockpit $cockpit,
+        private readonly string $projectsRoot,
         ?\Closure $sizer = null,
     ) {
         $this->sizer = $sizer ?? DiskUsage::bytes(...);
@@ -57,11 +71,23 @@ final readonly class InventoryScanner
      */
     public function scan(): array
     {
+        $this->warnings = [];
+
         return [
             ...$this->baseArtifacts(),
             ...$this->libraryDumps(),
             ...$this->projects(),
         ];
+    }
+
+    /**
+     * Directories the last scan could not read, and so may have under-reported.
+     *
+     * @return list<string>
+     */
+    public function warnings(): array
+    {
+        return $this->warnings;
     }
 
     /**
@@ -81,8 +107,17 @@ final readonly class InventoryScanner
     {
         $layout = new ArtifactLayout($this->cockpit->baseArtifactsPath());
 
+        try {
+            $versions = $layout->versionsOnDisk();
+        } catch (FilesystemException $e) {
+            // A prune must still be able to run over the rest of the disk.
+            $this->warnings[] = $e->getMessage();
+
+            return [];
+        }
+
         $items = [];
-        foreach ($layout->versionsOnDisk() as $version) {
+        foreach ($versions as $version) {
             $path = $layout->versionDir($version);
             $items[] = new InventoryItem(
                 path: $path,
@@ -101,7 +136,7 @@ final readonly class InventoryScanner
     private function libraryDumps(): array
     {
         $items = [];
-        foreach (glob($this->cockpit->fixturesPath() . '/*.sql.gz') ?: [] as $dump) {
+        foreach ($this->globIn($this->cockpit->fixturesPath(), '*.sql.gz') as $dump) {
             $items[] = new InventoryItem(
                 path: $dump,
                 category: Category::FixtureDump,
@@ -113,12 +148,40 @@ final readonly class InventoryScanner
     }
 
     /**
+     * glob() over a directory, distinguishing "nothing matched" from "could
+     * not read the directory" — glob() reports both as the empty list.
+     *
+     * @return list<string>
+     */
+    private function globIn(string $dir, string $pattern): array
+    {
+        if (is_dir($dir) && !is_readable($dir)) {
+            $this->warnings[] = sprintf(
+                'Directory "%s" is not readable — its contents are missing from this inventory.',
+                $dir,
+            );
+
+            return [];
+        }
+
+        return glob(rtrim($dir, '/') . '/' . $pattern) ?: [];
+    }
+
+    /**
      * @return list<InventoryItem>
      */
     private function projects(): array
     {
         $root = rtrim($this->projectsRoot, '/');
         if (!is_dir($root)) {
+            return [];
+        }
+        if (!is_readable($root)) {
+            $this->warnings[] = sprintf(
+                'Projects root "%s" is not readable — no environments are reported from it.',
+                $root,
+            );
+
             return [];
         }
 
@@ -160,7 +223,7 @@ final readonly class InventoryScanner
         )];
         array_push($items, ...$snapshots);
 
-        foreach (glob($projectPath . '/' . self::MODULE_FIXTURES_DIR . '/*.sql.gz') ?: [] as $dump) {
+        foreach ($this->globIn($projectPath . '/' . self::MODULE_FIXTURES_DIR, '*.sql.gz') as $dump) {
             $items[] = new InventoryItem(
                 path: $dump,
                 category: Category::FixtureDump,
@@ -179,8 +242,24 @@ final readonly class InventoryScanner
      */
     private function snapshots(string $projectName, string $projectPath, ?string $module, ?string $coreMajor): array
     {
+        $materializedDir = $projectPath . '/' . SnapshotLayout::MATERIALIZED_DIR;
+
+        // glob() resolves through symlinked path components, so a symlinked
+        // materialized/ would enumerate files outside the environment — and
+        // prune deletes what the inventory reports. Nothing outside the tree
+        // is ever this environment's snapshot store.
+        if (is_link($materializedDir)) {
+            $this->warnings[] = sprintf(
+                'Snapshot directory "%s" is a symlink — skipped: only files inside the environment tree are '
+                . 'inventoried as its snapshots.',
+                $materializedDir,
+            );
+
+            return [];
+        }
+
         $items = [];
-        foreach (glob($projectPath . '/' . SnapshotLayout::MATERIALIZED_DIR . '/*.sql') ?: [] as $artifact) {
+        foreach ($this->globIn($materializedDir, '*.sql') as $artifact) {
             $name = basename($artifact, '.sql');
             $items[] = new InventoryItem(
                 path: $artifact,
@@ -233,7 +312,10 @@ final readonly class InventoryScanner
     private function snapshotMaterializedAt(string $projectPath, string $name): ?\DateTimeImmutable
     {
         $metaPath = $projectPath . '/' . SnapshotLayout::META_DIR . '/' . $name . '.meta';
-        if (!is_file($metaPath) || preg_match('/^materialized_at=(.+)$/m', (string) file_get_contents($metaPath), $m) !== 1) {
+        if (
+            !is_file($metaPath)
+            || preg_match('/^materialized_at=(.+)$/m', (string) file_get_contents($metaPath), $m) !== 1
+        ) {
             return null;
         }
 

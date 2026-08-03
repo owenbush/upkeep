@@ -5,14 +5,10 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\HttpClient\HttpClient;
-use Upkeep\Cockpit\Cockpit;
-use Upkeep\Cockpit\RegistryException;
 use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\RowAssembler;
 use Upkeep\Gate\FastLaneGate;
@@ -20,9 +16,12 @@ use Upkeep\Gate\GateStatus;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\EndpointClosed;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\MergeRequest;
-use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Gitlab\Unauthorized;
 use Upkeep\Results\ResultsCache;
+use Upkeep\Workflow\ExitCode;
+use Upkeep\Workflow\WorkflowException;
 
 /**
  * The fast-lane merge command: presents the current READY-AUTO rows one at a
@@ -47,7 +46,7 @@ use Upkeep\Results\ResultsCache;
     name: 'merge',
     description: 'Fast-lane merge: prompt per READY-AUTO merge request and merge only on an explicit per-MR approval.',
 )]
-final class MergeCommand extends Command
+final class MergeCommand extends UpkeepCommand
 {
     /** @param ?GitlabClient $client injected in tests; built from the resolved token otherwise */
     public function __construct(private readonly ?GitlabClient $client = null)
@@ -63,41 +62,32 @@ final class MergeCommand extends Command
             InputOption::VALUE_NONE,
             'Required: run the fast-lane loop (the only mode; named explicitly because it performs merges)',
         );
-        $this->addOption(
-            'cockpit',
-            null,
-            InputOption::VALUE_REQUIRED,
-            sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR),
-        );
+        $this->addCockpitOption();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
-
         if (!$input->getOption('fast-lane')) {
-            $io->error('The merge command only operates in fast-lane mode; re-run as `upkeep merge --fast-lane`. It will still prompt per MR — the flag names the workflow, it never skips approval.');
-
-            return Command::INVALID;
+            // Bad usage is an infrastructure outcome: no merge was attempted,
+            // so there is no verdict about any merge request to report.
+            throw new WorkflowException(
+                'The merge command only operates in fast-lane mode; re-run as `upkeep merge --fast-lane`. It will '
+                . 'still prompt per MR — the flag names the workflow, it never skips approval.',
+            );
         }
 
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        try {
-            $registry = $cockpit->loadRegistry();
-        } catch (RegistryException $e) {
-            $io->error($e->getMessage());
+        $cockpit = $this->cockpit($input);
+        $modules = $this->modules($cockpit);
 
-            return Command::FAILURE;
-        }
-
-        $client = $this->client ?? $this->buildClient($io);
+        // The factory reports the missing-token guidance itself; without a
+        // credential nothing can be classified, let alone merged.
+        $client = $this->client ?? GitlabClientFactory::forConsole($io);
         if ($client === null) {
-            return Command::FAILURE;
+            return ExitCode::INFRASTRUCTURE;
         }
 
-        $cache = new ResultsCache($cockpit->root . '/results');
-        $assembler = new RowAssembler($client, $cache);
-        $rows = $assembler->assemble($registry->modules());
+        $cache = new ResultsCache($cockpit->resultsPath());
+        $rows = (new RowAssembler($client, $cache))->assemble($modules);
 
         $ready = array_values(array_filter($rows, static fn (DashboardRow $row): bool => $row->isReadyAuto()));
         $rest = array_values(array_filter($rows, static fn (DashboardRow $row): bool => !$row->isReadyAuto()));
@@ -113,33 +103,46 @@ final class MergeCommand extends Command
             $io->newLine();
             $io->writeln('No READY-AUTO rows — nothing eligible for fast-lane merge.');
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
-        $tally = ['merged' => 0, 'handed-to-browser' => 0, 'skipped' => 0, 'demoted' => 0, 'failed' => 0];
+        $tally = [
+            'merged' => 0,
+            'handed-to-browser' => 0,
+            'skipped' => 0,
+            'demoted' => 0,
+            'failed' => 0,
+            'credential-failures' => 0,
+        ];
 
         if (!$input->isInteractive()) {
             // No terminal means no explicit per-MR affirmative is possible,
             // and without one nothing merges — ever. The READY-AUTO rows are
             // reported as skipped instead of silently consuming defaults.
             $io->newLine();
-            $io->writeln('Approval requires an interactive terminal: every merge needs an explicit per-MR "merge" answer, so a non-interactive run merges nothing.');
+            $io->writeln(
+                'Approval requires an interactive terminal: every merge needs an explicit per-MR "merge" answer, '
+                . 'so a non-interactive run merges nothing.',
+            );
             foreach ($ready as $row) {
-                \assert($row->mergeRequest !== null);
                 $tally['skipped']++;
-                $io->writeln(sprintf('Skipped %s !%d (no interactive approval possible).', $row->module, $row->mergeRequest->iid));
+                $io->writeln(sprintf(
+                    'Skipped %s !%d (no interactive approval possible).',
+                    $row->module,
+                    $row->requireMergeRequest()->iid,
+                ));
             }
             $this->renderSummary($io, $tally);
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         foreach ($ready as $row) {
-            \assert($row->project !== null && $row->mergeRequest !== null);
+            $iid = $row->requireMergeRequest()->iid;
             $this->renderContext($io, $row);
 
             $action = $io->choice(
-                sprintf('Fast-lane action for %s !%d', $row->module, $row->mergeRequest->iid),
+                sprintf('Fast-lane action for %s !%d', $row->module, $iid),
                 ['merge', 'skip', 'quit'],
                 'skip',
             );
@@ -149,7 +152,7 @@ final class MergeCommand extends Command
             }
             if ($action !== 'merge') {
                 $tally['skipped']++;
-                $io->writeln(sprintf('Skipped %s !%d.', $row->module, $row->mergeRequest->iid));
+                $io->writeln(sprintf('Skipped %s !%d.', $row->module, $iid));
                 continue;
             }
 
@@ -158,7 +161,23 @@ final class MergeCommand extends Command
 
         $this->renderSummary($io, $tally);
 
-        return Command::SUCCESS;
+        return self::outcome($tally);
+    }
+
+    /**
+     * A run where every merge failed used to exit 0. Failed merges are the
+     * work reporting failure (1); a rejected credential is a setup problem
+     * (2) and outranks them.
+     *
+     * @param array<string, int> $tally
+     */
+    private static function outcome(array $tally): int
+    {
+        return match (true) {
+            $tally['credential-failures'] > 0 => ExitCode::INFRASTRUCTURE,
+            $tally['failed'] > 0 => ExitCode::FAILED,
+            default => ExitCode::OK,
+        };
     }
 
     /**
@@ -168,15 +187,21 @@ final class MergeCommand extends Command
      *
      * @param array<string, int> $tally
      */
-    private function mergeOne(SymfonyStyle $io, GitlabClient $client, ResultsCache $cache, DashboardRow $row, array &$tally): void
-    {
-        \assert($row->project !== null && $row->mergeRequest !== null);
-        $iid = $row->mergeRequest->iid;
+    private function mergeOne(
+        SymfonyStyle $io,
+        GitlabClient $client,
+        ResultsCache $cache,
+        DashboardRow $row,
+        array &$tally,
+    ): void {
+        $project = $row->requireProject();
+        $mergeRequest = $row->requireMergeRequest();
+        $iid = $mergeRequest->iid;
 
         // Freshness re-check: re-fetch the MR (and its head pipeline) with an
         // unmemoized client so we see it as it is NOW, not as classified at
         // row-assembly time. Anything moved → demote with reasons, no merge.
-        $fresh = $client->fresh()->mergeRequest($row->project, $iid);
+        $fresh = $client->fresh()->mergeRequest($project, $iid);
         if ($fresh instanceof ApiFailure) {
             $tally['demoted']++;
             $io->writeln(sprintf(
@@ -193,7 +218,7 @@ final class MergeCommand extends Command
         if ($fresh->state !== 'opened') {
             $reasons[] = 'state-changed:' . $fresh->state;
         }
-        if ($fresh->headSha !== $row->mergeRequest->headSha) {
+        if ($fresh->headSha !== $mergeRequest->headSha) {
             $reasons[] = 'sha-drift';
         }
         // Re-classify against the fresh MR and re-read local evidence: this
@@ -215,7 +240,7 @@ final class MergeCommand extends Command
             return;
         }
 
-        $result = $client->merge($row->project, $iid, $fresh->headSha);
+        $result = $client->merge($project, $iid, $fresh->headSha);
         if ($result instanceof MergeRequest) {
             $tally['merged']++;
             $io->writeln(sprintf('Merged %s !%d (state: %s).', $row->module, $iid, $result->state));
@@ -224,25 +249,44 @@ final class MergeCommand extends Command
         }
 
         if ($result instanceof EndpointClosed) {
-            // The documented degraded path: the instance refuses API merges,
-            // so the approved action becomes handing the human the exact
-            // browser URL to perform it there.
+            // The documented degraded path: the instance refuses API merges
+            // (HTTP 403 — a policy decision, not a broken credential), so the
+            // approved action becomes handing the human the exact browser URL
+            // to perform it there. A rejected token is Unauthorized and falls
+            // through to the failure branch below, where the message says so.
             $tally['handed-to-browser']++;
-            $io->writeln(sprintf('GitLab refuses API merges here (HTTP %d).', $result->status));
+            $io->writeln('GitLab refuses API merges here (HTTP 403).');
             $io->writeln(sprintf('Merge in the browser: %s', $result->browserUrl));
             $io->writeln(sprintf('Marked %s !%d handled-manually.', $row->module, $iid));
 
             return;
         }
 
-        $tally['failed']++;
-        $io->writeln(sprintf('Merge failed for %s !%d: %s', $row->module, $iid, $result->message));
+        if ($result instanceof Unauthorized) {
+            // A rejected PAT is not a verdict about this merge request: it is
+            // the operator's credential, and every remaining row would fail
+            // the same way.
+            $tally['credential-failures']++;
+        } else {
+            $tally['failed']++;
+        }
+        $io->writeln(sprintf(
+            'Merge failed for %s !%d [%s]: %s',
+            $row->module,
+            $iid,
+            $result->shortCode(),
+            $result->message,
+        ));
+        // Every failure type now carries the browser URL where one is known,
+        // so the operator gets the manual fallback whatever went wrong.
+        if ($result->browserUrl !== null) {
+            $io->writeln(sprintf('Merge in the browser instead: %s', $result->browserUrl));
+        }
     }
 
     private function renderContext(SymfonyStyle $io, DashboardRow $row): void
     {
-        \assert($row->mergeRequest !== null);
-        $mr = $row->mergeRequest;
+        $mr = $row->requireMergeRequest();
         $io->section(sprintf('%s !%d (core %s) — READY-AUTO', $row->module, $mr->iid, $row->core));
         $io->writeln('  Title:  ' . $mr->title);
         $io->writeln(sprintf('  Branch: %s -> %s', $mr->sourceBranch, $mr->targetBranch));
@@ -268,7 +312,7 @@ final class MergeCommand extends Command
         $io->writeln(sprintf('  Handed to browser: %d', $tally['handed-to-browser']));
         $io->writeln(sprintf('  Skipped: %d', $tally['skipped']));
         $io->writeln(sprintf('  Demoted: %d', $tally['demoted']));
-        $io->writeln(sprintf('  Failed: %d', $tally['failed']));
+        $io->writeln(sprintf('  Failed: %d', $tally['failed'] + $tally['credential-failures']));
     }
 
     private static function describeNonActionable(DashboardRow $row): string
@@ -285,21 +329,5 @@ final class MergeCommand extends Command
             $row->statusCell(),
             DashboardRow::truncate($row->mergeRequest->title),
         );
-    }
-
-    private function buildClient(SymfonyStyle $io): ?GitlabClient
-    {
-        $resolver = new TokenResolver();
-        $token = $resolver->resolve();
-        if ($token === null) {
-            $io->error(sprintf(
-                'No GitLab token found. Configure one of: %s. (The token is never printed or logged.)',
-                $resolver->describeSources(),
-            ));
-
-            return null;
-        }
-
-        return new GitlabClient(HttpClient::create(), $token);
     }
 }

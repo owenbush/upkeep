@@ -20,7 +20,7 @@ final readonly class ThrowawaySite
      * @param \Closure(string): void $log
      */
     public function __construct(
-        private ProcessRunner $runner,
+        private CommandRunner $runner,
         private \Closure $log,
     ) {
     }
@@ -31,8 +31,13 @@ final readonly class ThrowawaySite
      *
      * @return array{string, string} [php version, db engine identity] of the install environment
      */
-    public function cleanInstallAndDump(string $coreMajor, string $treePath, string $throwawayPath, string $projectName, string $dumpPath): array
-    {
+    public function cleanInstallAndDump(
+        string $coreMajor,
+        string $treePath,
+        string $throwawayPath,
+        string $projectName,
+        string $dumpPath,
+    ): array {
         // Seed the throwaway by tree copy — the task-3-verified-identical path.
         ($this->log)(sprintf('Copying base tree to throwaway install project %s ...', $throwawayPath));
         $this->runner->run(['cp', '-a', $treePath, $throwawayPath]);
@@ -89,16 +94,18 @@ final readonly class ThrowawaySite
 
     private function detectDbEngine(string $throwawayPath): string
     {
-        $json = $this->runner->run(['ddev', 'describe', '-j'], $throwawayPath);
-        $decoded = json_decode($json, true);
-        $dbinfo = $decoded['raw']['dbinfo'] ?? [];
-        $type = $dbinfo['database_type'] ?? null;
-        $version = $dbinfo['database_version'] ?? null;
-
-        if (is_string($type) && $type !== '') {
-            return is_string($version) && $version !== '' ? $type . ':' . $version : $type;
+        $described = EngineDescription::fromJson($this->runner->run(['ddev', 'describe', '-j'], $throwawayPath));
+        if ($described === null) {
+            return 'unknown';
         }
 
-        return 'unknown';
+        $type = $described->stringOrNull('dbinfo', 'database_type') ?? '';
+        $version = $described->stringOrNull('dbinfo', 'database_version') ?? '';
+
+        if ($type === '') {
+            return 'unknown';
+        }
+
+        return $version !== '' ? $type . ':' . $version : $type;
     }
 }

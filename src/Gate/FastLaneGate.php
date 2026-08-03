@@ -65,7 +65,8 @@ final class FastLaneGate
             $reasons[] = 'ci-red';
             $blocked = true;
         } elseif (!$pipeline->status->isGreen()) {
-            $reasons[] = 'ci-not-green:' . ($pipeline->rawStatus !== '' ? $pipeline->rawStatus : $pipeline->status->value);
+            $reasons[] = 'ci-not-green:'
+                . ($pipeline->rawStatus !== '' ? $pipeline->rawStatus : $pipeline->status->value);
         }
 
         // Local evidence must exist AND be for the MR's current head SHA;

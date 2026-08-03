@@ -5,18 +5,13 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Upkeep\Adapter\DdevContribAdapter;
-use Upkeep\Adapter\EngineAdapterInterface;
-use Upkeep\Adapter\ProcessRunner;
+use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\ProjectsRoot;
 use Upkeep\Adapter\VolumeProbe;
-use Upkeep\BaseArtifact\ArtifactLayout;
-use Upkeep\Cockpit\Cockpit;
 use Upkeep\Maintenance\ByteFormat;
 use Upkeep\Maintenance\Category;
 use Upkeep\Maintenance\Duration;
@@ -25,16 +20,19 @@ use Upkeep\Maintenance\InventoryScanner;
 use Upkeep\Maintenance\PruneExecutor;
 use Upkeep\Maintenance\PruneScope;
 use Upkeep\Maintenance\PruneSelector;
+use Upkeep\Workflow\ExitCode;
+use Upkeep\Workflow\WorkflowException;
 
 #[AsCommand(
     name: 'prune',
-    description: 'Reclaim disposable state (environment trees, engine projects, materialized snapshots). Dry-run by default; never touches base artifacts, keep-marked items, or committed fixture dumps.',
+    description: 'Reclaim disposable state (environment trees, engine projects, materialized snapshots). Dry-run '
+    . 'by default; never touches base artifacts, keep-marked items, or committed fixture dumps.',
 )]
-final class PruneCommand extends Command
+final class PruneCommand extends UpkeepCommand
 {
     public function __construct(
-        private readonly ?EngineAdapterInterface $adapter = null,
-        private readonly ?VolumeProbe $volumeProbe = null,
+        private readonly EngineAdapterFactory $engines,
+        private readonly VolumeProbe $volumeProbe,
     ) {
         parent::__construct();
     }
@@ -42,15 +40,51 @@ final class PruneCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addOption('trees', null, InputOption::VALUE_NONE, 'Prune disposable environment trees (disposed via the adapter teardown, which also releases the engine project)')
-            ->addOption('snapshots', null, InputOption::VALUE_NONE, 'Prune materialized fixture snapshots (their committed .sql.gz dumps can rebuild them at any time)')
-            ->addOption('projects', null, InputOption::VALUE_NONE, 'Prune whole engine projects: trees plus their docker named volumes, via the adapter teardown')
-            ->addOption('all', null, InputOption::VALUE_NONE, 'Prune everything disposable: trees, volumes, and snapshots')
-            ->addOption('older-than', null, InputOption::VALUE_REQUIRED, 'Only prune items unused for at least this long (e.g. 30d, 12h); items of unknown age are then excluded')
-            ->addOption('keep-latest', null, InputOption::VALUE_REQUIRED, 'Snapshots: keep this many newest snapshots per project regardless of age', '0')
-            ->addOption('yes', 'y', InputOption::VALUE_NONE, 'Actually delete. Without this flag the command is a dry run and deletes NOTHING')
-            ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR))
+            ->addOption(
+                'trees',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune disposable environment trees (disposed via the adapter teardown, which also releases the '
+                . 'engine project)',
+            )
+            ->addOption(
+                'snapshots',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune materialized fixture snapshots (their committed .sql.gz dumps can rebuild them at any time)',
+            )
+            ->addOption(
+                'projects',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune whole engine projects: trees plus their docker named volumes, via the adapter teardown',
+            )
+            ->addOption(
+                'all',
+                null,
+                InputOption::VALUE_NONE,
+                'Prune everything disposable: trees, volumes, and snapshots',
+            )
+            ->addOption(
+                'older-than',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Only prune items unused for at least this long (e.g. 30d, 12h); items of unknown age are then '
+                . 'excluded',
+            )
+            ->addOption(
+                'keep-latest',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Snapshots: keep this many newest snapshots per project regardless of age',
+                '0',
+            )
+            ->addOption(
+                'yes',
+                'y',
+                InputOption::VALUE_NONE,
+                'Actually delete. Without this flag the command is a dry run and deletes NOTHING',
+            )
             ->setHelp(<<<'HELP'
                 Dry-run by default: without <info>--yes</info> the command only lists deletion candidates
                 with their reclaimable sizes. Protected regardless of any flag combination:
@@ -63,49 +97,43 @@ final class PruneCommand extends Command
                 Environments are always disposed through the engine adapter (containers and
                 named volumes released with the tree); pruned state regenerates on demand.
                 HELP);
+
+        $this->addCockpitOption()->addProjectsRootOption();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
-
         $scope = self::scopeFromFlags($input);
         if ($scope === null) {
-            $io->error('Pick exactly one prune scope: --trees, --snapshots, --projects, or --all.');
-
-            return Command::FAILURE;
+            throw new WorkflowException('Pick exactly one prune scope: --trees, --snapshots, --projects, or --all.');
         }
 
         try {
-            $olderThan = $input->getOption('older-than') !== null ? Duration::parseToSeconds((string) $input->getOption('older-than')) : null;
+            $olderThanOption = self::stringOption($input, 'older-than');
+            $olderThan = $olderThanOption !== null ? Duration::parseToSeconds($olderThanOption) : null;
         } catch (\InvalidArgumentException $e) {
-            $io->error($e->getMessage());
-
-            return Command::FAILURE;
+            throw new WorkflowException($e->getMessage(), 0, $e);
         }
-        $keepLatest = (int) $input->getOption('keep-latest');
+        $keepLatest = self::intOption($input, 'keep-latest');
 
-        $cockpit = Cockpit::resolve($input->getOption('cockpit'));
-        if (!file_exists($cockpit->registryPath())) {
-            $io->error(sprintf('No cockpit found at "%s" (missing %s). Run `upkeep init` first.', $cockpit->root, Cockpit::REGISTRY_FILENAME));
-
-            return Command::FAILURE;
-        }
-        $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root);
+        $cockpit = $this->cockpit($input);
+        // Parsed up front, before anything is scanned or any reclaim plan is
+        // shown: this is the only destructive command, and discovering a
+        // malformed registry halfway through would abort a run the operator
+        // has already been shown a plan for.
+        $modules = $this->modules($cockpit);
+        $projectsRoot = ProjectsRoot::resolve(self::stringOption($input, 'projects-root'), $cockpit->root);
 
         $scanner = new InventoryScanner($cockpit, $projectsRoot);
         $items = $scanner->scan();
+        // An under-reported inventory can only under-delete, so the run
+        // continues — but the operator is told what could not be looked at.
+        foreach ($scanner->warnings() as $warning) {
+            $io->warning($warning);
+        }
 
         if (\in_array(Category::ProjectVolume, $scope->categories(), true)) {
-            $trees = [];
-            foreach ($items as $item) {
-                if ($item->category === Category::ProjectTree && $item->projectName !== null) {
-                    $trees[$item->projectName] = $item;
-                }
-            }
-            $probe = $this->volumeProbe ?? VolumeProbe::withRunner(new ProcessRunner(static function (string $line): void {
-            }));
-            $items = [...$items, ...$probe->items($trees)];
+            $items = [...$items, ...$this->volumeProbe->itemsForInventory($items)];
         }
 
         $selector = new PruneSelector($scanner->protectedRoots());
@@ -114,7 +142,7 @@ final class PruneCommand extends Command
         if ($candidates === []) {
             $io->writeln('Nothing to prune: no unprotected items match the given scope and filters.');
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
         $now = new \DateTimeImmutable();
@@ -130,32 +158,43 @@ final class PruneCommand extends Command
             ], $candidates),
         );
         $total = array_sum(array_map(static fn (InventoryItem $i) => $i->sizeBytes, $candidates));
-        $io->writeln(sprintf('Total reclaimable: %s across %d item(s).', ByteFormat::human($total), \count($candidates)));
+        $io->writeln(sprintf(
+            'Total reclaimable: %s across %d item(s).',
+            ByteFormat::human($total),
+            \count($candidates),
+        ));
 
         if (!$input->getOption('yes')) {
             $io->writeln('');
             $io->writeln('<comment>Dry run: nothing was deleted. Re-run with --yes to reclaim.</comment>');
 
-            return Command::SUCCESS;
+            return ExitCode::OK;
         }
 
-        $registry = $cockpit->loadRegistry();
-        $adapter = $this->adapter ?? new DdevContribAdapter(
-            new ArtifactLayout($cockpit->baseArtifactsPath()),
-            $projectsRoot,
-            new ProcessRunner(static fn (string $line) => $io->writeln($line)),
+        $adapter = $this->engines->create(
+            $cockpit,
+            self::stringOption($input, 'projects-root'),
+            static fn (string $line) => $io->writeln($line),
             static fn (string $line) => $io->writeln($line),
         );
 
-        $outcome = (new PruneExecutor($selector, $adapter, $registry->modules(), static fn (string $line) => $io->writeln($line)))
-            ->execute($candidates);
+        $outcome = (new PruneExecutor(
+            $selector,
+            $adapter,
+            $modules,
+            static fn (string $line) => $io->writeln($line),
+        ))->execute($candidates);
 
         foreach ($outcome->skipped as [$item, $reason]) {
             $io->warning(sprintf('Skipped %s: %s', $item->path, $reason));
         }
-        $io->success(sprintf('Pruned %d item(s), reclaimed %s.', \count($outcome->deleted), ByteFormat::human($outcome->freedBytes)));
+        $io->success(sprintf(
+            'Pruned %d item(s), reclaimed %s.',
+            \count($outcome->deleted),
+            ByteFormat::human($outcome->freedBytes),
+        ));
 
-        return Command::SUCCESS;
+        return ExitCode::OK;
     }
 
     private static function scopeFromFlags(InputInterface $input): ?PruneScope

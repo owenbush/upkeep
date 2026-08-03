@@ -23,9 +23,16 @@ add-on. You never interact with either directly unless you want to.
 
 > **Note for Colima / Docker Desktop users:** environments are bind-mounted
 > into the Docker VM, and macOS Docker providers only share your home
-> directory by default. The projects root (where environments live) must be
-> under `$HOME` — the default `~/.upkeep/projects` already is, so this only
-> matters if you point `--projects-root`/`UPKEEP_PROJECTS_ROOT` elsewhere.
+> directory by default. The projects root (where environments live) must
+> therefore be under `$HOME`, and Upkeep **refuses** a
+> `--projects-root`/`UPKEEP_PROJECTS_ROOT` (or a
+> `base-artifacts:build --scratch-dir`) that resolves outside it, exiting 2
+> with an explanation. That is cheaper than an opaque mount failure minutes
+> into a provision. The check is done on the resolved path, so a symlink or a
+> `..` pointing out of `$HOME` is refused too, and there is no override — a
+> path outside your home directory cannot work. The defaults
+> (`<cockpit>/projects`, `~/.upkeep/projects`, `~/.upkeep/scratch`) are all
+> inside `$HOME` already, so this only matters if you move them.
 
 ## Install
 
@@ -90,18 +97,31 @@ one:
 upkeep init ~/upkeep-cockpit
 ```
 
-That scaffolds `registry.yml` plus empty `base-artifacts/` and `fixtures/`
-directories. Every command finds the cockpit via `--cockpit`, else the
-`UPKEEP_COCKPIT` environment variable, else the current directory — exporting
-the variable once is the comfortable setup:
+That scaffolds `registry.yml` plus empty `base-artifacts/`, `fixtures/` and
+`projects/` directories. Every command finds the cockpit via `--cockpit`, else
+the `UPKEEP_COCKPIT` environment variable, else the current directory —
+exporting the variable once is the comfortable setup:
 
 ```bash
 export UPKEEP_COCKPIT=~/upkeep-cockpit
 ```
 
-Environments live under the projects root, resolved as `--projects-root`,
-else `UPKEEP_PROJECTS_ROOT`, else `~/.upkeep/projects` (see the Colima note
-above if you move it).
+Environments live under the projects root, resolved in this order:
+
+1. `--projects-root`;
+2. the `UPKEEP_PROJECTS_ROOT` environment variable;
+3. `<cockpit>/projects/`, when that directory exists — which is why `init`
+   creates it: a cockpit is self-contained by default;
+4. `~/.upkeep/projects`.
+
+Whichever wins must resolve to a path under `$HOME` (see the Colima note
+above).
+
+Two more directories appear inside the cockpit as you use it: `results/`
+(cached check results) and `cache/` (cached GitLab and drupal.org data). Both
+hold token-scoped remote data and raw check output, so Upkeep creates them
+`0700` with `0600` files. If you keep your cockpit in version control, exclude
+both — they are caches, they regenerate, and they are not meant to be shared.
 
 ### Register your modules
 
@@ -148,7 +168,7 @@ for (each build spins up a throwaway ddev project, installs Drupal, dumps the
 database, and tears itself down — a few minutes each):
 
 ```bash
-upkeep base-artifacts:build --core=11
+upkeep base-artifacts:build --version=11
 ```
 
 Re-running for an existing core version requires `--force` (a deliberate
@@ -206,13 +226,7 @@ loads a named database fixture before checking (see Fixtures below). Note
 that `--version` is *always* the core selector — `upkeep --version` does not
 print an application version, by design.
 
-Exit codes are a contract you can script against:
-
-| Code | Meaning |
-| ---- | ------- |
-| 0 | every check passed |
-| 1 | at least one check failed (the run produced a verdict) |
-| 2 | infrastructure error — the run never produced a verdict |
+See [Exit codes](#exit-codes) for what `check` returns.
 
 ### Review an MR in the browser
 
@@ -247,9 +261,15 @@ is required precisely because the command performs merges; the flag names the
 workflow, it never skips approval.
 
 **Degraded path.** If the GitLab instance refuses API merges (the merge
-endpoint closed to PATs), an approved row is not lost: Upkeep prints the
-exact browser merge URL for that MR and records it as handled manually. You
-perform the same single human action, just in the browser.
+endpoint closed to PATs — HTTP 403), an approved row is not lost: Upkeep
+prints the exact browser merge URL for that MR and records it as handled
+manually. You perform the same single human action, just in the browser. A
+rejected *credential* is HTTP 401 and is reported differently, because "use
+the browser" would be the wrong advice for a bad token.
+
+**Exit codes.** `merge` exits 0 when everything you approved went through (or
+you approved nothing), 1 when any merge failed, and 2 when GitLab rejected the
+credential or no token was configured.
 
 ### Interact with an environment
 
@@ -263,7 +283,26 @@ upkeep exec entity_type_access_conditions --version=10 -- ddev logs
 ```
 
 Everything after `--` is run with the environment directory as the working
-directory. The exit code is passed through, so you can script against it.
+directory.
+
+**The child's exit code is not passed through.** `exec` answers on the same
+0/1/2 contract as every other command: 0 if the command succeeded, **1 for any
+non-zero exit** — 1, 2, 7 and 127 all collapse to 1 — and 2 if Upkeep could not
+run it at all (unregistered module, untracked core version, no provisioned
+environment, or a child process that never started). Collapsing is deliberate:
+it means a child exiting 2 can never be mistaken for an Upkeep infrastructure
+failure. If you need the child's own code, have the child report it — for
+example `upkeep exec mod -- sh -c 'mycmd; echo "rc=$?"'`.
+
+**The child does not inherit `UPKEEP_GITLAB_TOKEN`.** The credential is
+removed from every child environment, because Symfony's process layer
+otherwise copies the whole parent environment into every subprocess — and this
+tool logs, renders and caches that subprocess's output. If a command you run
+through `exec` needs a GitLab token, give it one from its own source rather
+than relying on inheritance.
+
+Upkeep's own diagnostics from `exec` go to **stderr**; stdout belongs entirely
+to the wrapped command, so piping it stays clean.
 
 To get the bare path (for `cd` or other tools):
 
@@ -271,6 +310,10 @@ To get the bare path (for `cd` or other tools):
 cd $(upkeep env:path entity_type_access_conditions)
 upkeep env:path entity_type_access_conditions --version=10
 ```
+
+`env:path` prints the path and nothing else on stdout — its errors also go to
+stderr, so `cd $(upkeep env:path …)` can never capture an error message into
+the path.
 
 Both commands default to the first core version tracked in the registry when
 `--version` is omitted.
@@ -291,6 +334,11 @@ drupal.org (title, status, priority, version), and opens the drupal.org
 issue page in your browser. Use `--no-open` to just print the details
 without launching the browser.
 
+The `<mr>` argument must be a merge request IID — a positive integer.
+Anything else (`abc`, `0`, `-3`) is refused with exit 2 rather than being
+turned into a request for `!0` and a confusing 404. The same rule applies
+everywhere an MR number is taken: `check`, `review`, `issue`, `needs-work`.
+
 The dashboard also shows issue status for each MR in the ISSUE column (e.g.
 `#3467675 (review)`), pulled live from the drupal.org API.
 
@@ -306,6 +354,21 @@ upkeep notes conditions_helper
 drafts paste-ready Markdown release notes: every MR merged since the module's
 last tag, grouped and linked. Takes a registered machine name or a full
 project path (e.g. `project/conditions_helper`).
+
+### Patch-only issues
+
+The dashboard is MR-centric, so contributions that arrive as a patch file
+never appear on it. To find them:
+
+```bash
+upkeep patches                      # every registered module
+upkeep patches --module=widget      # one module
+```
+
+lists drupal.org issues in Needs Review or RTBC that have no corresponding
+merge request. This is the one command with a documented degraded mode: with
+no GitLab token it warns once, scans without cross-referencing merge requests,
+and still exits 0 — a wider result set rather than no result at all.
 
 ## Fixtures
 
@@ -334,7 +397,17 @@ upkeep status
 summarizes the cockpit, environments, and total tracked disk usage;
 `upkeep status --disk` itemizes it per module, core version, and category
 (project trees, docker volumes, materialized snapshots, base artifacts,
-fixture dumps) with totals.
+fixture dumps) with totals. The header line reports how many modules are
+registered:
+
+```
+Cockpit: /home/you/upkeep-cockpit (2 registered module(s))
+```
+
+To count them, `status` — like `base-artifacts:status` and
+`base-artifacts:build` — parses `registry.yml` rather than just checking that
+it exists, so a malformed registry now fails these commands with exit 2 too,
+instead of being discovered later by a command that reads it.
 
 ```bash
 upkeep prune --all
@@ -347,6 +420,14 @@ nothing until you add `--yes`. Narrow it with `--trees`, `--snapshots`, or
 snapshots per project with `--keep-latest=N`. Everything pruned regenerates
 on demand.
 
+`--older-than` measures an environment's age from when it was **last used**,
+not when it was created: each environment's `.upkeep-env.yml` carries a
+`last_used_at` timestamp, stamped at provision and re-stamped every time the
+environment is reused. An environment created months ago but checked against
+this morning is not a deletion candidate. Environments provisioned before this
+field existed parse fine — the key is optional — and fall back to their
+creation date until the next time they are used.
+
 Protected regardless of flags: base artifacts, committed fixture dumps
 (`.sql.gz`), and keep-marked items — `touch <project>/.keep` keeps a whole
 environment, and an `<artifact>.keep` sibling (e.g.
@@ -354,30 +435,108 @@ environment, and an `<artifact>.keep` sibling (e.g.
 always disposed through the engine adapter, so containers and named volumes
 are released together with the tree.
 
+## Exit codes
+
+Every Upkeep command answers with one of exactly three codes. This is a
+contract you can script against, and it is the same contract for all of them —
+not just `check` and `review`:
+
+| Code | Meaning |
+| ---- | ------- |
+| 0 | the command did what was asked |
+| 1 | the work it supervised failed — a red check, a merge GitLab refused, a non-zero command run through `exec` |
+| 2 | Upkeep could not do the job, so there is no verdict — no cockpit or registry, no token, an unregistered module, an untracked core version, an argument Upkeep rejected, an unresolvable MR, an engine or API failure |
+
+The distinction that matters to a script: **1 means look at the subject, 2
+means look at your setup.**
+
+Consequences worth knowing:
+
+- **No GitLab token exits 2** — from every command that needs one
+  (`api:probe`, `check`, `review`, `dashboard`, `merge`, `notes`, `issue`,
+  `needs-work`, `modules:add`), because no credential means no verdict was
+  produced. The one deliberate exception is `patches`, whose token-less mode
+  is documented and degraded rather than broken: it warns once, scans without
+  cross-referencing merge requests, and still exits 0.
+- **`merge` exits 1 when any merge failed**, and 2 if GitLab rejected the
+  credential (HTTP 401).
+- **`upkeep exec` does not pass the child's exit code through** — see
+  [Interact with an environment](#interact-with-an-environment).
+- Anything Upkeep itself could not do exits 2, including a malformed
+  `registry.yml`, a module missing from it, a core version the module's entry
+  does not track, a merge-request argument that is not a positive integer, and
+  a per-MR directory under `<cockpit>/results/` that exists but cannot be
+  read. That last one used to be reported as "never checked" — indistinguishable
+  from a genuinely unchecked MR, and enough to make the fast-lane gate withhold
+  a merge for a reason invisible to you.
+- A command that could not write what it was asked to write **fails** rather
+  than printing success — `init` and `modules:add` in particular. Every file
+  Upkeep produces is written to a temporary file and renamed into place, so a
+  reader never sees a half-written registry and a failed write is never
+  reported as a completed one.
+
+The error messages are deliberately uniform, so the same situation reads the
+same way whichever command you hit it from. An unregistered module lists the
+modules that *are* registered; an untracked core version names the ones the
+entry does track and tells you to add it to `core_versions` in `registry.yml`;
+a missing cockpit always says to run `upkeep init` or point `--cockpit` /
+`UPKEEP_COCKPIT` at an existing one.
+
+One caveat: a command line the Symfony console cannot even parse — an unknown
+command, an unknown option, a missing required argument — is rejected by the
+console before Upkeep's contract applies, and exits **1**. The three codes
+above describe every invocation Upkeep actually runs.
+
 ## Command reference
 
 | Command | Description |
 | ------- | ----------- |
-| `upkeep init [<dir>]` | Scaffold a new cockpit: `registry.yml`, `base-artifacts/`, `fixtures/` |
+| `upkeep init [<dir>]` | Scaffold a new cockpit: `registry.yml`, `base-artifacts/`, `fixtures/`, `projects/` |
 | `upkeep modules` | List the modules registered in the cockpit registry |
 | `upkeep modules:add` | Register maintained modules from your git.drupalcode.org memberships (interactive opt-in) |
 | `upkeep api:probe <module>` | Probe the GitLab API for a module: open MRs and head pipeline status |
-| `upkeep base-artifacts:build --core=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
+| `upkeep base-artifacts:build --version=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
 | `upkeep dashboard [--version=N] [--refresh[=MODULE]]` | All open MRs with CI, local check, and fast-lane status (cached; `--refresh` re-fetches) |
-| `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR; exit 0/1/2 contract |
+| `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR |
 | `upkeep review <module> <mr> [--version=N]` | Apply an MR to a running site and print its browsable URL |
+| `upkeep dev <module> [--version=N] [--branch=B]` | Prepare an environment for active development: provision if needed, optionally check out a branch, print the path |
 | `upkeep exec <module> [--version=N] -- <command...>` | Run a command in the module's environment directory |
 | `upkeep env:path <module> [--version=N]` | Print the absolute path of a module's environment directory |
 | `upkeep issue <module> <mr> [--no-open]` | Show the linked drupal.org issue and open it in the browser |
+| `upkeep needs-work <module> <mr> [--version=N] [--dry-run] [--no-open]` | Post the local check results as a comment on the merge request |
+| `upkeep patches [--module=NAME]` | drupal.org issues in Needs Review / RTBC with no corresponding MR |
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |
 | `upkeep prune [--trees\|--snapshots\|--projects\|--all] [--older-than=T] [--keep-latest=N] [--yes]` | Reclaim disposable state; dry-run without `--yes` |
 
 Global per-command options: `--cockpit`, and (where environments are
-involved) `--projects-root`. Run `upkeep help <command>` for the full text of
-any command.
+involved) `--projects-root`. Every command answers on the
+[0/1/2 exit-code contract](#exit-codes). Run `upkeep help <command>` for the
+full text of any command.
+
+## Upgrading an existing cockpit
+
+Nothing needs rebuilding, but two one-off housekeeping steps are worth doing
+on a cockpit created before the caches were tightened:
+
+```bash
+chmod -R go-rwx <cockpit>/results <cockpit>/cache
+```
+
+New files under `results/` and `cache/dashboard/` are written `0600` inside
+`0700` directories, but files already on disk keep the mode they were created
+with until they are re-written. The command above strips all group and other
+access from what is already there, in one pass. (Both directories are created
+on demand, so on a cockpit that has never run a `check` or a `dashboard` there
+is nothing to chmod and the command reports them missing — that is fine.) If
+your cockpit is in version control, add `results/` and `cache/` to its ignore
+file.
+
+`.upkeep-env.yml` gained an optional `last_used_at` key (see
+[Disk housekeeping](#disk-housekeeping)). Existing environments parse
+unchanged and need no rebuild.
 
 ## Design
 

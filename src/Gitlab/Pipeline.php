@@ -15,16 +15,20 @@ final readonly class Pipeline
     ) {
     }
 
+    /**
+     * @param array<array-key, mixed> $data a decoded pipeline JSON object
+     */
     public static function fromApi(array $data): self
     {
-        $rawStatus = (string) ($data['status'] ?? '');
+        $payload = new ApiPayload($data);
+        $rawStatus = $payload->string('status');
 
         return new self(
-            id: (int) ($data['id'] ?? 0),
+            id: $payload->int('id'),
             status: PipelineStatus::fromApi($rawStatus),
             rawStatus: $rawStatus,
-            sha: isset($data['sha']) ? (string) $data['sha'] : null,
-            webUrl: (string) ($data['web_url'] ?? ''),
+            sha: $payload->stringOrNull('sha'),
+            webUrl: $payload->string('web_url'),
         );
     }
 

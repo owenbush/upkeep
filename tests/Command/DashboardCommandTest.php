@@ -67,6 +67,7 @@ final class DashboardCommandTest extends TestCase
         return new GitlabClient(new MockHttpClient($factory), 'glpat-test-token');
     }
 
+    /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
         return new MockResponse(json_encode($payload, JSON_THROW_ON_ERROR), [
@@ -75,6 +76,7 @@ final class DashboardCommandTest extends TestCase
         ]);
     }
 
+    /** @return array<string, mixed> */
     private static function projectPayload(): array
     {
         return [
@@ -86,6 +88,11 @@ final class DashboardCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
     private static function botMrPayload(array $overrides = []): array
     {
         return $overrides + [
@@ -103,6 +110,7 @@ final class DashboardCommandTest extends TestCase
         ];
     }
 
+    /** @return array<string, mixed> */
     private static function greenPipeline(): array
     {
         return [
@@ -118,6 +126,7 @@ final class DashboardCommandTest extends TestCase
         return new DrupalOrgClient(new MockHttpClient(static fn () => new MockResponse('', ['http_code' => 404])));
     }
 
+    /** @param array<string, mixed> $args */
     private function runDashboard(GitlabClient $client, array $args = []): CommandTester
     {
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
@@ -126,6 +135,7 @@ final class DashboardCommandTest extends TestCase
         return $tester;
     }
 
+    /** @param list<CheckResult> $checks */
     private function storeLocal(array $checks, string $sha = self::HEAD_SHA): void
     {
         (new ResultsCache($this->cockpit . '/results'))->store(
@@ -137,7 +147,11 @@ final class DashboardCommandTest extends TestCase
         );
     }
 
-    /** Routes for the healthy one-bot-MR module. */
+    /**
+     * Routes for the healthy one-bot-MR module.
+     *
+     * @return array<string, MockResponse>
+     */
     private function healthyRoutes(): array
     {
         return [
@@ -303,15 +317,35 @@ final class DashboardCommandTest extends TestCase
         // Register a second module to verify selective refresh.
         file_put_contents(
             $this->cockpit . '/registry.yml',
-            "modules:\n  alpha:\n    project: project/alpha\n    core_versions: [\"11\"]\n  widget:\n    project: project/widget\n    core_versions: [\"11\"]\n",
+            "modules:\n  alpha:\n    project: project/alpha\n    core_versions: [\"11\"]\n"
+            . "  widget:\n    project: project/widget\n    core_versions: [\"11\"]\n",
         );
 
         // Cache both modules.
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('alpha', new ModuleSnapshot(
             new \DateTimeImmutable('-2 hours'),
-            ['id' => 1000, 'path' => 'alpha', 'path_with_namespace' => 'project/alpha', 'name' => 'Alpha', 'web_url' => 'https://git.drupalcode.org/project/alpha'],
-            [['iid' => 1, 'title' => 'Alpha MR', 'state' => 'opened', 'draft' => false, 'author' => ['username' => 'bot', 'id' => 1], 'source_branch' => 'fix', 'target_branch' => '1.x', 'detailed_merge_status' => 'mergeable', 'sha' => self::HEAD_SHA, 'web_url' => 'https://git.drupalcode.org/project/alpha/-/merge_requests/1']],
+            [
+                'id' => 1000,
+                'path' => 'alpha',
+                'path_with_namespace' => 'project/alpha',
+                'name' => 'Alpha',
+                'web_url' => 'https://git.drupalcode.org/project/alpha',
+            ],
+            [
+                [
+                    'iid' => 1,
+                    'title' => 'Alpha MR',
+                    'state' => 'opened',
+                    'draft' => false,
+                    'author' => ['username' => 'bot', 'id' => 1],
+                    'source_branch' => 'fix',
+                    'target_branch' => '1.x',
+                    'detailed_merge_status' => 'mergeable',
+                    'sha' => self::HEAD_SHA,
+                    'web_url' => 'https://git.drupalcode.org/project/alpha/-/merge_requests/1',
+                ],
+            ],
             [],
         ));
         $cache->save('widget', new ModuleSnapshot(
@@ -444,6 +478,100 @@ final class DashboardCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         self::assertStringNotContainsString('patch↑', $tester->getDisplay());
+    }
+
+    /**
+     * Nothing open anywhere is a normal answer, not an empty table: the note
+     * says so in the operator's own terms, and unfiltered it must not claim a
+     * core version was asked for.
+     */
+    public function testNoOpenMergeRequestsAnywhereIsReportedAsANoteNotAnEmptyTable(): void
+    {
+        $tester = $this->runDashboard($this->client([
+            '/merge_requests?' => self::json([]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]));
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('No open merge requests across the registered modules.', $display);
+        self::assertStringNotContainsString('targeting core', $display);
+        self::assertStringNotContainsString('MODULE', $display);
+    }
+
+    /** The same emptiness under a filter names the core version that was asked for. */
+    public function testNoOpenMergeRequestsForTheFilteredCoreNamesThatVersion(): void
+    {
+        $tester = $this->runDashboard(
+            $this->client([
+                '/merge_requests?' => self::json([]),
+                '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+            ]),
+            ['--version' => '11'],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('targeting core 11', $tester->getDisplay());
+    }
+
+    /**
+     * A module whose project cannot even be looked up still gets a row. The
+     * dashboard's job is to show the state of every registered module, and
+     * "we could not ask" is a state — silently dropping the module would read
+     * as "nothing open here".
+     */
+    public function testAModuleWhoseProjectLookupFailsStillGetsARowNamingTheFailure(): void
+    {
+        $tester = $this->runDashboard($this->client([
+            '/projects/project%2Fwidget' => self::json(['message' => '404 Project Not Found'], 404),
+        ]));
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('widget', $display);
+        self::assertStringContainsString('n/a (404)', $display);
+        self::assertStringContainsString('(merge requests unavailable)', $display);
+    }
+
+    /**
+     * On a live fetch the linked drupal.org issue is resolved and cached into
+     * the snapshot, so the ISSUE column is populated on the very first run —
+     * not only on later runs reading a hand-seeded cache.
+     */
+    public function testALiveFetchResolvesTheLinkedIssueAndCachesItIntoTheSnapshot(): void
+    {
+        $issueNid = 3467675;
+        $mr = self::botMrPayload([
+            'title' => 'Issue #' . $issueNid . ': Make URL field required',
+            'source_branch' => $issueNid . '-make-url-required',
+            'head_pipeline' => self::greenPipeline(),
+        ]);
+
+        $drupal = new DrupalOrgClient(new MockHttpClient(static fn (): MockResponse => self::json([
+            'nid' => $issueNid,
+            'title' => 'Make URL field required',
+            'url' => 'https://www.drupal.org/project/widget/issues/' . $issueNid,
+            'field_issue_status' => '8',
+            'field_project' => ['machine_name' => 'widget'],
+        ])));
+
+        $client = $this->client([
+            '/merge_requests/5' => self::json($mr),
+            '/merge_requests?' => self::json([$mr]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($client, $drupal));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString((string) $issueNid, $tester->getDisplay());
+
+        // The issue travelled into the on-disk snapshot, so the next run needs
+        // neither GitLab nor drupal.org to render the same ISSUE cell.
+        $snapshot = (new DashboardCache($this->cockpit . '/cache/dashboard'))->load('widget');
+        self::assertNotNull($snapshot);
+        self::assertNotNull($snapshot->issue($issueNid));
     }
 
     public function testCachedLocalResultsAlwaysResolvedFresh(): void

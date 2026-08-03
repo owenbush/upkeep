@@ -28,19 +28,23 @@ final class ModuleWiringTest extends TestCase
 
     public function testPrependsThePathRepositoryAheadOfDrupalPackagist(): void
     {
-        $result = json_decode(ModuleWiring::withPathRepository(self::PROJECT_COMPOSER_JSON, './module'), true);
+        $repositories = self::repositories(
+            ModuleWiring::withPathRepository(self::PROJECT_COMPOSER_JSON, './module'),
+        );
 
         self::assertSame(
             ['type' => 'path', 'url' => './module', 'options' => ['symlink' => true]],
-            $result['repositories'][0],
+            $repositories[0],
             'The path repository must come first so it always wins package resolution.',
         );
-        self::assertSame('https://packages.drupal.org/8', $result['repositories'][1]['url']);
+        self::assertIsArray($repositories[1]);
+        self::assertSame('https://packages.drupal.org/8', $repositories[1]['url']);
     }
 
     public function testPreservesEveryOtherComposerKey(): void
     {
         $result = json_decode(ModuleWiring::withPathRepository(self::PROJECT_COMPOSER_JSON, './module'), true);
+        self::assertIsArray($result);
 
         self::assertSame('drupal/recommended-project', $result['name']);
         self::assertSame(['drupal/core-recommended' => '^11.4'], $result['require']);
@@ -50,8 +54,10 @@ final class ModuleWiringTest extends TestCase
     {
         $once = ModuleWiring::withPathRepository(self::PROJECT_COMPOSER_JSON, './module');
 
-        $result = json_decode(ModuleWiring::withPathRepository($once, './module'), true);
-        $pathRepos = array_filter($result['repositories'], static fn (array $repo): bool => ($repo['type'] ?? '') === 'path');
+        $pathRepos = array_filter(
+            self::repositories(ModuleWiring::withPathRepository($once, './module')),
+            static fn (mixed $repo): bool => \is_array($repo) && ($repo['type'] ?? '') === 'path',
+        );
 
         self::assertCount(1, $pathRepos);
     }
@@ -75,5 +81,44 @@ final class ModuleWiringTest extends TestCase
     {
         $this->expectException(AdapterException::class);
         ModuleWiring::withPathRepository('not json', './module');
+    }
+
+    /**
+     * The rewrite is read-modify-write over the file the environment cannot
+     * function without, so anything whose shape it does not understand is
+     * refused rather than replaced with a guess.
+     */
+    public function testRefusesAComposerJsonWhoseShapeItCannotRewrite(): void
+    {
+        $cases = [
+            ['42', 'must decode to an object'],
+            ['{"repositories": {"drupal": {"type": "composer"}}}', '"repositories" must be a list'],
+        ];
+
+        foreach ($cases as [$composerJson, $expected]) {
+            try {
+                ModuleWiring::withPathRepository($composerJson, './module');
+                self::fail(sprintf('Expected "%s" to be refused.', $expected));
+            } catch (AdapterException $e) {
+                self::assertStringContainsString($expected, $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * @param string $composerJson a composer.json document
+     *
+     * @return list<mixed> its decoded repositories block
+     */
+    private static function repositories(string $composerJson): array
+    {
+        $decoded = json_decode($composerJson, true);
+        self::assertIsArray($decoded);
+        self::assertArrayHasKey('repositories', $decoded);
+
+        $repositories = $decoded['repositories'];
+        self::assertIsList($repositories);
+
+        return $repositories;
     }
 }

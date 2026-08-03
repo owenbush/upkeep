@@ -46,7 +46,8 @@ final readonly class PruneExecutor
             $reason = $this->selector->protectionReason($item);
             if ($reason !== null) {
                 throw new \RuntimeException(sprintf(
-                    'Refusing to prune protected item "%s" (%s) — candidate selection was bypassed; aborting without deleting anything.',
+                    'Refusing to prune protected item "%s" (%s) — candidate selection was bypassed; aborting '
+                        . 'without deleting anything.',
                     $item->path,
                     $reason,
                 ));
@@ -64,11 +65,20 @@ final readonly class PruneExecutor
             }
             $resolved = $this->resolveEnvironment($item);
             if ($resolved === null) {
-                $skipped[] = [$item, 'cannot attribute this tree to a registered (module x core) pair — refusing to guess; tear it down manually'];
+                $skipped[] = [
+                    $item,
+                    'cannot attribute this tree to a registered (module x core) pair — refusing to guess; '
+                        . 'tear it down manually',
+                ];
                 continue;
             }
             [$module, $coreMajor] = $resolved;
-            ($this->log)(sprintf('Tearing down environment %s (module %s, Drupal %s) via the adapter ...', $item->projectName ?? $item->path, $module->name, $coreMajor));
+            ($this->log)(sprintf(
+                'Tearing down environment %s (module %s, Drupal %s) via the adapter ...',
+                $item->projectName ?? $item->path,
+                $module->name,
+                $coreMajor,
+            ));
             try {
                 $this->adapter->teardown($module, $coreMajor);
             } catch (AdapterException $e) {
@@ -89,7 +99,10 @@ final readonly class PruneExecutor
                 $freed += $item->sizeBytes;
                 $deleted[] = $item;
             } else {
-                $skipped[] = [$item, 'volumes are reclaimed via their project\'s teardown; its tree was not pruned in this run'];
+                $skipped[] = [
+                    $item,
+                    'volumes are reclaimed via their project\'s teardown; its tree was not pruned in this run',
+                ];
             }
         }
 
@@ -97,14 +110,22 @@ final readonly class PruneExecutor
             if ($item->category !== Category::Snapshot) {
                 continue;
             }
+            ($this->log)(sprintf('Removing materialized snapshot %s ...', $item->path));
+            // Accounted for only after a confirmed removal: reporting bytes as
+            // reclaimed when the unlink failed over-reports a destructive
+            // operation, which is the wrong direction to be wrong in.
+            if (is_file($item->path) && !@unlink($item->path)) {
+                $skipped[] = [$item, 'the snapshot file could not be removed — check its permissions'];
+                continue;
+            }
+
+            $metaPath = SnapshotLayout::metaPathForArtifact($item->path);
+            if ($metaPath !== null && is_file($metaPath) && !@unlink($metaPath)) {
+                ($this->log)(sprintf('Snapshot removed, but its sidecar %s could not be removed.', $metaPath));
+            }
+
             $freed += $item->sizeBytes;
             $deleted[] = $item;
-            ($this->log)(sprintf('Removing materialized snapshot %s ...', $item->path));
-            @unlink($item->path);
-            $metaPath = SnapshotLayout::metaPathForArtifact($item->path);
-            if ($metaPath !== null && is_file($metaPath)) {
-                @unlink($metaPath);
-            }
         }
 
         return new PruneOutcome($freed, $deleted, $skipped);
@@ -140,5 +161,4 @@ final readonly class PruneExecutor
 
         return null;
     }
-
 }

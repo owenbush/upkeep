@@ -10,12 +10,15 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Gitlab\EndpointClosed;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\MalformedResponse;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\NotFound;
 use Upkeep\Gitlab\Pipeline;
 use Upkeep\Gitlab\PipelineStatus;
 use Upkeep\Gitlab\Project;
 use Upkeep\Gitlab\RateLimited;
+use Upkeep\Gitlab\RequestRejected;
+use Upkeep\Gitlab\ResourceMissing;
 use Upkeep\Gitlab\Tag;
 use Upkeep\Gitlab\TransportError;
 
@@ -23,7 +26,7 @@ final class GitlabClientTest extends TestCase
 {
     private const TOKEN = 'glpat-secret-token-value-123';
 
-    /** @var list<array{method: string, url: string, options: array}> */
+    /** @var list<array{method: string, url: string, options: array<array-key, mixed>}> */
     private array $requests = [];
 
     /**
@@ -51,6 +54,10 @@ final class GitlabClientTest extends TestCase
         );
     }
 
+    /**
+     * @param array<array-key, mixed> $payload
+     * @param array<string, string> $headers
+     */
     private static function json(array $payload, int $status = 200, array $headers = []): MockResponse
     {
         return new MockResponse(json_encode($payload, JSON_THROW_ON_ERROR), [
@@ -59,6 +66,43 @@ final class GitlabClientTest extends TestCase
         ]);
     }
 
+    /**
+     * The recorded request headers as sent. MockHttpClient records its options
+     * untyped, so this is where the test narrows them — the same
+     * narrow-once-at-the-boundary move the client itself makes.
+     *
+     * @return list<string>
+     */
+    private function requestHeaders(int $index): array
+    {
+        $headers = $this->requests[$index]['options']['headers'] ?? null;
+        if (!\is_array($headers)) {
+            $this->fail('Request ' . $index . ' recorded no headers.');
+        }
+
+        $lines = [];
+        foreach ($headers as $header) {
+            if (\is_string($header)) {
+                $lines[] = $header;
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * The recorded request body, or the empty string when there was none.
+     */
+    private function requestBody(int $index): string
+    {
+        $body = $this->requests[$index]['options']['body'] ?? null;
+
+        return \is_string($body) ? $body : '';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private static function projectPayload(): array
     {
         return [
@@ -70,6 +114,10 @@ final class GitlabClientTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
     private static function botMrPayload(array $overrides = []): array
     {
         return $overrides + [
@@ -109,7 +157,7 @@ final class GitlabClientTest extends TestCase
             'https://git.drupalcode.org/api/v4/projects/project%2Fconditions_helper',
             $this->requests[0]['url'],
         );
-        $this->assertContains('PRIVATE-TOKEN: ' . self::TOKEN, $this->requests[0]['options']['headers']);
+        $this->assertContains('PRIVATE-TOKEN: ' . self::TOKEN, $this->requestHeaders(0));
     }
 
     public function testOpenMergeRequestsParsesBotGateFields(): void
@@ -131,6 +179,7 @@ final class GitlabClientTest extends TestCase
         $this->assertNotInstanceOf(\Upkeep\Gitlab\ApiFailure::class, $list);
         $this->assertCount(2, $list);
         $mrs = $list->all();
+        $this->assertSame($mrs, iterator_to_array($list), 'foreach over the list must yield the same MRs as all()');
 
         $bot = $mrs[0];
         $this->assertInstanceOf(MergeRequest::class, $bot);
@@ -151,6 +200,34 @@ final class GitlabClientTest extends TestCase
             'https://git.drupalcode.org/api/v4/projects/181714/merge_requests?state=opened&scope=all&per_page=100',
             $this->requests[0]['url'],
         );
+    }
+
+    public function testMergeRequestFieldsWithUnexpectedJsonTypesDegradeToDocumentedDefaults(): void
+    {
+        // git.drupalcode.org is the untrusted edge. A field that arrives with
+        // the wrong JSON type is narrowed once, here at the boundary, into the
+        // model's declared type — it must never travel inward as `mixed` and
+        // fatal later in the dashboard or the gate.
+        $client = $this->client([self::json([
+            'iid' => '7',
+            'title' => 42,
+            'author' => 'not-an-object',
+            'head_pipeline' => 'not-an-object',
+            'detailed_merge_status' => ['unexpected', 'shape'],
+            'draft' => null,
+        ])]);
+
+        $mr = $client->mergeRequest($this->projectModel(), 7);
+
+        $this->assertInstanceOf(MergeRequest::class, $mr);
+        $this->assertSame(7, $mr->iid, 'a numeric string iid still narrows to int');
+        $this->assertSame('42', $mr->title, 'a scalar title still narrows to string');
+        $this->assertSame('', $mr->authorUsername, 'a non-object author yields the empty default');
+        $this->assertNull($mr->authorId);
+        $this->assertNull($mr->headPipeline, 'a non-object head_pipeline is no pipeline at all');
+        $this->assertNull($mr->detailedMergeStatus, 'a structured value is not a merge status string');
+        $this->assertFalse($mr->draft);
+        $this->assertSame('', $mr->webUrl);
     }
 
     public function testForbiddenReadReturnsEndpointClosedWithStatusAndBrowserFallback(): void
@@ -260,13 +337,16 @@ final class GitlabClientTest extends TestCase
         $this->assertCount(2, $this->requests);
     }
 
-    public function testMalformedJsonBodyReturnsTransportError(): void
+    public function testMalformedJsonBodyReturnsMalformedResponse(): void
     {
+        // A response DID arrive — it is just unusable — so this is not a
+        // transport failure. See ApiFailure's condition table.
         $client = $this->client([new MockResponse('<html>gateway timeout</html>', ['http_code' => 200])]);
 
         $result = $client->project('conditions_helper');
 
-        $this->assertInstanceOf(TransportError::class, $result);
+        $this->assertInstanceOf(MalformedResponse::class, $result);
+        $this->assertSame(200, $result->status);
         $this->assertStringNotContainsString(self::TOKEN, $result->message);
     }
 
@@ -307,7 +387,12 @@ final class GitlabClientTest extends TestCase
     {
         $client = $this->client([
             self::json(self::botMrPayload([
-                'head_pipeline' => ['id' => 1, 'status' => 'failed', 'sha' => 'abc', 'web_url' => 'https://example.org/p/1'],
+                'head_pipeline' => [
+                    'id' => 1,
+                    'status' => 'failed',
+                    'sha' => 'abc',
+                    'web_url' => 'https://example.org/p/1',
+                ],
             ])),
         ]);
 
@@ -317,6 +402,9 @@ final class GitlabClientTest extends TestCase
         $this->assertSame(PipelineStatus::Failed, $pipeline->status);
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
     private static function tagsPayload(): array
     {
         return [
@@ -341,14 +429,31 @@ final class GitlabClientTest extends TestCase
 
         $this->assertIsArray($tags);
         $this->assertCount(2, $tags);
-        $this->assertContainsOnlyInstancesOf(Tag::class, $tags);
         $this->assertSame('1.0.1', $tags[0]->name);
         $this->assertSame('aaa111', $tags[0]->commitSha);
         $this->assertSame('2026-05-01', $tags[0]->createdAt?->format('Y-m-d'));
+        $this->assertSame('1.0.0', $tags[1]->name);
+        $this->assertSame('2026-01-15', $tags[1]->createdAt?->format('Y-m-d'));
         $this->assertSame(
             'https://git.drupalcode.org/api/v4/projects/181714/repository/tags',
             $this->requests[0]['url'],
         );
+    }
+
+    public function testTagWithAnUnparseableCommitDateDegradesToNullInsteadOfFataling(): void
+    {
+        // git.drupalcode.org is untrusted input: a commit date that
+        // DateTimeImmutable cannot parse must degrade to a null createdAt,
+        // not throw out of Tag::fromApi() and fatal the whole tags() call.
+        $client = $this->client([self::json([
+            ['name' => '1.0.2', 'target' => 'ccc333', 'commit' => ['id' => 'ccc333', 'created_at' => 'not-a-date']],
+        ])]);
+
+        $tags = $client->tags($this->projectModel());
+
+        $this->assertIsArray($tags);
+        $this->assertSame('1.0.2', $tags[0]->name);
+        $this->assertNull($tags[0]->createdAt);
     }
 
     public function testMergedSinceDateQueriesMergedMrsWithUpdatedAfter(): void
@@ -364,8 +469,24 @@ final class GitlabClientTest extends TestCase
         $this->assertInstanceOf(\Upkeep\Gitlab\MergeRequestList::class, $list);
         $this->assertSame('merged', $list->first()?->state);
         $this->assertSame(
-            'https://git.drupalcode.org/api/v4/projects/181714/merge_requests?state=merged&scope=all&per_page=100&updated_after=2026-05-01T10%3A00%3A00%2B00%3A00',
+            'https://git.drupalcode.org/api/v4/projects/181714/merge_requests?state=merged&scope=all&per_page=100'
+            . '&updated_after=2026-05-01T10%3A00%3A00%2B00%3A00',
             $this->requests[0]['url'],
+        );
+    }
+
+    public function testMergedSinceReturnsTheTypedFailureInsteadOfAnEmptyList(): void
+    {
+        // A failed fetch must never look like "nothing was merged" — the
+        // release-notes draft would silently lose its content.
+        $client = $this->client([self::json(['message' => '403 Forbidden'], 403)]);
+
+        $result = $client->mergedSince($this->projectModel(), new \DateTimeImmutable('2026-05-01T10:00:00+00:00'));
+
+        $this->assertInstanceOf(EndpointClosed::class, $result);
+        $this->assertSame(
+            'https://git.drupalcode.org/project/conditions_helper/-/merge_requests?state=merged',
+            $result->browserUrl,
         );
     }
 
@@ -383,14 +504,27 @@ final class GitlabClientTest extends TestCase
         $this->assertStringContainsString('updated_after=2026-05-01T10%3A00%3A00', $this->requests[1]['url']);
     }
 
-    public function testMergedSinceUnknownTagIsTypedNotFound(): void
+    public function testMergedSinceUnknownTagIsTypedResourceMissing(): void
     {
+        // The tags() request succeeded; the tag is simply absent from it. That
+        // is a domain-level miss, not the HTTP 404 the old NotFound claimed.
         $client = $this->client([self::json(self::tagsPayload())]);
 
         $result = $client->mergedSinceTag($this->projectModel(), '9.9.9');
 
-        $this->assertInstanceOf(NotFound::class, $result);
+        $this->assertInstanceOf(ResourceMissing::class, $result);
+        $this->assertNull($result->status);
         $this->assertSame('https://git.drupalcode.org/project/conditions_helper/-/tags', $result->browserUrl);
+    }
+
+    public function testMergedSinceTagWithoutACommitDateIsTypedMalformedResponse(): void
+    {
+        $client = $this->client([self::json([['name' => '1.0.1', 'target' => 'aaa111', 'commit' => ['id' => 'a']]])]);
+
+        $result = $client->mergedSinceTag($this->projectModel(), '1.0.1');
+
+        $this->assertInstanceOf(MalformedResponse::class, $result);
+        $this->assertStringContainsString('no commit date', $result->message);
     }
 
     public function testMergeSendsSinglePutWithShaGuard(): void
@@ -420,9 +554,9 @@ final class GitlabClientTest extends TestCase
         );
         $this->assertSame(
             ['sha' => 'ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12'],
-            json_decode($this->requests[0]['options']['body'], true),
+            json_decode($this->requestBody(0), true),
         );
-        $this->assertContains('PRIVATE-TOKEN: ' . self::TOKEN, $this->requests[0]['options']['headers']);
+        $this->assertContains('PRIVATE-TOKEN: ' . self::TOKEN, $this->requestHeaders(0));
     }
 
     public function testMergeWithoutShaGuardSendsEmptyJsonObject(): void
@@ -432,8 +566,7 @@ final class GitlabClientTest extends TestCase
         $result = $client->merge($this->projectModel(), 2);
 
         $this->assertInstanceOf(MergeRequest::class, $result);
-        $body = $this->requests[0]['options']['body'] ?? '';
-        $this->assertSame([], (array) json_decode(\is_string($body) ? $body : '', true));
+        $this->assertSame([], (array) json_decode($this->requestBody(0), true));
     }
 
     public function testMergeForbiddenIsEndpointClosedWithMergeRequestBrowserUrl(): void
@@ -450,7 +583,7 @@ final class GitlabClientTest extends TestCase
         );
     }
 
-    public function testMergeRejectionIsTypedTransportErrorWithStatus(): void
+    public function testMergeRejectionIsTypedRequestRejectedWithStatusAndTheServersOwnDetail(): void
     {
         $client = $this->client([
             self::json(['message' => '405 Method Not Allowed: MR is a draft'], 405),
@@ -458,10 +591,33 @@ final class GitlabClientTest extends TestCase
 
         $result = $client->merge($this->projectModel(), 2);
 
-        $this->assertInstanceOf(TransportError::class, $result);
+        $this->assertInstanceOf(RequestRejected::class, $result);
         $this->assertSame(405, $result->status);
+        $this->assertSame('405', $result->shortCode());
         $this->assertStringContainsString('HTTP 405', $result->message);
+        $this->assertStringContainsString('MR is a draft', $result->message);
         $this->assertStringNotContainsString(self::TOKEN, $result->message);
+    }
+
+    public function testRejectionWithANonJsonErrorBodyReportsTheStatusOnly(): void
+    {
+        $client = $this->client([new MockResponse('<html>502 Bad Gateway</html>', ['http_code' => 502])]);
+
+        $result = $client->merge($this->projectModel(), 2);
+
+        $this->assertInstanceOf(RequestRejected::class, $result);
+        $this->assertSame(502, $result->status);
+        $this->assertStringContainsString('HTTP 502', $result->message);
+    }
+
+    public function testRejectionWithAnArrayValuedErrorFieldJoinsTheEntries(): void
+    {
+        $client = $this->client([self::json(['message' => ['branch missing', 'sha mismatch']], 400)]);
+
+        $result = $client->merge($this->projectModel(), 2);
+
+        $this->assertInstanceOf(RequestRejected::class, $result);
+        $this->assertStringContainsString('branch missing; sha mismatch', $result->message);
     }
 
     #[DataProvider('pipelineStatusProvider')]
@@ -470,6 +626,9 @@ final class GitlabClientTest extends TestCase
         $this->assertSame($expected, PipelineStatus::fromApi($apiStatus));
     }
 
+    /**
+     * @return list<array{string, PipelineStatus}>
+     */
     public static function pipelineStatusProvider(): array
     {
         return [

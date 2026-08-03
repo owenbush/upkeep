@@ -18,7 +18,7 @@ final class ComposerLockTest extends TestCase
                 ['name' => 'drupal/core', 'version' => '11.4.4'],
                 ['name' => 'symfony/console', 'version' => 'v7.3.1'],
             ],
-        ]);
+        ], \JSON_THROW_ON_ERROR);
 
         self::assertSame('11.4.4', ComposerLock::coreVersion($lock));
     }
@@ -28,7 +28,10 @@ final class ComposerLockTest extends TestCase
         $this->expectException(MetaException::class);
         $this->expectExceptionMessage('drupal/core');
 
-        ComposerLock::coreVersion(json_encode(['packages' => [['name' => 'symfony/console', 'version' => 'v7.3.1']]]));
+        ComposerLock::coreVersion(json_encode(
+            ['packages' => [['name' => 'symfony/console', 'version' => 'v7.3.1']]],
+            \JSON_THROW_ON_ERROR
+        ));
     }
 
     public function testThrowsOnInvalidJson(): void
