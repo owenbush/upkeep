@@ -251,12 +251,45 @@ abstract class DdevAdapterTestCase extends TestCase
         return (string) json_encode(['raw' => ['status' => $status, 'primary_url' => $primaryUrl]]);
     }
 
+    /**
+     * Reproduces the `rm -rf` the adapter issues, in PHP rather than a shell.
+     *
+     * This deliberately does not shell out. teardownProject() calls is_dir()
+     * on the path immediately before issuing the removal, which populates PHP's
+     * stat cache; an external `rm` then deletes the directory without PHP
+     * knowing, so a following is_dir() — including the one inside
+     * assertDirectoryDoesNotExist() — can read a stale "exists" and fail. PHP's
+     * own unlink()/rmdir() invalidate the cache entry they act on, and the
+     * explicit clearstatcache() covers the parent path as well.
+     */
     private static function removeTree(string $path): void
     {
         if (!is_dir($path)) {
             return;
         }
 
-        exec('rm -rf ' . escapeshellarg($path));
+        $entries = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($entries as $entry) {
+            // CURRENT_AS_FILEINFO is the directory iterator's default, so every
+            // entry is an SplFileInfo — checked rather than assumed, matching
+            // BaseArtifact\ArtifactScanner.
+            if (!$entry instanceof \SplFileInfo) {
+                continue;
+            }
+
+            $pathname = $entry->getPathname();
+            if ($entry->isDir() && !$entry->isLink()) {
+                rmdir($pathname);
+                continue;
+            }
+
+            unlink($pathname);
+        }
+
+        rmdir($path);
+        clearstatcache(true, $path);
     }
 }
