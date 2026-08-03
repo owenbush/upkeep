@@ -24,12 +24,17 @@ final class FakeEngineAdapter implements EngineAdapterInterface
     /** @var list<string> */
     public array $checkedOutBranches = [];
 
+    /** @var list<string> fixture names loaded, in order */
+    public array $loadedFixtures = [];
+
     private function __construct(
         private readonly ?Environment $environment = null,
         private readonly ?string $envPath = null,
         private readonly ?\Throwable $failure = null,
         private readonly ?\Throwable $branchFailure = null,
         private readonly ?CheckRunResult $checkRun = null,
+        private readonly ?ServeResult $serveResult = null,
+        private readonly ?\Throwable $fixtureFailure = null,
     ) {
     }
 
@@ -47,6 +52,18 @@ final class FakeEngineAdapter implements EngineAdapterInterface
     public static function withCheckRun(Environment $environment, CheckRunResult $run): self
     {
         return new self(environment: $environment, checkRun: $run);
+    }
+
+    /** An environment whose fixture load fails — an unknown fixture name. */
+    public static function withFailingFixtureLoad(Environment $environment, \Throwable $failure): self
+    {
+        return new self(environment: $environment, fixtureFailure: $failure);
+    }
+
+    /** An environment the engine can put in front of a browser. */
+    public static function withServeResult(Environment $environment, ServeResult $serve): self
+    {
+        return new self(environment: $environment, serveResult: $serve);
     }
 
     public static function failing(\Throwable $failure): self
@@ -74,6 +91,11 @@ final class FakeEngineAdapter implements EngineAdapterInterface
 
     public function loadFixture(Environment $environment, string $fixtureName): void
     {
+        if ($this->fixtureFailure !== null) {
+            throw $this->fixtureFailure;
+        }
+
+        $this->loadedFixtures[] = $fixtureName;
     }
 
     public function runChecks(Environment $environment, array $checks = []): CheckRunResult
@@ -83,7 +105,7 @@ final class FakeEngineAdapter implements EngineAdapterInterface
 
     public function serve(Environment $environment): ServeResult
     {
-        throw new \BadMethodCallException('serve() not configured');
+        return $this->serveResult ?? throw new \BadMethodCallException('serve() not configured');
     }
 
     public function resolveEnvPath(string $moduleName, string $coreMajor): ?string

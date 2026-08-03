@@ -9,6 +9,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Upkeep\Adapter\CommandRunner;
 use Upkeep\Adapter\MountablePath;
 use Upkeep\Adapter\ProcessRunner;
 use Upkeep\Adapter\ThrowawaySite;
@@ -23,6 +24,16 @@ use Upkeep\Workflow\WorkflowException;
 )]
 final class BaseArtifactsBuildCommand extends UpkeepCommand
 {
+    /**
+     * @param ?CommandRunner $runner the shell-out seam every step of the build
+     *                               goes through; null builds the live process
+     *                               runner sharing this invocation's log
+     */
+    public function __construct(private readonly ?CommandRunner $runner = null)
+    {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         // --version, like every other core-version selector: the
@@ -75,11 +86,13 @@ final class BaseArtifactsBuildCommand extends UpkeepCommand
             '--scratch-dir',
         );
 
+        $runner = $this->runner ?? new ProcessRunner($log);
         $builder = new BaseArtifactBuilder(
             $layout,
-            new ThrowawaySite(new ProcessRunner($log), $log),
+            new ThrowawaySite($runner, $log),
             $scratchDir,
             $log,
+            $runner,
         );
 
         try {

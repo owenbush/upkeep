@@ -7,7 +7,6 @@ namespace Upkeep\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Gitlab\GitlabClient;
@@ -86,19 +85,20 @@ abstract class AbstractMrCommand extends UpkeepCommand
 
     /**
      * No credential means no verdict can be produced, which is the
-     * infrastructure outcome — reported here with the one shared wording.
+     * infrastructure outcome — raised here, with the one shared wording, so
+     * the base's exception mapping turns it into exit 2 like every other
+     * infrastructure failure. The factory's own reporter is therefore a no-op:
+     * the guidance travels in the exception rather than being printed twice.
      *
      * @throws WorkflowException when no token is configured
      */
     private function clientFromToken(SymfonyStyle $io): GitlabClient
     {
         $tokens = GitlabClientFactory::resolver($io);
-        $token = $tokens->resolve();
-        if ($token === null) {
-            throw new WorkflowException(GitlabClientFactory::missingTokenMessage($tokens));
-        }
+        $client = GitlabClientFactory::authenticated($tokens, static function (): void {
+        });
 
-        return new GitlabClient(HttpClient::create(), $token);
+        return $client ?? throw new WorkflowException(GitlabClientFactory::missingTokenMessage($tokens));
     }
 
     /**

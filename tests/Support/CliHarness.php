@@ -6,6 +6,7 @@ namespace Upkeep\Tests\Support;
 
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Upkeep\Adapter\CommandRunner;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\VolumeProbe;
@@ -80,9 +81,16 @@ final class CliHarness
 
     private ?DrupalOrgClient $drupalOrg = null;
 
+    private ?CommandRunner $commandRunner = null;
+
     private readonly EnvironmentGuard $environment;
 
     private readonly string $originalCwd;
+
+    /** $PATH as the process had it, so repeated prepends do not accumulate. */
+    private readonly string $originalPath;
+
+    private string $errorDisplay = '';
 
     /** @var array<string, array{project: string, core_versions: list<string>}> */
     private array $modules = [];
@@ -97,6 +105,8 @@ final class CliHarness
         $this->home = $home;
         $this->cockpit = $cockpit;
         $this->originalCwd = $originalCwd;
+        $path = getenv('PATH');
+        $this->originalPath = $path === false ? '/usr/bin:/bin' : $path;
         $this->environment = new EnvironmentGuard();
         $this->engines = new StubEngineAdapterFactory(FakeEngineAdapter::withEnvPath(null));
     }
@@ -156,6 +166,67 @@ final class CliHarness
         $this->drupalOrg = $client;
 
         return $this;
+    }
+
+    /** Uses this shell-out seam for the base-artifact build. */
+    public function withCommandRunner(CommandRunner $runner): self
+    {
+        $this->commandRunner = $runner;
+
+        return $this;
+    }
+
+    /**
+     * Puts a stub platform browser opener first on $PATH.
+     *
+     * `issue` and `needs-work` end by handing a URL to the operator's browser
+     * and print different things depending on whether that worked, so both
+     * outcomes have to be reachable. A stub binary rather than a mocked class
+     * keeps Command\BrowserOpener's real Process call inside the path under
+     * test while guaranteeing that no browser is ever launched: the opener
+     * this run finds is a shell script in the temporary tree.
+     *
+     * Both platform names are written, so the test means the same thing on
+     * Linux (xdg-open) and macOS (open).
+     *
+     * @param bool $succeeds whether the stub exits 0, i.e. whether the
+     *                       operator's browser accepted the URL
+     */
+    public function withBrowserOpener(bool $succeeds): self
+    {
+        $bin = $this->makeDirectory('fake-bin');
+        $log = $this->path('opened-urls');
+
+        foreach (['xdg-open', 'open'] as $name) {
+            $script = sprintf(
+                "#!/bin/sh\nprintf '%%s\\n' \"$1\" >> %s\nexit %d\n",
+                escapeshellarg($log),
+                $succeeds ? 0 : 1,
+            );
+            if (file_put_contents($bin . '/' . $name, $script) === false) {
+                throw new \RuntimeException('Could not write the stub browser opener to ' . $bin);
+            }
+            chmod($bin . '/' . $name, 0o700);
+        }
+
+        $this->environment->set('PATH', $bin . ':' . $this->originalPath);
+
+        return $this;
+    }
+
+    /**
+     * Every URL handed to the stub browser opener, in order.
+     *
+     * @return list<string>
+     */
+    public function openedUrls(): array
+    {
+        $log = $this->path('opened-urls');
+        if (!is_file($log)) {
+            return [];
+        }
+
+        return array_values(array_filter(explode("\n", (string) file_get_contents($log))));
     }
 
     // ------------------------------------------------------ cockpit state
@@ -260,30 +331,37 @@ final class CliHarness
      */
     public function run(string ...$argv): int
     {
-        // Built by appending rather than spreading: argv is a positional list
-        // and ArgvInput is typed as one.
-        $tokens = ['upkeep'];
-        foreach ($argv as $token) {
-            $tokens[] = $token;
-        }
+        return $this->dispatch(new BufferedOutput(), ...$argv);
+    }
 
-        $input = new VersionOptionInput($tokens);
-        if ($this->inputs !== []) {
-            $input->setStream(self::stream($this->inputs));
-            $this->inputs = [];
-        }
-
-        $output = new BufferedOutput();
-        $exitCode = $this->application()->run($input, $output);
-        $this->display = $output->fetch();
+    /**
+     * Runs one invocation against an output that really has two streams.
+     *
+     * The commands whose stdout carries a machine-readable payload route
+     * every diagnostic to stderr, and that split only exists when the output
+     * is a ConsoleOutputInterface — under the single-buffer run() above the
+     * two are indistinguishable. Tests asserting what a shell pipeline sees
+     * use this and read display() and errorDisplay() separately.
+     */
+    public function runSplittingStreams(string ...$argv): int
+    {
+        $output = new SplitConsoleOutput();
+        $exitCode = $this->dispatch($output, ...$argv);
+        $this->errorDisplay = $output->fetchErrors();
 
         return $exitCode;
     }
 
-    /** Everything the last run() wrote. */
+    /** Everything the last run wrote to stdout (or to both, under run()). */
     public function display(): string
     {
         return $this->display;
+    }
+
+    /** Everything the last runSplittingStreams() wrote to stderr. */
+    public function errorDisplay(): string
+    {
+        return $this->errorDisplay;
     }
 
     /**
@@ -299,8 +377,8 @@ final class CliHarness
         $application = new Application('Upkeep', 'dev');
         $application->setAutoExit(false);
         $application->addCommands([
-            new ApiProbeCommand(),
-            new BaseArtifactsBuildCommand(),
+            new ApiProbeCommand($this->gitlab),
+            new BaseArtifactsBuildCommand($this->commandRunner),
             new BaseArtifactsStatusCommand(),
             new CheckCommand($engines, $this->gitlab),
             new DashboardCommand($this->gitlab, $this->drupalOrg),
@@ -313,7 +391,7 @@ final class CliHarness
             new NeedsWorkCommand($this->gitlab),
             new ModulesAddCommand($this->gitlab),
             new ModulesCommand(),
-            new NotesCommand(),
+            new NotesCommand($this->gitlab),
             new PatchesCommand($this->drupalOrg, $this->gitlab),
             new PruneCommand($engines, $probe),
             new ReviewCommand($engines, $this->gitlab),
@@ -327,6 +405,33 @@ final class CliHarness
         ));
 
         return $application;
+    }
+
+    /**
+     * The shared argv → application → exit-code path both run methods take.
+     *
+     * @param BufferedOutput $output where the run's stdout is collected
+     */
+    private function dispatch(BufferedOutput $output, string ...$argv): int
+    {
+        // Built by appending rather than spreading: argv is a positional list
+        // and ArgvInput is typed as one.
+        $tokens = ['upkeep'];
+        foreach ($argv as $token) {
+            $tokens[] = $token;
+        }
+
+        $input = new VersionOptionInput($tokens);
+        if ($this->inputs !== []) {
+            $input->setStream(self::stream($this->inputs));
+            $this->inputs = [];
+        }
+
+        $this->errorDisplay = '';
+        $exitCode = $this->application()->run($input, $output);
+        $this->display = $output->fetch();
+
+        return $exitCode;
     }
 
     /** Restores the environment and the working directory, and removes the tree. */

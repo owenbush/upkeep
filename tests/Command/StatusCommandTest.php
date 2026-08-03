@@ -89,4 +89,43 @@ final class StatusCommandTest extends TestCase
         self::assertStringContainsString('Total tracked disk usage', $tester->getDisplay());
         self::assertStringNotContainsString('Category', $tester->getDisplay());
     }
+
+    /**
+     * A kept environment is flagged in the PROTECTION column, because that
+     * column is what tells the maintainer why `upkeep prune` will leave a
+     * particular tree alone. Base artifacts carry the same protection without
+     * a marker: they are canonical by construction.
+     */
+    public function testAKeptEnvironmentIsShownAsProtectedAlongsideTheCanonicalArtifacts(): void
+    {
+        touch($this->projects . '/upkeep-conditions-helper-d11/.keep');
+
+        $tester = $this->runStatus(['--disk' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('keep', $display);
+        self::assertStringContainsString('canonical', $display);
+    }
+
+    /**
+     * Part of the inventory that could not be read is reported, not silently
+     * folded into the totals as if it were empty. A symlinked snapshot store
+     * is skipped deliberately — prune deletes what the inventory reports, and
+     * nothing outside the environment tree is that environment's snapshot —
+     * so the operator has to be told the number is short.
+     */
+    public function testAnUnreadablePartOfTheInventoryIsWarnedAboutRatherThanCountedAsEmpty(): void
+    {
+        $project = $this->projects . '/upkeep-conditions-helper-d11';
+        exec('rm -rf ' . escapeshellarg($project . '/.ddev/upkeep/materialized'));
+        symlink($this->world, $project . '/.ddev/upkeep/materialized');
+
+        $tester = $this->runStatus(['--disk' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('is a symlink — skipped', $display);
+        self::assertStringNotContainsString('materialized snapshot', $display);
+    }
 }

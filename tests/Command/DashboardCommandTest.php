@@ -480,6 +480,100 @@ final class DashboardCommandTest extends TestCase
         self::assertStringNotContainsString('patch↑', $tester->getDisplay());
     }
 
+    /**
+     * Nothing open anywhere is a normal answer, not an empty table: the note
+     * says so in the operator's own terms, and unfiltered it must not claim a
+     * core version was asked for.
+     */
+    public function testNoOpenMergeRequestsAnywhereIsReportedAsANoteNotAnEmptyTable(): void
+    {
+        $tester = $this->runDashboard($this->client([
+            '/merge_requests?' => self::json([]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]));
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('No open merge requests across the registered modules.', $display);
+        self::assertStringNotContainsString('targeting core', $display);
+        self::assertStringNotContainsString('MODULE', $display);
+    }
+
+    /** The same emptiness under a filter names the core version that was asked for. */
+    public function testNoOpenMergeRequestsForTheFilteredCoreNamesThatVersion(): void
+    {
+        $tester = $this->runDashboard(
+            $this->client([
+                '/merge_requests?' => self::json([]),
+                '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+            ]),
+            ['--version' => '11'],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('targeting core 11', $tester->getDisplay());
+    }
+
+    /**
+     * A module whose project cannot even be looked up still gets a row. The
+     * dashboard's job is to show the state of every registered module, and
+     * "we could not ask" is a state — silently dropping the module would read
+     * as "nothing open here".
+     */
+    public function testAModuleWhoseProjectLookupFailsStillGetsARowNamingTheFailure(): void
+    {
+        $tester = $this->runDashboard($this->client([
+            '/projects/project%2Fwidget' => self::json(['message' => '404 Project Not Found'], 404),
+        ]));
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('widget', $display);
+        self::assertStringContainsString('n/a (404)', $display);
+        self::assertStringContainsString('(merge requests unavailable)', $display);
+    }
+
+    /**
+     * On a live fetch the linked drupal.org issue is resolved and cached into
+     * the snapshot, so the ISSUE column is populated on the very first run —
+     * not only on later runs reading a hand-seeded cache.
+     */
+    public function testALiveFetchResolvesTheLinkedIssueAndCachesItIntoTheSnapshot(): void
+    {
+        $issueNid = 3467675;
+        $mr = self::botMrPayload([
+            'title' => 'Issue #' . $issueNid . ': Make URL field required',
+            'source_branch' => $issueNid . '-make-url-required',
+            'head_pipeline' => self::greenPipeline(),
+        ]);
+
+        $drupal = new DrupalOrgClient(new MockHttpClient(static fn (): MockResponse => self::json([
+            'nid' => $issueNid,
+            'title' => 'Make URL field required',
+            'url' => 'https://www.drupal.org/project/widget/issues/' . $issueNid,
+            'field_issue_status' => '8',
+            'field_project' => ['machine_name' => 'widget'],
+        ])));
+
+        $client = $this->client([
+            '/merge_requests/5' => self::json($mr),
+            '/merge_requests?' => self::json([$mr]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($client, $drupal));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString((string) $issueNid, $tester->getDisplay());
+
+        // The issue travelled into the on-disk snapshot, so the next run needs
+        // neither GitLab nor drupal.org to render the same ISSUE cell.
+        $snapshot = (new DashboardCache($this->cockpit . '/cache/dashboard'))->load('widget');
+        self::assertNotNull($snapshot);
+        self::assertNotNull($snapshot->issue($issueNid));
+    }
+
     public function testCachedLocalResultsAlwaysResolvedFresh(): void
     {
         // Cache remote data.

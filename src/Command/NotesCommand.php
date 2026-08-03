@@ -13,6 +13,7 @@ use Upkeep\Cockpit\Cockpit;
 use Upkeep\Cockpit\RegistryException;
 use Upkeep\Filesystem\FilesystemException;
 use Upkeep\Gitlab\ApiFailure;
+use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Notes\NotesGenerator;
 use Upkeep\Workflow\ExitCode;
@@ -26,10 +27,10 @@ use Upkeep\Workflow\WorkflowException;
  * grouping, Markdown formatting, and both edge cases — lives in
  * NotesGenerator (unit-tested with mocked client data); fetching and typed
  * failures live in GitlabClient (also unit-tested). This command only
- * resolves the module, fetches, and prints, and is verified live. The wiring
- * itself is pinned by one hermetic no-token run (NotesCommandTest), because
- * "verified live" is not a thing CI does: this class once shipped with an
- * unimported GitlabClientFactory and fataled on every invocation.
+ * resolves the module, fetches, and prints. The wiring itself is pinned
+ * end-to-end through the console (NotesCommandTest), because this class once
+ * shipped with an unimported GitlabClientFactory and fataled on every
+ * invocation — something no amount of unit-testing the generator would catch.
  *
  * Module resolution mirrors api:probe with one addition: when a cockpit
  * registry is available and knows the module, its project path wins;
@@ -45,6 +46,15 @@ use Upkeep\Workflow\WorkflowException;
 )]
 final class NotesCommand extends UpkeepCommand
 {
+    /**
+     * @param ?GitlabClient $gitlabClient injected in tests; built from the
+     *                                    resolved token otherwise
+     */
+    public function __construct(private readonly ?GitlabClient $gitlabClient = null)
+    {
+        parent::__construct();
+    }
+
     protected function configure(): void
     {
         $this->addArgument(
@@ -69,7 +79,7 @@ final class NotesCommand extends UpkeepCommand
 
         // The factory reports the missing-token guidance itself (one wording
         // for the whole CLI); "no credential" is an infrastructure failure.
-        $client = GitlabClientFactory::forConsole($io);
+        $client = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);
         if ($client === null) {
             return ExitCode::INFRASTRUCTURE;
         }

@@ -175,6 +175,53 @@ final class IssueCommandTest extends TestCase
         self::assertStringContainsString('drupal.org/node/3467675', $display);
     }
 
+    /**
+     * @return iterable<string, array{array<string, int>, string}>
+     */
+    public static function fatalLookupFailures(): iterable
+    {
+        yield 'the project cannot be resolved' => [['/projects/' => 404], 'Could not resolve project'];
+        yield 'the merge request cannot be fetched' => [['/merge_requests/7' => 403], 'Could not fetch MR !7'];
+    }
+
+    /**
+     * Both lookups are prerequisites for finding an issue at all, so either
+     * failing means there is no issue to show or open: exit 2 naming which
+     * lookup failed and its status, rather than a browser sent nowhere.
+     *
+     * @param array<string, int> $failing URL substring => HTTP status to answer with
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('fatalLookupFailures')]
+    public function testAFailedLookupIsAnInfrastructureFailureNamingIt(array $failing, string $expected): void
+    {
+        $factory = static function (string $method, string $url) use ($failing): MockResponse {
+            foreach ($failing as $needle => $status) {
+                if (str_contains($url, $needle)) {
+                    return self::json(['message' => 'refused by the test'], $status);
+                }
+            }
+            if (str_contains($url, '/merge_requests/7')) {
+                return self::json(['iid' => 7, 'title' => 'Issue #3467675: x', 'source_branch' => 'x']);
+            }
+
+            return self::json(['id' => 42, 'path_with_namespace' => 'project/widget']);
+        };
+
+        $tester = new CommandTester(new IssueCommand(
+            new GitlabClient(new MockHttpClient($factory), 'test-token'),
+            $this->drupalClient(),
+        ));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+        ]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit, $tester->getDisplay());
+        self::assertStringContainsString($expected, $tester->getDisplay());
+    }
+
     public function testFailsForUnregisteredModule(): void
     {
         $tester = new CommandTester(new IssueCommand($this->gitlabClient(), $this->drupalClient()));

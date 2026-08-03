@@ -95,52 +95,41 @@ final class DashboardCommand extends UpkeepCommand
 
         ksort($modules);
 
-        $needsFetch = [];
+        /** @var array<string, ModuleSnapshot> $snapshots */
         $snapshots = [];
+        $client = null;
+        $rows = [];
 
+        // One pass per module, in registry order: resolve its snapshot (from
+        // the cache, or by fetching), then turn it straight into rows. Every
+        // module therefore leaves the loop having produced either its rows or
+        // a failure row — there is no third outcome to defend against later.
         foreach ($modules as $name => $module) {
             $shouldRefresh = $refreshAll || $refreshModule === $name;
-            $cached = $shouldRefresh ? null : $dashCache->load($name);
-            if ($cached !== null) {
-                $snapshots[$name] = $cached;
-            } else {
-                $needsFetch[$name] = $module;
-            }
-        }
+            $snapshot = $shouldRefresh ? null : $dashCache->load($name);
 
-        /** @var array<string, ApiFailure> */
-        $moduleFailures = [];
-
-        if ($needsFetch !== []) {
-            // The factory reports the missing-token guidance itself; without a
-            // credential there is nothing to fetch and no table to show.
-            $client = $this->client ?? GitlabClientFactory::forConsole($io);
-            if ($client === null) {
-                return ExitCode::INFRASTRUCTURE;
-            }
-
-            foreach ($needsFetch as $name => $module) {
-                $result = $this->fetchModule($client, $drupal, $module);
-                if ($result instanceof ModuleSnapshot) {
-                    $snapshots[$name] = $result;
-                    $dashCache->save($name, $result);
-                } elseif ($result instanceof ApiFailure) {
-                    $moduleFailures[$name] = $result;
-                }
-            }
-        }
-
-        $rows = [];
-        foreach ($modules as $name => $module) {
-            if (isset($moduleFailures[$name])) {
-                $rows[] = DashboardRow::forModuleFailure($name, $moduleFailures[$name]);
-                continue;
-            }
-
-            $snapshot = $snapshots[$name] ?? null;
             if ($snapshot === null) {
-                continue;
+                if ($client === null) {
+                    // The factory reports the missing-token guidance itself;
+                    // without a credential there is nothing to fetch and no
+                    // table to show.
+                    $client = $this->client ?? GitlabClientFactory::forConsole($io);
+                    if ($client === null) {
+                        return ExitCode::INFRASTRUCTURE;
+                    }
+                }
+
+                $fetched = $this->fetchModule($client, $drupal, $module);
+                if ($fetched instanceof ApiFailure) {
+                    $rows[] = DashboardRow::forModuleFailure($name, $fetched);
+                    continue;
+                }
+
+                $snapshot = $fetched;
+                $dashCache->save($name, $snapshot);
             }
+
+            $snapshots[$name] = $snapshot;
 
             foreach (
                 $rowFactory->rows(
@@ -327,12 +316,14 @@ final class DashboardCommand extends UpkeepCommand
             default => $cells[5],
         };
 
-        // LOCAL (index 6)
-        $fmt[6] = match (true) {
-            $cells[6] === 'pass' => '<fg=green>' . $cells[6] . '</>',
-            str_starts_with($cells[6], 'fail') => '<fg=red>' . $cells[6] . '</>',
-            $cells[6] === '–' || $cells[6] === 'stale' => '<fg=gray>' . $cells[6] . '</>',
-            default => $cells[6],
+        // LOCAL (index 6). Unlike CI and STATUS this cell has a closed set of
+        // values — DashboardRow::localCell() returns pass, fail, stale or the
+        // en dash — so "anything else" is the muted case rather than an
+        // unreachable arm left over from a wider vocabulary.
+        $fmt[6] = match ($cells[6]) {
+            'pass' => '<fg=green>' . $cells[6] . '</>',
+            'fail' => '<fg=red>' . $cells[6] . '</>',
+            default => '<fg=gray>' . $cells[6] . '</>',
         };
 
         // STATUS (index 7)

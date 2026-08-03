@@ -264,6 +264,52 @@ final class PruneCommandTest extends TestCase
         self::assertStringContainsString('Invalid duration', $tester->getDisplay());
     }
 
+    /**
+     * A tree upkeep cannot attribute to a registered (module x core) pair is
+     * reported and left alone, not guessed at. Teardown goes through the
+     * engine and needs to know *what* it is tearing down; deleting the
+     * directory blind would leave the engine's containers and volumes behind.
+     * The run still succeeds — everything attributable was reclaimed.
+     */
+    public function testAnUnattributableTreeIsWarnedAboutAndLeftOnDiskWhileTheRestIsPruned(): void
+    {
+        // No .upkeep-env.yml, and no (module x core) in the registry produces
+        // this project name — d12 is not a tracked core version.
+        $orphan = $this->projects . '/upkeep-conditions-helper-d12';
+        mkdir($orphan, 0755, true);
+
+        $tester = $this->runPrune(['--trees' => true, '--yes' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('Skipped', $display);
+        self::assertStringContainsString('refusing to guess', $display);
+        self::assertStringContainsString('Pruned 1 item(s)', $display);
+        self::assertDirectoryExists($orphan);
+        // The attributable environment was still torn down in the same run.
+        self::assertSame([['conditions_helper', '10']], $this->teardowns);
+    }
+
+    /**
+     * An under-reported inventory can only under-delete, so the run continues
+     * — but the operator is told what could not be looked at, because a prune
+     * that silently skipped half the disk would read as "nothing left to
+     * reclaim".
+     */
+    public function testAnUnreadablePartOfTheInventoryIsWarnedAboutBeforeThePlanIsShown(): void
+    {
+        $project = $this->projects . '/upkeep-conditions-helper-d11';
+        exec('rm -rf ' . escapeshellarg($project . '/.ddev/upkeep/materialized'));
+        symlink($this->world, $project . '/.ddev/upkeep/materialized');
+
+        $tester = $this->runPrune(['--snapshots' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('is a symlink — skipped', $display);
+        self::assertStringNotContainsString('older.sql', $display);
+    }
+
     public function testRequiresExactlyOneScopeFlag(): void
     {
         $none = $this->runPrune([]);

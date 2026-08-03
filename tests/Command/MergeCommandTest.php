@@ -599,6 +599,29 @@ final class MergeCommandTest extends TestCase
         self::assertStringContainsString('only operates in fast-lane mode', $tester->getDisplay());
     }
 
+    /**
+     * A module GitLab cannot even be asked about produces a row with no merge
+     * request behind it. It has to be listed under "needs a human" — silently
+     * dropping it would let a module quietly fall out of the fast lane and
+     * look, run after run, as though it simply had nothing open — and it must
+     * never be offered for merge, because there is nothing to merge.
+     */
+    public function testAModuleWhoseMergeRequestsAreUnavailableIsListedAndNeverOffered(): void
+    {
+        $client = $this->client([
+            '/projects/project%2Fwidget' => self::json(['message' => '403 Forbidden'], 403),
+        ]);
+
+        $tester = $this->runMerge($client);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('widget: merge requests unavailable — n/a (403)', $display);
+        self::assertStringContainsString('No READY-AUTO rows', $display);
+        self::assertStringNotContainsString('Fast-lane action', $display, 'no prompt may be offered');
+        self::assertSame([], $this->putRequests(), 'no API write may happen');
+    }
+
     public function testACleanRunWithNothingEligibleExitsOk(): void
     {
         $client = $this->client([

@@ -160,6 +160,49 @@ final class ModulesAddCommandTest extends TestCase
     }
 
     /**
+     * Naming a module that is already registered is a no-op, not an error and
+     * not a duplicate entry: it is a membership of yours, so it is not
+     * "unknown", but there is nothing left to add. The registry comes out
+     * byte-identical and the run says so — re-running the same command is
+     * safe, which is the property a maintainer actually relies on.
+     */
+    public function testNamingAnAlreadyRegisteredModuleLeavesTheRegistryUntouched(): void
+    {
+        $before = file_get_contents($this->cockpit . '/registry.yml');
+
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        $exit = $tester->execute([
+            'modules' => ['conditions_helper'],
+            '--cockpit' => $this->cockpit,
+        ], ['interactive' => false]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        self::assertStringContainsString('Nothing selected; registry unchanged.', $tester->getDisplay());
+        self::assertSame($before, file_get_contents($this->cockpit . '/registry.yml'));
+    }
+
+    /**
+     * A registry entry with no core versions could never be checked against
+     * anything, so an empty `--core-versions` is refused before it is written
+     * rather than producing entries nothing can act on.
+     */
+    public function testAnEmptyCoreVersionsListIsRefusedBeforeAnythingIsWritten(): void
+    {
+        $before = file_get_contents($this->cockpit . '/registry.yml');
+
+        $tester = new CommandTester(new ModulesAddCommand($this->client()));
+        $exit = $tester->execute([
+            'modules' => ['token_or'],
+            '--cockpit' => $this->cockpit,
+            '--core-versions' => ' , ',
+        ], ['interactive' => false]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('at least one core major', $tester->getDisplay());
+        self::assertSame($before, file_get_contents($this->cockpit . '/registry.yml'));
+    }
+
+    /**
      * Regression: the no-token branch referenced two constants that do not
      * exist on TokenResolver, so first-run without a token died with a fatal
      * Error instead of printing guidance.

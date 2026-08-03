@@ -234,16 +234,17 @@ final class PatchesCommand extends UpkeepCommand
         return $nids;
     }
 
+    /**
+     * A missing credential is announced as a warning, not an error: this
+     * command's degraded mode is documented and still exits 0.
+     */
     private function buildGitlabClient(SymfonyStyle $io): ?GitlabClient
     {
-        $resolver = GitlabClientFactory::resolver($io);
-        $token = $resolver->resolve();
-        if ($token === null) {
-            $io->warning(GitlabClientFactory::missingTokenMessage($resolver));
-
-            return null;
-        }
-
-        return new GitlabClient(HttpClient::create(), $token);
+        return GitlabClientFactory::authenticated(
+            GitlabClientFactory::resolver($io),
+            static function (string $message) use ($io): void {
+                $io->warning($message);
+            },
+        );
     }
 }

@@ -299,6 +299,85 @@ final class NeedsWorkCommandTest extends TestCase
         self::assertStringContainsString('pass', $display);
     }
 
+    /**
+     * An MR GitLab reports without a head SHA cannot be matched exactly, so
+     * the lookup falls back to the latest result for the (module, MR, core) —
+     * and, with no SHA to compare against, does not cry stale. The alternative
+     * would be refusing to comment at all on an API anomaly the maintainer
+     * cannot fix.
+     */
+    public function testAnMrWithNoHeadShaStillFindsItsLatestCachedResult(): void
+    {
+        $this->populateResults('abc12345deadbeef');
+
+        $posted = false;
+        $gitlab = $this->gitlabClient(['sha' => null], function () use (&$posted): MockResponse {
+            $posted = true;
+
+            return self::json(['id' => 1], 201);
+        });
+
+        $tester = new CommandTester(new NeedsWorkCommand($gitlab));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+        ]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        self::assertTrue($posted, 'the cached result is still found without a head SHA');
+        self::assertStringNotContainsString('the MR is now at', $tester->getDisplay());
+    }
+
+    /**
+     * The comment is the record of what was actually run, so a check that
+     * could not run is reported as such rather than as a pass. "no tests" and
+     * "unavailable" are not failures — they must not render as **FAIL** — but
+     * they are not evidence of green either.
+     */
+    public function testChecksThatDidNotRunAreReportedByNameRatherThanAsPassOrFail(): void
+    {
+        $dir = $this->cockpit . '/results/widget/7/11';
+        mkdir($dir, 0o755, true);
+        file_put_contents($dir . '/abc12345deadbeef.json', json_encode([
+            'sha' => 'abc12345deadbeef',
+            'recorded_at' => (new \DateTimeImmutable('2024-06-15 09:23:00'))->format(\DateTimeInterface::ATOM),
+            'results' => [
+                // No duration recorded: an em dash, not a misleading "0.0s".
+                [
+                    'type' => 'phpunit',
+                    'status' => 'no-tests',
+                    'exit_code' => 0,
+                    'output' => '',
+                    'duration_seconds' => 0,
+                ],
+                [
+                    'type' => 'phpstan',
+                    'status' => 'unavailable',
+                    'exit_code' => null,
+                    'output' => '',
+                    'duration_seconds' => 0,
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $tester = new CommandTester(new NeedsWorkCommand($this->gitlabClient()));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--dry-run' => true,
+        ]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('| phpunit | no tests | — |', $display);
+        self::assertStringContainsString('| phpstan | unavailable | — |', $display);
+        self::assertStringNotContainsString('**FAIL**', $display);
+        self::assertStringNotContainsString('<details>', $display);
+    }
+
     public function testFailsForUnregisteredModule(): void
     {
         $tester = new CommandTester(new NeedsWorkCommand($this->gitlabClient()));

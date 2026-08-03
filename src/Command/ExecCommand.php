@@ -14,7 +14,6 @@ use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Security\CredentialEnvironment;
 use Upkeep\Workflow\ExitCode;
-use Upkeep\Workflow\WorkflowException;
 
 /**
  * Run an arbitrary command inside a module's environment directory.
@@ -61,11 +60,11 @@ final class ExecCommand extends UpkeepCommand
         $module = self::requireModule($this->modules($cockpit), $name);
         $coreMajor = self::targetCore($input, $module);
 
+        // Never empty: `cmd` is a REQUIRED array argument, so the console
+        // refuses the invocation ("Not enough arguments") before perform() is
+        // reached. A guard here would be a branch nothing can take.
         /** @var list<string> $cmd */
         $cmd = $input->getArgument('cmd');
-        if ($cmd === []) {
-            throw new WorkflowException('No command given. Usage: upkeep exec <module> -- <command...>');
-        }
 
         $adapter = $this->engines->create(
             $cockpit,

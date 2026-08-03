@@ -46,14 +46,30 @@ final readonly class GitlabClientFactory
     }
 
     /**
-     * Returns null — after printing the shared guidance — when no token is
-     * configured. The guidance never contains token material.
+     * Returns null — after printing the shared guidance as an error — when no
+     * token is configured. The guidance never contains token material.
      */
     public static function fromResolvedToken(TokenResolver $resolver, SymfonyStyle $io): ?GitlabClient
     {
+        return self::authenticated($resolver, static function (string $message) use ($io): void {
+            $io->error($message);
+        });
+    }
+
+    /**
+     * The one place a resolved token becomes a live client, so "how do we talk
+     * to GitLab" is decided once. $report receives the shared missing-token
+     * guidance and decides how loud it is: `patches` reports it as a warning
+     * because running without a credential is a documented degraded mode,
+     * every other command as an error.
+     *
+     * @param callable(string): void $report
+     */
+    public static function authenticated(TokenResolver $resolver, callable $report): ?GitlabClient
+    {
         $token = $resolver->resolve();
         if ($token === null) {
-            $io->error(self::missingTokenMessage($resolver));
+            $report(self::missingTokenMessage($resolver));
 
             return null;
         }

@@ -15,6 +15,8 @@ use Upkeep\Cockpit\Module;
 use Upkeep\Command\ExecCommand;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Tests\Support\CliHarness;
+use Upkeep\Tests\Support\FakeEngineAdapter;
 use Upkeep\Tests\Support\StubEngineAdapterFactory;
 use Upkeep\Workflow\ExitCode;
 
@@ -151,6 +153,30 @@ final class ExecCommandTest extends TestCase
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('No provisioned environment', $tester->getDisplay());
+    }
+
+    /**
+     * The "no command given" case is handled by the console definition, not
+     * by a guard inside the command: `cmd` is a REQUIRED array argument, so
+     * `upkeep exec widget --` is refused before perform() runs. Asserted here
+     * because it is the reason the command carries no such guard of its own —
+     * one would be a branch nothing could take.
+     */
+    public function testAnInvocationWithNoCommandIsRefusedBeforeTheEngineIsConsulted(): void
+    {
+        $cli = CliHarness::create('exec-usage');
+
+        try {
+            $cli->registerModule('token');
+            $cli->withEngine(FakeEngineAdapter::withEnvPath($cli->makeDirectory('env')));
+
+            $exit = $cli->run('exec', 'token', '--');
+
+            self::assertNotSame(ExitCode::OK, $exit);
+            self::assertStringContainsString('Not enough arguments', $cli->display());
+        } finally {
+            $cli->destroy();
+        }
     }
 
     /**
