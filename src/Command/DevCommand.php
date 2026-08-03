@@ -40,7 +40,7 @@ final class DevCommand extends Command
             ->addOption('version', null, InputOption::VALUE_REQUIRED, 'Target core major version (defaults to the first tracked version in the registry)')
             ->addOption('branch', null, InputOption::VALUE_REQUIRED, 'Branch to check out in the module working copy')
             ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -124,7 +124,7 @@ final class DevCommand extends Command
     {
         return new DdevContribAdapter(
             new ArtifactLayout($cockpit->baseArtifactsPath()),
-            ProjectsRoot::resolve($input->getOption('projects-root')),
+            ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root),
             new ProcessRunner(static function (string $line) use ($io): void {
                 $io->text($line);
             }),

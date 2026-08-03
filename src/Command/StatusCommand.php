@@ -35,7 +35,7 @@ final class StatusCommand extends Command
         $this
             ->addOption('disk', null, InputOption::VALUE_NONE, 'Itemize disk usage (project trees, materialized snapshots, docker volumes, base artifacts, fixture dumps) with totals')
             ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
+            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR));
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -49,7 +49,7 @@ final class StatusCommand extends Command
             return Command::FAILURE;
         }
 
-        $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'));
+        $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root);
         $items = (new InventoryScanner($cockpit, $projectsRoot))->scan();
 
         $trees = [];

@@ -50,7 +50,7 @@ final class PruneCommand extends Command
             ->addOption('keep-latest', null, InputOption::VALUE_REQUIRED, 'Snapshots: keep this many newest snapshots per project regardless of age', '0')
             ->addOption('yes', 'y', InputOption::VALUE_NONE, 'Actually delete. Without this flag the command is a dry run and deletes NOTHING')
             ->addOption('cockpit', null, InputOption::VALUE_REQUIRED, sprintf('Path to the cockpit directory (defaults to $%s, then the current directory)', Cockpit::ENV_VAR))
-            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR))
+            ->addOption('projects-root', null, InputOption::VALUE_REQUIRED, sprintf('Directory holding the engine environments (defaults to $%s, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects)', ProjectsRoot::ENV_VAR))
             ->setHelp(<<<'HELP'
                 Dry-run by default: without <info>--yes</info> the command only lists deletion candidates
                 with their reclaimable sizes. Protected regardless of any flag combination:
@@ -91,7 +91,7 @@ final class PruneCommand extends Command
 
             return Command::FAILURE;
         }
-        $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'));
+        $projectsRoot = ProjectsRoot::resolve($input->getOption('projects-root'), $cockpit->root);
 
         $scanner = new InventoryScanner($cockpit, $projectsRoot);
         $items = $scanner->scan();
