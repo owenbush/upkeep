@@ -22,6 +22,24 @@ final class PruneSelectorTest extends TestCase
         $this->now = new \DateTimeImmutable('2026-07-30T12:00:00Z');
     }
 
+    /**
+     * Builds a fixture timestamp $age before the frozen "now".
+     *
+     * DateTimeImmutable::modify() returns false for an unparseable modifier on
+     * PHP 8.2 and throws from 8.3 onward. These fixtures only ever pass valid
+     * intervals, but analysis covers the whole supported range, so the branch
+     * that cannot happen is stated rather than assumed away.
+     */
+    private function ago(string $age): \DateTimeImmutable
+    {
+        $moved = $this->now->modify('-' . $age);
+        if ($moved === false) {
+            self::fail(sprintf('Test fixture "%s" is not a valid date modifier.', $age));
+        }
+
+        return $moved;
+    }
+
     private function selector(): PruneSelector
     {
         return new PruneSelector([
@@ -43,7 +61,7 @@ final class PruneSelectorTest extends TestCase
             module: 'conditions_helper',
             coreMajor: '11',
             projectName: $name,
-            lastUsedAt: $age === null ? null : $this->now->modify('-' . $age),
+            lastUsedAt: $age === null ? null : $this->ago($age),
             keepMarked: $keep,
         );
     }
@@ -57,7 +75,7 @@ final class PruneSelectorTest extends TestCase
             module: 'conditions_helper',
             coreMajor: '11',
             projectName: $project,
-            lastUsedAt: $this->now->modify('-' . $age),
+            lastUsedAt: $this->ago($age),
             keepMarked: $keep,
         );
     }
@@ -71,7 +89,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::BaseArtifact,
             sizeBytes: 999999,
             coreMajor: '11',
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         foreach (PruneScope::cases() as $scope) {
@@ -87,13 +105,13 @@ final class PruneSelectorTest extends TestCase
             category: Category::FixtureDump,
             sizeBytes: 100,
             module: 'conditions_helper',
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
         $libraryDump = new InventoryItem(
             path: self::COCKPIT . '/fixtures/shared.sql.gz',
             category: Category::FixtureDump,
             sizeBytes: 100,
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         foreach (PruneScope::cases() as $scope) {
@@ -121,7 +139,7 @@ final class PruneSelectorTest extends TestCase
             path: self::COCKPIT . '/fixtures/evil.sql',
             category: Category::Snapshot,
             sizeBytes: 5,
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         self::assertSame(
@@ -136,7 +154,7 @@ final class PruneSelectorTest extends TestCase
             path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
             category: Category::Snapshot,
             sizeBytes: 5,
-            lastUsedAt: $this->now->modify('-400 days'),
+            lastUsedAt: $this->ago('400 days'),
         );
 
         self::assertSame([], $this->selector()->select([$mislabeled], PruneScope::All, null, $this->now));
@@ -162,7 +180,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::ProjectVolume,
             sizeBytes: 200,
             projectName: 'upkeep-conditions-helper-d11',
-            lastUsedAt: $this->now->modify('-60 days'),
+            lastUsedAt: $this->ago('60 days'),
         );
         $keptSnapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '10 days', keep: true);
         $otherTree = $this->tree('upkeep-other-d11');
@@ -210,20 +228,20 @@ final class PruneSelectorTest extends TestCase
                 category: Category::BaseArtifact,
                 sizeBytes: 1,
                 coreMajor: '11',
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'committed module dump' => new InventoryItem(
                 path: self::PROJECTS . '/upkeep-conditions-helper-d11/module/tests/fixtures/base.sql.gz',
                 category: Category::FixtureDump,
                 sizeBytes: 1,
                 module: 'conditions_helper',
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'library fixture dump' => new InventoryItem(
                 path: self::COCKPIT . '/fixtures/shared.sql.gz',
                 category: Category::FixtureDump,
                 sizeBytes: 1,
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'keep-marked tree' => $this->tree('upkeep-kept-tree-d11', age: '400 days', keep: true),
             'keep-marked snapshot' => $this->snapshot('upkeep-kept-snap-d11', 'kept', '400 days', keep: true),
@@ -236,7 +254,7 @@ final class PruneSelectorTest extends TestCase
                 path: self::COCKPIT . '/fixtures/evil.sql',
                 category: Category::Snapshot,
                 sizeBytes: 1,
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
             'tree escalated by its kept snapshot' => $this->tree('upkeep-kept-snap-d11', age: '400 days'),
             'volume escalated by its kept snapshot' => new InventoryItem(
@@ -244,7 +262,7 @@ final class PruneSelectorTest extends TestCase
                 category: Category::ProjectVolume,
                 sizeBytes: 1,
                 projectName: 'upkeep-kept-snap-d11',
-                lastUsedAt: $this->now->modify('-400 days'),
+                lastUsedAt: $this->ago('400 days'),
             ),
         ];
         $decoyTree = $this->tree('upkeep-decoy-d11', age: '400 days');
@@ -297,7 +315,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::ProjectVolume,
             sizeBytes: 200,
             projectName: 'upkeep-conditions-helper-d11',
-            lastUsedAt: $this->now->modify('-60 days'),
+            lastUsedAt: $this->ago('60 days'),
         );
 
         $candidates = $this->selector()->select([$tree, $snapshot, $volume], PruneScope::Trees, null, $this->now);
@@ -313,7 +331,7 @@ final class PruneSelectorTest extends TestCase
             category: Category::ProjectVolume,
             sizeBytes: 200,
             projectName: 'upkeep-conditions-helper-d11',
-            lastUsedAt: $this->now->modify('-60 days'),
+            lastUsedAt: $this->ago('60 days'),
         );
         $snapshot = $this->snapshot('upkeep-conditions-helper-d11', 'base', '60 days');
 

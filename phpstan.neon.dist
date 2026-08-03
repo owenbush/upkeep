@@ -3,3 +3,11 @@ parameters:
     paths:
         - src
         - tests
+    # Analyse against every PHP version composer.json supports, not just the
+    # one the developer happens to have. Without this, analysis silently tracks
+    # the local runtime: DateTimeImmutable::modify() returns
+    # DateTimeImmutable|false on 8.2 but throws on 8.3+, so a real 8.2 type
+    # error passed locally on 8.4 and only surfaced on the CI matrix.
+    phpVersion:
+        min: 80200
+        max: 80499
