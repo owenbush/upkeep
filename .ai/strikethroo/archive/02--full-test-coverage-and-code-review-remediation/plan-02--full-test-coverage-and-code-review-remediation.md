@@ -583,21 +583,66 @@ deletion is now guarded by a test asserting the refusal.
 `new GitlabClient(HttpClient::create(), …)` into one covered site, which is how
 `AbstractMrCommand` and `PatchesCommand` were closed without a network call.
 
-### Phase 7: Suppression Audit
+### ✅ Phase 7: Suppression Audit — completed
 **Parallel Tasks:**
-- Task 017: Audit and justify the suppression budget (depends on: 013, 014, 015, 016)
+- ✔️ Task 017: Audit and justify the suppression budget (depends on: 013, 014, 015, 016) — `completed`
 
-### Phase 8: Enforcement
-**Parallel Tasks:**
-- Task 018: Enable blocking enforcement of all quality gates (depends on: 003, 017)
+**Result: the budget is genuinely zero**, confirmed independently rather than
+repeated. The audit was extended to the 18 error-suppression `@` operators
+introduced while covering failure paths; every one suppresses only the PHP
+warning that `failOnWarning` would otherwise turn into a suite failure, while
+the failure itself is detected by a return-value check and reported through a
+named exception. A 13-method sample across the newest test files confirmed each
+asserts a concrete outcome rather than merely executing a path.
 
-### Phase 9: Documentation
+### ✅ Phase 8: Enforcement — completed
 **Parallel Tasks:**
-- Task 019: Update project documentation for the new quality gates and any surface changes (depends on: 018)
+- ✔️ Task 018: Enable blocking enforcement of all quality gates (depends on: 003, 017) — `completed`
 
-### Phase 10: Validation
+PHPUnit 11.5 has **no built-in minimum-coverage threshold** — verified against
+the shipped `phpunit.xsd` and `--help`. Rather than substitute a CI-only check,
+enforcement runs through PHPUnit's extension API so it fires on a plain
+`vendor/bin/phpunit`, which is what the plan's integration strategy requires.
+
+All three gates were **observed to fail**. The coverage negative test was
+re-run independently by the orchestrator: commenting out one test left PHPUnit
+reporting `OK (833 tests)` while the run exited **1** at 99.98% (4034/4035) —
+failing purely because coverage dropped, which is the distinction that matters.
+
+Known limitation, reported loudly rather than hidden: with `--no-coverage` or no
+driver there is nothing to measure, so the extension warns and exits 0.
+
+### ✅ Phase 9: Documentation — completed
 **Parallel Tasks:**
-- Task 020: Execute the plan's self-validation procedure (depends on: 018, 019)
+- ✔️ Task 019: Update project documentation for the new quality gates and any surface changes (depends on: 018) — `completed`
+
+All 15 behaviour-change items documented across `CLAUDE.md`, `README.md`, and
+`docs/contrib-maintainer-design.md`. Every documented command was executed
+before being written down. Three registered commands (`dev`, `needs-work`,
+`patches`) were missing from the README reference entirely.
+
+**Correction to this plan's own records**: BEHAVIOUR-CHANGES item 7 claimed
+"bad usage" exits 2. It does not — Symfony handles parse failures before the
+contract applies, so console-level usage errors exit 1 while upkeep's own
+validation exits 2. The docs were written to the verified behaviour, and the
+record was corrected.
+
+### ✅ Phase 10: Validation — completed
+**Parallel Tasks:**
+- ✔️ Task 020: Execute the plan's self-validation procedure (depends on: 018, 019) — `completed`
+
+**12 of 13 steps pass, 1 not verifiable, 0 failures.** Full evidence in
+`validation-report.md`. Step 13 (green CI on all three matrix legs) is not
+verifiable here — the branch has no remote and only PHP 8.4 is installed; all
+six workflow commands were run locally on 8.4 instead, each exit 0.
+
+**One real defect found, and fixed**: `DdevContribAdapter` told the operator to
+run `upkeep base-artifacts:build --core=11`, an option this plan had renamed to
+`--version`. Following upkeep's own hint exited 1. A test asserted the stale
+spelling, so the suite defended it. Notable because that line was 100% covered,
+PSR-12 clean, and PHPStan-max clean — no gate here checks that a string names an
+option that exists, which is exactly why the self-validation exercises the real
+binary rather than trusting the suite.
 
 ### Post-phase Actions
 
@@ -617,3 +662,135 @@ phases does not imply lint and analysis are clean. Task 018 closes that window.
 ### Execution Summary
 - Total Phases: 10
 - Total Tasks: 20
+
+## Execution Summary
+
+**Status**: ✅ Completed Successfully
+**Completed Date**: 2026-08-03
+
+### Results
+
+All 20 tasks across 10 phases completed. 190 files changed, +16,640 / −2,148,
+in 10 conventional commits on
+`feature/2--full-test-coverage-and-code-review-remediation` from base
+`645e6bf`.
+
+Both halves of the work order are delivered and independently verified:
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Line coverage | 64.63% (2149/3325) | **100.00% (4035/4035)**, enforced |
+| Method coverage | 59.20% | **100.00% (470/470)** |
+| Class coverage | 40.66% | **100.00% (110/110)** |
+| Tests / assertions | 377 / 1015 | **834 / 2354** |
+| PHPStan level max | 302 errors | **0** |
+| PSR-12 | 245 errors + 227 warnings | **0 / 0** |
+| Suppressions | n/a | **0** |
+| CI gates | 2, none blocking | **4, all blocking** |
+
+Every one of the 55 recorded review findings was remediated. The suite remains
+hermetic — no docker, no network, no credential — and runs in about four
+seconds.
+
+**Five live defects were found and fixed that the original 377-test suite never
+reached**, three of them fatal on first-run paths:
+
+1. `ModulesAddCommand` referenced the undefined constants
+   `TokenResolver::ENV_VAR` and `::CONFIG_PATH_HINT` — a fatal `Error` on the
+   no-token path, i.e. exactly first run.
+2. The same command called `$projects->message()` where `ApiFailure` exposes a
+   promoted property — a fatal `Error` on any GitLab failure there.
+3. `NotesCommand` was missing its `GitlabClientFactory` import, so `upkeep
+   notes` raised `Class "Upkeep\Command\GitlabClientFactory" not found` on
+   **every** invocation. It shipped that way behind a docblock declaring it
+   "deliberately untested… verified live".
+4. `prune --older-than` read `last_used_at`, which nothing ever wrote, silently
+   falling back to `created_at` — so the only destructive command could delete
+   actively-used environments.
+5. Two unbounded pagination loops in `GitlabClient` that hung rather than
+   failed.
+
+Plus a credential leak closed at two layers: the PAT never reached a `Process`
+argument vector, but it was inherited by every child through the environment and
+could return via child output into four sinks — one of which persisted to disk.
+
+### Noteworthy Events
+
+**Code review gate: SKIPPED.** Round 1 returned
+`{"kind":"skipped","reason":"validator-absent","detail":"No \`xmllint\` on PATH, so emitted findings could not be validated against the vendored schema and the review gate was skipped. Install libxml2-utils (Debian/Ubuntu), libxml2 (Homebrew), or your platform equivalent to enable the gate."}`.
+`libxml2-utils` was installed and the gate re-run, which then returned
+`{"kind":"skipped","reason":"no-reviewer-candidate","detail":"No harness other than \`claude\` is installed and responsive, so the review gate was skipped."}`.
+That second skip is not fixable here: the gate deliberately requires an
+independent second harness so the reviewer is not the implementer, and only
+`claude` is available. **0 rounds ran; 0 findings recorded; 0 applied.** Per the
+gate contract a skip is never a failure, but the cumulative diff has therefore
+had no independent second-model review — see follow-ups.
+
+**Environment prerequisites installed.** Neither Composer nor a coverage driver
+was present. With maintainer approval, `composer` and `php-pcov` were installed
+via apt; `libxml2-utils` was added later for the review gate.
+
+**Phase 3 was serialized against the blueprint.** Tasks 6–9 were planned to run
+in parallel, but decisions D1/D2 expanded task 9 into a full DI refactor plus a
+CLI-wide exit-code contract, putting its file ownership in direct conflict with
+tasks 6, 7, and 8 over `ResultsCache`, `GitlabClient`, `CheckCommand`, and
+exception call sites in command classes. They were run 6 → 7 → 8 → 9. Dependency
+order was preserved; only parallelism was given up.
+
+**Three maintainer decisions changed the plan's scope** (recorded in
+`DECISIONS.md`): a full DI refactor, extending the exit-code contract to all 19
+commands, and putting confirmed non-lens defects in scope. The DI refactor was
+flagged at decision time as exceeding what the recorded finding required; the
+maintainer chose it explicitly.
+
+**The adapter boundary was nominally passing and substantively breached.**
+`grep -r "ddev" src/ --exclude-dir=Adapter` returned nothing only because the
+class name capitalises the D, while five command classes constructed
+`DdevContribAdapter` directly. Both the case-sensitive and case-insensitive
+greps are now silent, and the documented guard was corrected to `grep -ri`.
+
+**100% coverage was reached with zero suppressions.** No `@codeCoverageIgnore`
+was ever added. Where a branch could not be reached it was deleted at source
+because it was genuinely unreachable — including an unreachable `LogicException`
+arm, a dead `match` default over a regex-constrained set, and an argument guard
+the console refuses before the command runs.
+
+**A correction to this plan's own records**: BEHAVIOUR-CHANGES item 7 claimed
+"bad usage" exits 2. It does not — Symfony handles parse failures before the
+contract applies. The docs were written to verified behaviour and the record
+corrected rather than the claim being preserved.
+
+**Self-validation found a defect the gates could not.** `DdevContribAdapter`
+told operators to run `--core=11`, an option this plan had renamed, and a test
+asserted the stale wording. That line was 100% covered, PSR-12 clean, and
+PHPStan-max clean. No gate here checks that a string names an option that
+exists.
+
+### Necessary follow-ups
+
+1. **Independent code review of the cumulative diff.** The gate skipped for lack
+   of a second harness. 190 files and +16,640 lines have not had the independent
+   review the workflow intends. Install a second harness and re-run
+   `code-review.cjs 2 <harness> 1`, or review by hand.
+2. **CI has never actually run.** Self-validation step 13 is unverified: the
+   branch has no remote and only PHP 8.4 is installed. `composer.lock` is
+   gitignored so each matrix leg resolves fresh — simulating PHP 8.2 selects
+   Symfony 7.4.x where local validation used 8.1.x, so the 8.2 and 8.3 legs are
+   genuinely untested. Push the branch and confirm all three legs before
+   merging.
+3. **Existing cockpits need a one-off migration**: `chmod -R go-rwx
+   <cockpit>/results <cockpit>/cache`, since those are now `0700`/`0600`.
+4. **`--projects-root` outside `$HOME` is refused with no escape hatch.** If a
+   legitimate use case exists, that needs a decision.
+5. **Console-level usage errors exit 1, not 2.** Closing that gap means
+   overriding Symfony's exception handling — a behaviour change, deliberately
+   not made under a documentation task.
+6. **`ResourceMissing`'s docblock cites `upkeep notes --since-tag=9.9.9`**, an
+   option that does not exist. Cosmetic, but it is the same class of defect as
+   the `--core` hint.
+7. **Consider consolidating the three payload readers** — `Gitlab\ApiPayload`,
+   `Drupal\ApiPayload`, and `Adapter\EngineDescription` share one vocabulary and
+   were kept separate only because they sat in different tasks' scopes.
+8. **`upkeep exec` no longer forwards `UPKEEP_GITLAB_TOKEN`** and no longer
+   passes the child's exit code through. Both are intentional and documented,
+   but they will break existing scripts.
