@@ -29,6 +29,16 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
 - `src/Drupal/` — drupal.org API client and issue models (status, priority,
   file attachments, MR ↔ issue references).
 - `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
+- `src/Patches/` — how an issue's work arrived (`Patches\ContributionKind`:
+  patch-only / patch + MR / patch with an empty MR / MR-only / nothing) and the
+  issue-plus-its-MRs pairing `patches` renders. An MR counts as covering an
+  issue only when it claims authorship of it
+  (`Drupal\IssueReference::extractOwning`, which unlike `extract()` rejects a
+  bare "Relates to #NNN" mention) **and** carries changes
+  (`Gitlab\MergeRequest::carriesChanges()`, which keys on
+  `diff_refs.base_sha != head_sha` — `changes_count` is null on an empty MR
+  and `detailed_merge_status` reads `draft_status` for a draft, so both lie).
+  Unknown emptiness always reads as real work; nothing may treat it as empty.
 - `src/Dashboard/`, `src/Results/` — dashboard row assembly, cached check
   results (`<cockpit>/results/`).
 - `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
@@ -79,7 +89,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (4035/4035), methods (470/470) and classes (110/110), 834 tests.
+lines (4127/4127), methods (482/482) and classes (112/112), 889 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

@@ -140,12 +140,18 @@ final class ExitCodeContractTest extends TestCase
     {
         $cli = $this->cli();
         // Two modules: the credential guidance is resolved once for the run,
-        // not re-printed for every module it could not cross-reference.
+        // not re-printed for every module it could not cross-reference. Both
+        // have to have something to report, because a module with no Needs
+        // Review / RTBC issue never reaches for GitLab in the first place.
         $cli->registerModule('widget');
         $cli->registerModule('gadget');
         $cli->withDrupalOrg(new DrupalOrgClient(new MockHttpClient(
             static fn (): MockResponse => new MockResponse(
-                json_encode(['list' => []], \JSON_THROW_ON_ERROR),
+                json_encode(['list' => [[
+                    'nid' => 3489012,
+                    'title' => 'Add config schema for settings form',
+                    'field_issue_status' => '8',
+                ]]], \JSON_THROW_ON_ERROR),
                 ['response_headers' => ['content-type' => 'application/json']],
             ),
         )));

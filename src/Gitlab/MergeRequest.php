@@ -9,7 +9,8 @@ namespace Upkeep\Gitlab;
  *
  * Exposes exactly the fields the fast-lane gate keys on for bot-MR
  * classification: author username (+ id), source branch, title, draft state,
- * detailed_merge_status, and head SHA.
+ * detailed_merge_status, and head SHA — plus the diff refs that say whether
+ * the MR carries any changes at all (see carriesChanges()).
  */
 final readonly class MergeRequest
 {
@@ -28,7 +29,40 @@ final readonly class MergeRequest
         public ?string $description = null,
         public ?Pipeline $headPipeline = null,
         public ?string $updatedAt = null,
+        public ?string $diffBaseSha = null,
+        public ?string $diffHeadSha = null,
     ) {
+    }
+
+    /**
+     * Whether this merge request carries any changes, or null when the payload
+     * it was built from cannot say.
+     *
+     * An MR whose branch holds no commits the target does not already have is
+     * an *empty* MR: it exists, it can be linked from an issue, and it covers
+     * nothing. The Project Update Bot opens exactly such an MR on a great many
+     * contrib projects when it finds nothing to fix.
+     *
+     * The signal is `diff_refs.base_sha == head_sha`, deliberately, because the
+     * two more obvious fields both lie:
+     *   - `changes_count` is *null* on an empty MR, indistinguishable from
+     *     "the diff has not been generated yet";
+     *   - `detailed_merge_status` reports `draft_status` for a draft MR,
+     *     masking the emptiness underneath (and a draft carrying real commits
+     *     is not empty at all).
+     *
+     * Null means "not known from this payload" rather than "not empty": the
+     * merge-request *list* endpoint omits diff_refs entirely, so only the
+     * single-MR endpoint (GitlabClient::mergeRequest()) can settle it. Callers
+     * must decide what an unknown means for them; none may read it as false.
+     */
+    public function carriesChanges(): ?bool
+    {
+        if ($this->diffBaseSha === null || $this->diffHeadSha === null) {
+            return null;
+        }
+
+        return $this->diffBaseSha !== $this->diffHeadSha;
     }
 
     /**
@@ -39,6 +73,7 @@ final readonly class MergeRequest
         $payload = new ApiPayload($data);
         $author = $payload->child('author');
         $headPipeline = $payload->childArray('head_pipeline');
+        $diffRefs = $payload->child('diff_refs');
         $title = $payload->string('title');
 
         return new self(
@@ -56,6 +91,8 @@ final readonly class MergeRequest
             description: $payload->stringOrNull('description'),
             headPipeline: $headPipeline !== null ? Pipeline::fromApi($headPipeline) : null,
             updatedAt: $payload->stringOrNull('updated_at'),
+            diffBaseSha: $diffRefs?->stringOrNull('base_sha'),
+            diffHeadSha: $diffRefs?->stringOrNull('head_sha'),
         );
     }
 
@@ -76,6 +113,12 @@ final readonly class MergeRequest
             'description' => $this->description,
             'head_pipeline' => $this->headPipeline?->toApiArray(),
             'updated_at' => $this->updatedAt,
+            // Round-tripped so a cached snapshot answers carriesChanges()
+            // without refetching. Null when unknown, which reads back as
+            // unknown rather than as "not empty".
+            'diff_refs' => $this->diffBaseSha === null && $this->diffHeadSha === null
+                ? null
+                : ['base_sha' => $this->diffBaseSha, 'head_sha' => $this->diffHeadSha],
         ];
     }
 }

@@ -355,20 +355,52 @@ drafts paste-ready Markdown release notes: every MR merged since the module's
 last tag, grouped and linked. Takes a registered machine name or a full
 project path (e.g. `project/conditions_helper`).
 
-### Patch-only issues
+### Patch contributions
 
 The dashboard is MR-centric, so contributions that arrive as a patch file
-never appear on it. To find them:
+never appear on it. Plenty of the Drupal community still works that way, and
+plenty of issues carry both — a patch posted in comment 4, a merge request
+opened in comment 9, a re-roll posted in comment 14 that never made it onto
+the branch. To see them:
 
 ```bash
 upkeep patches                      # every registered module
 upkeep patches --module=widget      # one module
+upkeep patches --without-mr         # only what no branch carries
 ```
 
-lists drupal.org issues in Needs Review or RTBC that have no corresponding
-merge request. This is the one command with a documented degraded mode: with
-no GitLab token it warns once, scans without cross-referencing merge requests,
-and still exits 0 — a wider result set rather than no result at all.
+lists drupal.org issues in Needs Review or RTBC alongside the state of any
+merge request on the same issue:
+
+```
+MODULE    ISSUE       STATUS    PATCHES    LATEST PATCH             MR         TITLE
+
+widget    #3489012    review    2          3489012-12-schema.patch  –          Add config schema
+widget    #3467675    RTBC      1          3467675-4-required.patch !7         Make URL field required
+widget    #3597808    review    3          3597808-9-d11.patch      !1 empty   Drupal 11 compatibility
+```
+
+The MR column is the point. `–` means no merge request claims the issue, `!7`
+means one does and carries changes, and **`!1 empty` means one exists and
+carries nothing** — an open branch with no commits the target does not already
+have. The Project Update Bot leaves exactly that on a great many contrib
+projects, and an empty MR covers no work: the patch beside it is the only
+contribution there is, and it is yours to review or close the MR over.
+
+An issue is withheld only when a merge request genuinely carries the work —
+it claims authorship of the issue (the `Issue #NNN` title convention, an
+issue-fork branch name, or a drupal.org issue link) *and* has a non-empty
+diff. A passing mention like the bot's `Relates to #NNN` is not authorship,
+and does not withhold anything. Pass `--without-mr` to narrow the report to
+issues no branch carries at all; empty-MR rows stay, because those are
+precisely the ones that look covered and are not.
+
+This is the one command with a documented degraded mode: with no GitLab token
+it warns once, scans without cross-referencing merge requests, and still exits
+0 — a wider result set rather than no result at all. Where a `dashboard` cache
+exists it is used, and it already knows which MRs are empty; otherwise the
+scan asks GitLab for the detail of each MR attached to a scanned issue, since
+GitLab's merge-request *list* omits the diff refs that settle the question.
 
 ## Fixtures
 
@@ -505,7 +537,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep env:path <module> [--version=N]` | Print the absolute path of a module's environment directory |
 | `upkeep issue <module> <mr> [--no-open]` | Show the linked drupal.org issue and open it in the browser |
 | `upkeep needs-work <module> <mr> [--version=N] [--dry-run] [--no-open]` | Post the local check results as a comment on the merge request |
-| `upkeep patches [--module=NAME]` | drupal.org issues in Needs Review / RTBC with no corresponding MR |
+| `upkeep patches [--module=NAME] [--without-mr]` | drupal.org issues in Needs Review / RTBC carrying patch files, and the state of any MR beside them |
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |
