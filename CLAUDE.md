@@ -27,7 +27,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   Client methods return an `ApiFailure` rather than throwing, so callers
   `match` on the condition. Never log or print a token.
 - `src/Drupal/` — drupal.org API client and issue models (status, priority,
-  file attachments, MR ↔ issue references).
+  file attachments, MR ↔ issue references). Two api-d7 shapes are load-bearing
+  and both cost an extra request: `field_project_machine_name` exists on
+  *project* nodes only, so an issue listing is filtered by the project's node
+  id (resolved once per project per run) and never by machine name — filtering
+  a listing by machine name matches nothing and reads exactly like "no issues";
+  and an attachment is always returned as a bare reference
+  (`{"file":{"uri":…,"id":…}}`) with no name, so `DrupalOrgClient` dereferences
+  each one against `/file/<fid>.json` (once per distinct file per run) before
+  building the `Issue`. Without that, every issue has zero attachments.
 - `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
 - `src/Patches/` — how an issue's work arrived (`Patches\ContributionKind`:
   patch-only / patch + MR / patch with an empty MR / MR-only / nothing) and the
@@ -89,7 +97,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (4127/4127), methods (482/482) and classes (112/112), 889 tests.
+lines (4183/4183), methods (488/488) and classes (112/112), 899 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
