@@ -759,4 +759,40 @@ final class PatchesCommandTest extends TestCase
         self::assertStringContainsString('1 module', $display);
         self::assertStringContainsString('statuses: review, RTBC', $display);
     }
+
+    /**
+     * A degraded scan says so, and says the counts beneath it are floors.
+     * Without this the command reports "2 issues" from a run that failed to
+     * read six attachments, and nothing distinguishes that from the truth —
+     * which is the exact under-reporting this command exists to prevent.
+     */
+    public function testAScanThatCouldNotReadEverythingSaysSoAndFlagsItsCountsAsLowerBounds(): void
+    {
+        $files = [];
+        foreach (range(7001, 7008) as $fid) {
+            $files[] = ['file' => ['uri' => 'https://www.drupal.org/api-d7/file/' . $fid, 'id' => (string) $fid]];
+        }
+
+        $drupal = new DrupalOrgClient(new MockHttpClient(
+            static function (string $method, string $url) use ($files): MockResponse {
+                if (str_contains($url, 'field_project_machine_name=')) {
+                    return self::json(['list' => [['nid' => 12345]]]);
+                }
+                if (str_contains($url, '/file/')) {
+                    return self::json(['message' => 'refused by the test'], 500);
+                }
+
+                return self::json(['list' => [self::issuePayload(['field_issue_files' => $files])]]);
+            },
+        ));
+
+        $tester = new CommandTester(new PatchesCommand($drupal, $this->gitlabClientWithMrs()));
+        $exit = $tester->execute(['--cockpit' => $this->cockpit]);
+
+        self::assertSame(0, $exit, $tester->getDisplay());
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('8 drupal.org request(s) did not answer', $display);
+        self::assertStringContainsString('and 3 more', $display, 'the list is capped, the count is not');
+        self::assertStringContainsString('lower bounds', $display);
+    }
 }

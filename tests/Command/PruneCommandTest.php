@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
@@ -112,6 +113,10 @@ final class PruneCommandTest extends TestCase
             }
 
             public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+
+            public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
 

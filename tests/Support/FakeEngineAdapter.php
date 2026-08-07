@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Support;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
@@ -27,6 +28,9 @@ final class FakeEngineAdapter implements EngineAdapterInterface
     /** @var list<string> fixture names loaded, in order */
     public array $loadedFixtures = [];
 
+    /** @var list<PatchApplication> patches applied, in order */
+    public array $appliedPatches = [];
+
     private function __construct(
         private readonly ?Environment $environment = null,
         private readonly ?string $envPath = null,
@@ -35,7 +39,20 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         private readonly ?CheckRunResult $checkRun = null,
         private readonly ?ServeResult $serveResult = null,
         private readonly ?\Throwable $fixtureFailure = null,
+        private readonly ?\Throwable $patchFailure = null,
     ) {
+    }
+
+    /** An environment whose patch apply fails — a patch needing a re-roll. */
+    public static function withFailingPatchApply(Environment $environment, \Throwable $failure): self
+    {
+        return new self(environment: $environment, patchFailure: $failure);
+    }
+
+    /** An environment that applies patches and then reports these checks. */
+    public static function withPatchCheckRun(Environment $environment, CheckRunResult $run): self
+    {
+        return new self(environment: $environment, checkRun: $run);
     }
 
     public static function withEnvironment(Environment $environment): self
@@ -87,6 +104,15 @@ final class FakeEngineAdapter implements EngineAdapterInterface
 
     public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
     {
+    }
+
+    public function applyPatch(Environment $environment, PatchApplication $patch): void
+    {
+        if ($this->patchFailure !== null) {
+            throw $this->patchFailure;
+        }
+
+        $this->appliedPatches[] = $patch;
     }
 
     public function loadFixture(Environment $environment, string $fixtureName): void

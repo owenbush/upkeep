@@ -11,6 +11,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Filesystem\FilesystemException;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 
 final class ResultsCacheTest extends TestCase
@@ -39,8 +40,8 @@ final class ResultsCacheTest extends TestCase
             new CheckResult(CheckType::Deprecation, CheckStatus::Unavailable, null, 'engine provides none', 0.0),
         ]);
 
-        $cache->store('field_visibility_conditions', 2, '11', self::SHA, $run);
-        $cached = $cache->find('field_visibility_conditions', 2, '11', self::SHA);
+        $cache->store('field_visibility_conditions', ResultKey::mergeRequest(2), '11', self::SHA, $run);
+        $cached = $cache->find('field_visibility_conditions', ResultKey::mergeRequest(2), '11', self::SHA);
 
         self::assertNotNull($cached);
         self::assertSame(self::SHA, $cached->sha);
@@ -59,10 +60,11 @@ final class ResultsCacheTest extends TestCase
         $green = new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0)]);
         $red = new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Failed, 1, 'FAIL', 1.0)]);
 
-        $cache->store('m', 1, '11', self::SHA, $red, new \DateTimeImmutable('2026-07-01T00:00:00Z'));
-        $cache->store('m', 1, '11', self::OTHER_SHA, $green, new \DateTimeImmutable('2026-07-02T00:00:00Z'));
+        $mr = ResultKey::mergeRequest(1);
+        $cache->store('m', $mr, '11', self::SHA, $red, new \DateTimeImmutable('2026-07-01T00:00:00Z'));
+        $cache->store('m', $mr, '11', self::OTHER_SHA, $green, new \DateTimeImmutable('2026-07-02T00:00:00Z'));
 
-        $latest = $cache->latest('m', 1, '11');
+        $latest = $cache->latest('m', ResultKey::mergeRequest(1), '11');
         self::assertNotNull($latest);
         self::assertSame(self::OTHER_SHA, $latest->sha);
         self::assertTrue($latest->result->allPassed());
@@ -71,13 +73,13 @@ final class ResultsCacheTest extends TestCase
     public function testMissesAndMalformedFilesReadAsNull(): void
     {
         $cache = new ResultsCache($this->dir);
-        self::assertNull($cache->find('m', 1, '11', self::SHA));
-        self::assertNull($cache->latest('m', 1, '11'));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', self::SHA));
+        self::assertNull($cache->latest('m', ResultKey::mergeRequest(1), '11'));
 
         mkdir($this->dir . '/m/1/11', 0o700, true);
         file_put_contents($this->dir . '/m/1/11/' . self::SHA . '.json', '{not json');
-        self::assertNull($cache->find('m', 1, '11', self::SHA));
-        self::assertNull($cache->latest('m', 1, '11'));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', self::SHA));
+        self::assertNull($cache->latest('m', ResultKey::mergeRequest(1), '11'));
     }
 
     /**
@@ -88,7 +90,7 @@ final class ResultsCacheTest extends TestCase
     public function testStoredResultsAreOwnerOnlyOnDiskBecauseTheyCarryRawCheckOutput(): void
     {
         $cache = new ResultsCache($this->dir);
-        $cache->store('m', 1, '11', self::SHA, new CheckRunResult([
+        $cache->store('m', ResultKey::mergeRequest(1), '11', self::SHA, new CheckRunResult([
             new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0),
         ]));
 
@@ -102,13 +104,13 @@ final class ResultsCacheTest extends TestCase
     {
         $cache = new ResultsCache($this->dir);
         $first = new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0)]);
-        $cache->store('m', 1, '11', self::SHA, $first);
+        $cache->store('m', ResultKey::mergeRequest(1), '11', self::SHA, $first);
 
         $file = $this->dir . '/m/1/11/' . self::SHA . '.json';
         $handle = fopen($file, 'r');
         self::assertNotFalse($handle);
 
-        $cache->store('m', 1, '11', self::SHA, new CheckRunResult([
+        $cache->store('m', ResultKey::mergeRequest(1), '11', self::SHA, new CheckRunResult([
             new CheckResult(CheckType::PhpUnit, CheckStatus::Failed, 1, str_repeat('x', 3999), 2.0),
         ]));
 
@@ -135,7 +137,7 @@ final class ResultsCacheTest extends TestCase
 
         try {
             $this->expectException(FilesystemException::class);
-            $cache->store('m', 1, '11', self::SHA, new CheckRunResult([]));
+            $cache->store('m', ResultKey::mergeRequest(1), '11', self::SHA, new CheckRunResult([]));
         } finally {
             chmod($this->dir . '/m/1/11', 0o700);
         }
@@ -151,7 +153,7 @@ final class ResultsCacheTest extends TestCase
         $cache = new ResultsCache($this->dir);
 
         $this->expectException(\InvalidArgumentException::class);
-        $cache->store('m', 1, '11', $sha, new CheckRunResult([]));
+        $cache->store('m', ResultKey::mergeRequest(1), '11', $sha, new CheckRunResult([]));
     }
 
     /**
@@ -171,7 +173,7 @@ final class ResultsCacheTest extends TestCase
     {
         $cache = new ResultsCache($this->dir);
 
-        self::assertNull($cache->find('m', 1, '11', '../../etc/passwd'));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', '../../etc/passwd'));
     }
 
     public function testAModuleNameThatIsNotAMachineNameNeverBecomesAPathSegment(): void
@@ -179,19 +181,19 @@ final class ResultsCacheTest extends TestCase
         $cache = new ResultsCache($this->dir);
 
         $this->expectException(\InvalidArgumentException::class);
-        $cache->store('../../escape', 1, '11', self::SHA, new CheckRunResult([]));
+        $cache->store('../../escape', ResultKey::mergeRequest(1), '11', self::SHA, new CheckRunResult([]));
     }
 
     public function testAnUnreadableResultsDirectoryIsReportedRatherThanReadAsNeverChecked(): void
     {
         $cache = new ResultsCache($this->dir);
-        $cache->store('m', 1, '11', self::SHA, new CheckRunResult([]));
+        $cache->store('m', ResultKey::mergeRequest(1), '11', self::SHA, new CheckRunResult([]));
         chmod($this->dir . '/m/1/11', 0o000);
 
         try {
             $this->expectException(FilesystemException::class);
             $this->expectExceptionMessageMatches('#' . preg_quote($this->dir . '/m/1/11', '#') . '#');
-            $cache->latest('m', 1, '11');
+            $cache->latest('m', ResultKey::mergeRequest(1), '11');
         } finally {
             chmod($this->dir . '/m/1/11', 0o700);
         }
@@ -210,21 +212,21 @@ final class ResultsCacheTest extends TestCase
             'recorded_at' => '2026-07-01T00:00:00+00:00',
             'results' => 'not-a-list',
         ]));
-        self::assertNull($cache->find('m', 1, '11', self::SHA));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', self::SHA));
 
         file_put_contents($file, json_encode([
             'sha' => self::SHA,
             'recorded_at' => '2026-07-01T00:00:00+00:00',
             'results' => [['type' => 'nonsense', 'status' => 'passed']],
         ]));
-        self::assertNull($cache->find('m', 1, '11', self::SHA));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', self::SHA));
 
         file_put_contents($file, json_encode([
             'sha' => 12345,
             'recorded_at' => '2026-07-01T00:00:00+00:00',
             'results' => [],
         ]));
-        self::assertNull($cache->find('m', 1, '11', self::SHA));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', self::SHA));
 
         // A list, but of scalars rather than check mappings.
         file_put_contents($file, json_encode([
@@ -232,7 +234,7 @@ final class ResultsCacheTest extends TestCase
             'recorded_at' => '2026-07-01T00:00:00+00:00',
             'results' => ['phpunit', 'phpstan'],
         ]));
-        self::assertNull($cache->find('m', 1, '11', self::SHA));
+        self::assertNull($cache->find('m', ResultKey::mergeRequest(1), '11', self::SHA));
     }
 
     public function testACoreVersionThatIsNotAMajorVersionNumberNeverBecomesAPathSegment(): void
@@ -244,7 +246,7 @@ final class ResultsCacheTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/core major version/');
-        $cache->store('m', 1, '../../etc', self::SHA, new CheckRunResult([]));
+        $cache->store('m', ResultKey::mergeRequest(1), '../../etc', self::SHA, new CheckRunResult([]));
     }
 
     public function testAnImpossibleIdentityReadsAsNeverCheckedRatherThanCrashingTheDashboard(): void
@@ -254,8 +256,8 @@ final class ResultsCacheTest extends TestCase
         // exception surfacing out of a dashboard row.
         $cache = new ResultsCache($this->dir);
 
-        self::assertNull($cache->find('../../escape', 1, '11', self::SHA));
-        self::assertNull($cache->latest('../../escape', 1, '11'));
-        self::assertNull($cache->latest('m', 1, '../../etc'));
+        self::assertNull($cache->find('../../escape', ResultKey::mergeRequest(1), '11', self::SHA));
+        self::assertNull($cache->latest('../../escape', ResultKey::mergeRequest(1), '11'));
+        self::assertNull($cache->latest('m', ResultKey::mergeRequest(1), '../../etc'));
     }
 }

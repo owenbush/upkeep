@@ -16,6 +16,7 @@ use Upkeep\Adapter\ProjectsRoot;
 use Upkeep\BaseArtifact\BuildException;
 use Upkeep\BaseArtifact\MetaException;
 use Upkeep\Cockpit\Cockpit;
+use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Cockpit\Module;
 use Upkeep\Cockpit\RegistryException;
 use Upkeep\Filesystem\FilesystemException;
@@ -299,6 +300,34 @@ abstract class UpkeepCommand extends Command
         $value = $input->getArgument($name);
 
         return \is_scalar($value) ? (string) $value : '';
+    }
+
+    /**
+     * Surface what a drupal.org scan could not read.
+     *
+     * This client degrades by returning *less data*, which at the call site is
+     * indistinguishable from there being less data — a dropped attachment
+     * looks like an issue with fewer patches, a truncated page like a project
+     * with fewer issues. So the shortfall is stated, and the counts printed
+     * alongside it are named as the lower bounds they are.
+     */
+    protected static function reportScanWarnings(SymfonyStyle $io, DrupalOrgClient $drupal): void
+    {
+        $warnings = $drupal->warnings();
+        if ($warnings === []) {
+            return;
+        }
+
+        $shown = \array_slice($warnings, 0, 5);
+        if (\count($warnings) > \count($shown)) {
+            $shown[] = sprintf('... and %d more.', \count($warnings) - \count($shown));
+        }
+        $shown[] = 'Counts below are lower bounds: re-run to pick up what was missed.';
+
+        $io->warning(array_merge(
+            [sprintf('%d drupal.org request(s) did not answer.', \count($warnings))],
+            $shown,
+        ));
     }
 
     private function style(InputInterface $input, OutputInterface $output): SymfonyStyle

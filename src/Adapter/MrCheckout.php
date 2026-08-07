@@ -17,8 +17,6 @@ use Upkeep\Gitlab\MergeRequest;
  */
 final readonly class MrCheckout
 {
-    private const BRANCH_PREFIX = 'mr-';
-
     /**
      * The refspec to fetch: force-updating (+) so re-applying an MR that
      * gained commits since the last fetch updates mr-<iid> instead of
@@ -34,14 +32,19 @@ final readonly class MrCheckout
      */
     public static function branchName(int $iid): string
     {
-        return self::BRANCH_PREFIX . $iid;
+        return ManagedBranch::forMergeRequest($iid);
     }
 
     /**
-     * The working copy's base branch: the branch recorded by a previous
-     * applyMr when present (the working copy then sits on an mr-* branch),
-     * otherwise the currently checked-out branch — which must not itself be
-     * an mr-* branch or a detached HEAD, because then the base is unknowable.
+     * The working copy's base branch: the branch recorded by a previous apply
+     * when present (the working copy then sits on a managed branch), otherwise
+     * the currently checked-out branch — which must not itself be a managed
+     * branch (mr-*, patch-*) or a detached HEAD, because then the base is
+     * unknowable.
+     *
+     * Shared by both apply paths: a patch applied on top of a merge request's
+     * branch, or the reverse, would be testing two contributions at once while
+     * reporting on one.
      *
      * @param string|null $currentBranch null when HEAD is detached
      * @param string|null $recordedBase  the upkeep.base-branch git config value, when set
@@ -61,10 +64,10 @@ final readonly class MrCheckout
             );
         }
 
-        if (preg_match('/^' . self::BRANCH_PREFIX . '\d+$/', $currentBranch) === 1) {
+        if (ManagedBranch::isManaged($currentBranch)) {
             throw new AdapterException(sprintf(
-                'Cannot determine the module working copy\'s base branch: it sits on MR branch "%s" and no base branch '
-                . 'is recorded.',
+                'Cannot determine the module working copy\'s base branch: it sits on the upkeep-managed branch "%s" '
+                . 'and no base branch is recorded.',
                 $currentBranch,
             ));
         }

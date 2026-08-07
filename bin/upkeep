@@ -22,6 +22,8 @@ use Upkeep\Command\ModulesAddCommand;
 use Upkeep\Command\ModulesCommand;
 use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\NotesCommand;
+use Upkeep\Command\PatchApplyCommand;
+use Upkeep\Command\PatchCheckCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\ReviewCommand;
@@ -67,6 +69,8 @@ $application->addCommands([
     new ModulesAddCommand(),
     new ModulesCommand(),
     new NotesCommand(),
+    new PatchApplyCommand($engines),
+    new PatchCheckCommand($engines),
     new PatchesCommand(),
     new PruneCommand($engines, $volumeProbe),
     new ReviewCommand($engines),

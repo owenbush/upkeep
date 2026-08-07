@@ -15,6 +15,7 @@ use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Results\CachedResult;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\MrContextResolver;
@@ -69,12 +70,12 @@ final class NeedsWorkCommand extends UpkeepCommand
 
         $cache = new ResultsCache($cockpit->resultsPath());
         $cached = $mr->headSha !== null
-            ? $cache->find($module->name, $mr->iid, $coreMajor, $mr->headSha)
+            ? $cache->find($module->name, ResultKey::mergeRequest($mr->iid), $coreMajor, $mr->headSha)
             : null;
 
         $stale = false;
         if ($cached === null) {
-            $cached = $cache->latest($module->name, $mr->iid, $coreMajor);
+            $cached = $cache->latest($module->name, ResultKey::mergeRequest($mr->iid), $coreMajor);
             if ($cached !== null && $mr->headSha !== null && $cached->sha !== $mr->headSha) {
                 $stale = true;
             }

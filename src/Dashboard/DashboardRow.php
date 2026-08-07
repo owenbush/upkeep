@@ -10,6 +10,7 @@ use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\PipelineStatus;
 use Upkeep\Gitlab\Project;
+use Upkeep\Patches\Contribution;
 use Upkeep\Results\CachedResult;
 use Upkeep\Workflow\WorkflowException;
 
@@ -35,7 +36,38 @@ final readonly class DashboardRow
         public ?GateVerdict $verdict,
         public ?ApiFailure $ciFailure,
         public ?ApiFailure $moduleFailure,
+        public ?Contribution $contribution = null,
     ) {
+    }
+
+    /**
+     * A patch contribution: an issue carrying work that no branch does.
+     *
+     * It has no project, no merge request and — decisively — no gate verdict,
+     * which is what makes isReadyAuto() false for it by construction rather
+     * than by a check someone has to remember to write. There is nothing here
+     * upkeep could merge even if it wanted to: the fast-lane path resolves its
+     * own rows through RowAssembler and never sees these at all.
+     *
+     * @param ?CachedResult $local the cached patch:check result, keyed by the
+     *                             patch's revision (Patches\PatchRevision)
+     */
+    public static function forPatch(
+        string $core,
+        Contribution $contribution,
+        ?CachedResult $local,
+    ): self {
+        return new self(
+            $contribution->module,
+            $core,
+            null,
+            null,
+            $local,
+            null,
+            null,
+            null,
+            $contribution,
+        );
     }
 
     /** @param ?ApiFailure $ciFailure detail-fetch failure; the row fell back to the listed MR data */
@@ -114,6 +146,21 @@ final readonly class DashboardRow
             return [$this->module, '–', '–', '(merge requests unavailable)', $cell, '–', $cell];
         }
 
+        if ($this->contribution !== null) {
+            return [
+                $this->module,
+                'patch',
+                $this->core,
+                self::truncate($this->contribution->issue->title),
+                // A patch has no pipeline: drupal.org runs CI on branches, not
+                // on attachments, which is half the reason patch work goes
+                // unreviewed in the first place.
+                '–',
+                $this->localCell(),
+                $this->statusCell(),
+            ];
+        }
+
         $mergeRequest = $this->requireMergeRequest();
 
         return [
@@ -156,19 +203,32 @@ final readonly class DashboardRow
         if ($this->local === null) {
             return '–';
         }
-        $headSha = $this->mergeRequest?->headSha;
-        if ($headSha === null || $this->local->sha !== $headSha) {
+
+        // A patch row's evidence is current when it was recorded against the
+        // patch that is newest on the issue *now*. A re-roll posted since then
+        // is a new upload with a new URL, so the recorded revision no longer
+        // matches and the verdict reads as stale rather than as a green light
+        // for code nobody checked.
+        $current = $this->contribution !== null
+            ? $this->contribution->currentRevision()
+            : $this->mergeRequest?->headSha;
+
+        if ($current === null || $this->local->sha !== $current) {
             return 'stale';
         }
 
         return $this->local->result->allPassed() ? 'pass' : 'fail';
     }
 
-    /** STATUS cell: the gate verdict, or the module-level failure state. */
+    /** STATUS cell: the gate verdict, the contribution kind, or the failure. */
     public function statusCell(): string
     {
         if ($this->moduleFailure !== null) {
             return self::failureCell($this->moduleFailure);
+        }
+
+        if ($this->contribution !== null) {
+            return $this->contribution->dashboardStatus();
         }
 
         return $this->requireVerdict()->describe();

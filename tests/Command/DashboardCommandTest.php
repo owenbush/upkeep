@@ -17,6 +17,8 @@ use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Patches\PatchRevision;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 
 /**
@@ -126,11 +128,17 @@ final class DashboardCommandTest extends TestCase
         return new DrupalOrgClient(new MockHttpClient(static fn () => new MockResponse('', ['http_code' => 404])));
     }
 
-    /** @param array<string, mixed> $args */
+    /**
+     * Drives the detailed table. The command's default is now the per-module
+     * overview, so the rows these tests assert on have to be asked for; the
+     * overview has its own tests below.
+     *
+     * @param array<string, mixed> $args
+     */
     private function runDashboard(GitlabClient $client, array $args = []): CommandTester
     {
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
-        $tester->execute(['--cockpit' => $this->cockpit, ...$args]);
+        $tester->execute(['--cockpit' => $this->cockpit, '--all' => true, ...$args]);
 
         return $tester;
     }
@@ -140,7 +148,7 @@ final class DashboardCommandTest extends TestCase
     {
         (new ResultsCache($this->cockpit . '/results'))->store(
             'widget',
-            5,
+            ResultKey::mergeRequest(5),
             '11',
             $sha,
             new CheckRunResult($checks),
@@ -279,7 +287,7 @@ final class DashboardCommandTest extends TestCase
             'glpat-test-token',
         );
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
-        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
@@ -424,7 +432,7 @@ final class DashboardCommandTest extends TestCase
             'glpat-test-token',
         );
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
-        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('patch↑', $tester->getDisplay());
@@ -474,7 +482,7 @@ final class DashboardCommandTest extends TestCase
             'glpat-test-token',
         );
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
-        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringNotContainsString('patch↑', $tester->getDisplay());
@@ -494,7 +502,7 @@ final class DashboardCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
-        self::assertStringContainsString('No open merge requests across the registered modules.', $display);
+        self::assertStringContainsString('No open contributions across the registered modules.', $display);
         self::assertStringNotContainsString('targeting core', $display);
         self::assertStringNotContainsString('MODULE', $display);
     }
@@ -562,7 +570,7 @@ final class DashboardCommandTest extends TestCase
         ]);
 
         $tester = new CommandTester(new DashboardCommand($client, $drupal));
-        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString((string) $issueNid, $tester->getDisplay());
@@ -594,11 +602,371 @@ final class DashboardCommandTest extends TestCase
             'glpat-test-token',
         );
         $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
-        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
         self::assertStringContainsString('READY-AUTO', $display);
         self::assertMatchesRegularExpression('/pass\s+pass\s+READY-AUTO/', $display);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $patchIssues
+     */
+    private function saveSnapshotWithPatchIssues(array $patchIssues): void
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [],
+            [],
+            $patchIssues,
+        ));
+    }
+
+    /**
+     * @param list<array{string, string}> $patches filename and URL
+     *
+     * @return array<string, mixed>
+     */
+    private static function patchIssuePayload(int $nid, array $patches): array
+    {
+        return [
+            'nid' => $nid,
+            'title' => 'Automated Drupal 12 compatibility fixes',
+            'url' => 'https://www.drupal.org/node/' . $nid,
+            'field_issue_status' => '8',
+            'field_project' => ['machine_name' => 'widget'],
+            'field_issue_files' => array_map(
+                static fn (array $p): array => ['file' => [
+                    'filename' => $p[0],
+                    'url' => $p[1],
+                    'filesize' => '2048',
+                    'timestamp' => '1705400000',
+                ]],
+                $patches,
+            ),
+        ];
+    }
+
+    private function noApiClient(): GitlabClient
+    {
+        return new GitlabClient(
+            new MockHttpClient(static fn () => throw new \LogicException('No API calls expected')),
+            'glpat-test-token',
+        );
+    }
+
+    /**
+     * Patch contributions are rows on the same table as merge requests: one
+     * view of everything open, which is what a maintainer actually triages.
+     */
+    public function testPatchIssuesFromTheSnapshotAppearAsRows(): void
+    {
+        $this->saveSnapshotWithPatchIssues([
+            self::patchIssuePayload(3597808, [['bot.patch', 'https://example.test/2026-07-11/bot.patch']]),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('patch', $display);
+        self::assertStringContainsString('3597808', $display);
+        self::assertStringContainsString('PATCH 1 patch', $display);
+        self::assertStringContainsString('1 patch issue', $display);
+    }
+
+    /**
+     * The escape hatch for anyone who wants the pre-existing view: the patch
+     * scan is skipped entirely, not merely hidden.
+     */
+    public function testNoPatchesRestoresTheMergeRequestOnlyDashboard(): void
+    {
+        $this->saveSnapshotWithPatchIssues([
+            self::patchIssuePayload(3597808, [['bot.patch', 'https://example.test/2026-07-11/bot.patch']]),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--no-patches' => true, '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringNotContainsString('3597808', $tester->getDisplay());
+    }
+
+    /**
+     * A patch:check verdict reaches the LOCAL column of its own row, keyed by
+     * the patch's revision — and, being in the patch namespace, cannot be read
+     * as evidence about any merge request.
+     */
+    public function testACachedPatchCheckShowsInTheLocalColumn(): void
+    {
+        $url = 'https://example.test/2026-07-11/bot.patch';
+        $this->saveSnapshotWithPatchIssues([self::patchIssuePayload(3597808, [['bot.patch', $url]])]);
+
+        (new ResultsCache($this->cockpit . '/results'))->store(
+            'widget',
+            ResultKey::patch(3597808),
+            '11',
+            PatchRevision::of($url),
+            new CheckRunResult([new CheckResult(CheckType::PhpCs, CheckStatus::Failed, 1, 'bad spacing', 0.5)]),
+        );
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertMatchesRegularExpression('/3597808.*fail/', $tester->getDisplay());
+    }
+
+    /**
+     * A verdict recorded against a patch that has since been re-rolled reads
+     * as stale, not as a green light for code nobody checked.
+     */
+    public function testAVerdictAboutASupersededPatchReadsAsStale(): void
+    {
+        $old = 'https://example.test/2026-06-11/bot.patch';
+        $new = 'https://example.test/2026-07-11/bot.patch';
+        $this->saveSnapshotWithPatchIssues([
+            self::patchIssuePayload(3597808, [['bot.patch', $new], ['bot.patch', $old]]),
+        ]);
+
+        (new ResultsCache($this->cockpit . '/results'))->store(
+            'widget',
+            ResultKey::patch(3597808),
+            '11',
+            PatchRevision::of($old),
+            new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'ok', 1.0)]),
+        );
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertMatchesRegularExpression('/3597808.*stale/', $tester->getDisplay());
+    }
+
+    /**
+     * A refresh is minutes of silence otherwise — each module costs a GitLab
+     * round trip plus a drupal.org scan whose attachment lookups are one
+     * request per file. The bar goes to stderr, so a piped stdout still
+     * receives nothing but the table.
+     */
+    public function testARefreshShowsProgressOnStderrAndLeavesStdoutClean(): void
+    {
+        $tester = new CommandTester(new DashboardCommand(
+            $this->client([
+                '/merge_requests?' => self::json([self::botMrPayload()]),
+                '/merge_requests/' => self::json(self::botMrPayload()),
+                '/projects/' => self::json(self::projectPayload()),
+            ]),
+            $this->noDrupalClient(),
+        ));
+
+        $tester->execute(
+            ['--cockpit' => $this->cockpit, '--version' => '11', '--refresh' => null, '--all' => true],
+            ['decorated' => true, 'capture_stderr_separately' => true],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('fetching', $tester->getErrorOutput());
+        self::assertStringNotContainsString('fetching', $tester->getDisplay());
+    }
+
+    /**
+     * A cached run does no fetching, so it gets no bar — one that finished
+     * before it rendered would be pure noise.
+     */
+    public function testACachedRunShowsNoProgressBar(): void
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [self::botMrPayload()],
+            [],
+        ));
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(
+            ['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true],
+            ['decorated' => true, 'capture_stderr_separately' => true],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringNotContainsString('fetching', $tester->getErrorOutput());
+    }
+
+    // ------------------------------------------------------ two-tier surface
+
+    /**
+     * @param list<array<string, mixed>> $mrs
+     * @param list<array<string, mixed>> $patchIssues
+     */
+    private function saveSnapshot(string $module, array $mrs = [], array $patchIssues = []): void
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save($module, new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            $mrs,
+            [],
+            $patchIssues,
+        ));
+    }
+
+    private function twoModuleCockpit(): void
+    {
+        file_put_contents(
+            $this->cockpit . '/registry.yml',
+            "modules:\n"
+            . "  widget:\n    project: project/widget\n    core_versions: [\"10\", \"11\"]\n"
+            . "  gadget:\n    project: project/gadget\n    core_versions: [\"11\"]\n",
+        );
+    }
+
+    /**
+     * The reason the overview exists: a mature contrib project can carry a
+     * hundred open merge requests, and multiplying that by tracked cores puts
+     * one module past two hundred rows. The aggregate is one line per module.
+     */
+    public function testTheDefaultViewIsOnePerModuleNotOnePerRow(): void
+    {
+        $this->twoModuleCockpit();
+        $this->saveSnapshot('widget', [
+            self::botMrPayload(['iid' => 5, 'head_pipeline' => self::greenPipeline()]),
+            self::botMrPayload(['iid' => 6, 'head_pipeline' => self::greenPipeline()]),
+        ], [self::patchIssuePayload(3597808, [['bot.patch', 'https://example.test/a.patch']])]);
+        $this->saveSnapshot('gadget');
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('MODULE', $display);
+        self::assertStringContainsString('UNCHECKED', $display);
+        // Two MRs across two cores plus a patch issue is five detailed rows;
+        // the overview is one line, and never names an individual MR.
+        self::assertStringNotContainsString('!5', $display);
+        self::assertStringNotContainsString('3597808', $display);
+        self::assertMatchesRegularExpression('/widget\s+10,11\s+2\s/', $display);
+        self::assertStringContainsString('upkeep dashboard <module>', $display);
+    }
+
+    /**
+     * Counts are per distinct subject, not per row: one merge request tracked
+     * across two cores is one merge request, or the queue would read as twice
+     * the size for every module tracking two cores.
+     */
+    public function testTheOverviewCountsSubjectsNotRows(): void
+    {
+        $this->twoModuleCockpit();
+        $this->saveSnapshot('widget', [self::botMrPayload(['iid' => 5])]);
+        $this->saveSnapshot('gadget');
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit]);
+
+        // One MR, two cores -> "1", not "2".
+        self::assertMatchesRegularExpression('/widget\s+10,11\s+1\s/', $tester->getDisplay());
+    }
+
+    /** Naming a module drills in, and shows only that module. */
+    public function testNamingAModuleShowsItsRowsAndOnlyIts(): void
+    {
+        $this->twoModuleCockpit();
+        $this->saveSnapshot('widget', [self::botMrPayload(['iid' => 5])]);
+        $this->saveSnapshot('gadget', [self::botMrPayload(['iid' => 9])]);
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['module' => 'widget', '--cockpit' => $this->cockpit]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('!5', $display);
+        self::assertStringNotContainsString('!9', $display);
+        self::assertStringNotContainsString('gadget', $display);
+    }
+
+    /**
+     * The overview and the drill-down are the same rows counted twice, so a
+     * module reporting one MR must show exactly one when opened. Two counts of
+     * the same thing that can disagree are worse than one count.
+     */
+    public function testTheOverviewAndTheDrillDownCannotDisagree(): void
+    {
+        $this->twoModuleCockpit();
+        $this->saveSnapshot('widget', [
+            self::botMrPayload(['iid' => 5]),
+            self::botMrPayload(['iid' => 6]),
+        ], [self::patchIssuePayload(3597808, [['a.patch', 'https://example.test/a.patch']])]);
+        $this->saveSnapshot('gadget');
+
+        $overview = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $overview->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
+        self::assertMatchesRegularExpression('/widget\s+11\s+2\s/', $overview->getDisplay());
+
+        $detail = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $detail->execute(['module' => 'widget', '--cockpit' => $this->cockpit, '--version' => '11']);
+        $rows = substr_count($detail->getDisplay(), 'widget    !');
+        self::assertSame(2, $rows, 'the overview said two merge requests');
+        self::assertStringContainsString('3597808', $detail->getDisplay());
+    }
+
+    /**
+     * A bare --refresh alongside a named module re-fetches that module only.
+     * Refreshing a whole cockpit to look at one module would be the expensive
+     * half of a command whose entire point was to be specific.
+     */
+    public function testRefreshingWhileNamingAModuleRefetchesThatModuleOnly(): void
+    {
+        $this->twoModuleCockpit();
+        $this->saveSnapshot('widget', [self::botMrPayload(['iid' => 5, 'title' => 'Cached widget title'])]);
+        $this->saveSnapshot('gadget', [self::botMrPayload(['iid' => 9, 'title' => 'Cached gadget title'])]);
+
+        $fetched = [];
+        $client = new GitlabClient(
+            new MockHttpClient(static function (string $method, string $url) use (&$fetched): MockResponse {
+                if (preg_match('#/projects/project%2F(\w+)$#', $url, $m) === 1) {
+                    $fetched[] = $m[1];
+
+                    return self::json(self::projectPayload());
+                }
+                if (str_contains($url, '/merge_requests?')) {
+                    return self::json([self::botMrPayload(['iid' => 5, 'title' => 'Freshly fetched'])]);
+                }
+
+                return self::json(self::botMrPayload(['iid' => 5, 'title' => 'Freshly fetched']));
+            }),
+            'glpat-test-token',
+        );
+
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['module' => 'widget', '--cockpit' => $this->cockpit, '--refresh' => null]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertSame(['widget'], $fetched, 'gadget must not be re-fetched');
+        self::assertStringContainsString('Freshly fetched', $tester->getDisplay());
+    }
+
+    public function testAnUnregisteredModuleArgumentIsRefused(): void
+    {
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $exit = $tester->execute(['module' => 'nope', '--cockpit' => $this->cockpit]);
+
+        self::assertSame(2, $exit);
+        self::assertStringContainsString('not registered', $tester->getDisplay());
+    }
+
+    /** A module whose MRs cannot be listed is still visible on the overview. */
+    public function testAFailedModuleStillGetsAnOverviewLine(): void
+    {
+        $tester = $this->runDashboard(
+            $this->client(['/projects/' => new MockResponse('', ['http_code' => 404])]),
+            ['--all' => false],
+        );
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('widget', $tester->getDisplay());
     }
 }

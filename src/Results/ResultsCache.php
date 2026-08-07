@@ -16,13 +16,23 @@ use Upkeep\Filesystem\FileWriter;
  * File-backed store for local check results, shared by the check command
  * (writer) and the dashboard/gate (readers).
  *
- * Layout: <cockpit>/results/<module>/<mr-iid>/<core>/<head-sha>.json — one
- * file per checked head, so history survives re-checks and staleness is a
- * SHA comparison, not a timestamp guess.
+ * Layout: <cockpit>/results/<module>/<subject>/<core>/<sha>.json — one file
+ * per checked revision, so history survives re-checks and staleness is a SHA
+ * comparison, not a timestamp guess.
+ *
+ * <subject> is a ResultKey: an MR IID for a merge request, `patch-<nid>` for a
+ * patch on an issue. The two share this store and are kept in separate
+ * namespaces structurally, because a patch result read as an MR result would
+ * put patch evidence in front of the fast-lane gate.
+ *
+ * <sha> is whatever identifies the revision that was checked: an MR's head
+ * SHA, or the content hash of the patch file. Both are 7-64 hex characters,
+ * and both answer the same question — "is this evidence about what is there
+ * now?" — so both are compared the same way by consumers.
  *
  * Every component of that path is validated before it becomes a path segment.
  * The module name and core version come from the registry (validated at load,
- * re-asserted here because this is a public API), and the head SHA is an
+ * re-asserted here because this is a public API), and the SHA may be an
  * unvalidated remote value from the GitLab API, so it is required to look like
  * a SHA before it becomes a filename.
  *
@@ -47,13 +57,13 @@ final readonly class ResultsCache
      */
     public function store(
         string $module,
-        int $mrIid,
+        ResultKey $key,
         string $coreMajor,
         string $sha,
         CheckRunResult $result,
         ?\DateTimeImmutable $recordedAt = null,
     ): void {
-        $dir = $this->entryDir($module, $mrIid, $coreMajor);
+        $dir = $this->entryDir($module, $key, $coreMajor);
         self::assertSha($sha);
 
         $payload = [
@@ -79,11 +89,11 @@ final readonly class ResultsCache
         );
     }
 
-    /** The result recorded for one exact head SHA, or null when never checked. */
-    public function find(string $module, int $mrIid, string $coreMajor, string $sha): ?CachedResult
+    /** The result recorded for one exact revision, or null when never checked. */
+    public function find(string $module, ResultKey $key, string $coreMajor, string $sha): ?CachedResult
     {
         try {
-            $dir = $this->entryDir($module, $mrIid, $coreMajor);
+            $dir = $this->entryDir($module, $key, $coreMajor);
             self::assertSha($sha);
         } catch (\InvalidArgumentException) {
             // A read for an impossible identity is a miss, not a crash: the
@@ -95,16 +105,17 @@ final readonly class ResultsCache
     }
 
     /**
-     * The most recently recorded result for the (module, MR, core) regardless
-     * of head SHA. Callers deciding freshness must compare its sha against
-     * the MR's current head.
+     * The most recently recorded result for the (module, subject, core)
+     * regardless of revision. Callers deciding freshness must compare its sha
+     * against what is there now — the MR's current head, or the current
+     * patch's content hash.
      *
      * @throws FilesystemException when the entry directory exists but cannot be listed
      */
-    public function latest(string $module, int $mrIid, string $coreMajor): ?CachedResult
+    public function latest(string $module, ResultKey $key, string $coreMajor): ?CachedResult
     {
         try {
-            $dir = $this->entryDir($module, $mrIid, $coreMajor);
+            $dir = $this->entryDir($module, $key, $coreMajor);
         } catch (\InvalidArgumentException) {
             return null;
         }
@@ -134,7 +145,7 @@ final readonly class ResultsCache
         return $newest;
     }
 
-    private function entryDir(string $module, int $mrIid, string $coreMajor): string
+    private function entryDir(string $module, ResultKey $key, string $coreMajor): string
     {
         if (!ProjectName::isModuleName($module)) {
             throw new \InvalidArgumentException(sprintf(
@@ -149,14 +160,14 @@ final readonly class ResultsCache
             ));
         }
 
-        return $this->resultsDir . '/' . $module . '/' . $mrIid . '/' . $coreMajor;
+        return $this->resultsDir . '/' . $module . '/' . $key->segment . '/' . $coreMajor;
     }
 
     private static function assertSha(string $sha): void
     {
         if (preg_match(self::SHA_PATTERN, $sha) !== 1) {
             throw new \InvalidArgumentException(sprintf(
-                'A cached result is keyed by its head SHA (7-64 hex characters), got "%s".',
+                'A cached result is keyed by the revision it covers (7-64 hex characters), got "%s".',
                 $sha,
             ));
         }

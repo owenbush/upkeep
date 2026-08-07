@@ -12,6 +12,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Adapter\CheckResult;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckStatus;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\MrContext;
@@ -134,16 +135,16 @@ final class CheckCommand extends AbstractMrCommand
         $resultsDir = $this->cockpit($input)->resultsPath();
         (new ResultsCache($resultsDir))->store(
             $context->module->name,
-            $context->mergeRequest->iid,
+            ResultKey::mergeRequest($context->mergeRequest->iid),
             $context->coreMajor,
             $sha,
             $run,
         );
         $io->writeln(sprintf(
-            'Results cached: %s/%s/%d/%s/%s.json',
+            'Results cached: %s/%s/%s/%s/%s.json',
             $resultsDir,
             $context->module->name,
-            $context->mergeRequest->iid,
+            ResultKey::mergeRequest($context->mergeRequest->iid)->segment,
             $context->coreMajor,
             $sha,
         ));

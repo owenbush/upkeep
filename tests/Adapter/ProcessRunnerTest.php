@@ -12,6 +12,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Adapter\ProcessRunner;
 use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Security\SecretRedactor;
 
@@ -246,14 +247,20 @@ final class ProcessRunnerTest extends TestCase
         $resultsDir = sys_get_temp_dir() . '/upkeep-results-' . bin2hex(random_bytes(4));
 
         try {
-            (new ResultsCache($resultsDir))->store('token_or', 7, '11', 'deadbee', new CheckRunResult([
+            (new ResultsCache($resultsDir))->store(
+                'token_or',
+                ResultKey::mergeRequest(7),
+                '11',
+                'deadbee',
+                new CheckRunResult([
                 CheckResult::fromProcess(
                     CheckType::PhpUnit,
                     $captured->exitCode,
                     $captured->output,
                     $captured->durationSeconds,
                 ),
-            ]));
+                ])
+            );
 
             $written = glob($resultsDir . '/token_or/7/11/*.json') ?: [];
             $this->assertCount(1, $written);
