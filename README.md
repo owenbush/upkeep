@@ -520,13 +520,50 @@ Target: Drupal core 11, module widget
 
 Same exit-code contract as `check`: **0** all green, **1** a check failed,
 **2** upkeep could not produce a verdict — which includes a patch that no
-longer applies, reported as what it means:
+longer applies.
+
+**Applying escalates before giving up.** Three attempts, each loosening
+something different, none loosening what has to *match* — the changed lines
+are compared exactly throughout:
+
+1. **straight** — the patch as cut.
+2. **three-way** — resolves hunks plain context matching rejects, whenever the
+   blobs the patch was generated against are in the repository.
+3. **reduced context** — one line of surrounding context instead of three.
+
+The third rung is not a nicety. drupal.org generates patches against an export
+whose files may carry a trailing blank line the repository does not, so a hunk
+header promises seven context lines for a six-line file and git refuses all
+nine files over one of them. Project Update Bot patches hit this routinely.
+When a patch applies at rung 2 or 3 you are told, because a hunk placed on one
+line of context is a weaker guarantee than one placed on three:
 
 ```
-Patch "3597808-4-old.patch" (issue #3597808) does not apply to "1.0.x" —
-it needs a re-roll.
-error: patch failed: widget.module:12
+Applied via reduced context — the patch did not match the working copy
+exactly; review the result with that in mind.
 ```
+
+**When all three fail, the report says what is stale rather than only that
+something is:**
+
+```
+Patch "3597808-4-old.patch" (issue #3597808) does not apply to "1.0.x",
+even with a three-way merge and reduced context.
+
+It changes 9 file(s); 8 apply, 1 do not:
+  tests/modules/widget_test/widget_test.info.yml
+
+git looked for this and did not find it:
+  name: 'Widget Test'
+  type: module
+  core_version_requirement: ^10 || ^11
+
+That file has moved on since the patch was cut. Re-roll against "1.0.x", or
+check the issue for a newer patch.
+```
+
+"One of these nine files is stale" is actionable in a way "the patch failed"
+is not.
 
 **Choosing the patch.** An issue routinely carries several — an original, two
 re-rolls, an interdiff. With one patch attached there is nothing to choose.

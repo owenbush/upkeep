@@ -236,40 +236,74 @@ final class DdevContribAdapter implements EngineAdapterInterface
     }
 
     /**
-     * The apply itself: a straight application, then a three-way retry, then
-     * a report that the patch needs a re-roll.
+     * The apply itself: an escalation, not a single attempt.
      *
-     * The retry is not optimism — three-way resolves hunks that plain context
-     * matching rejects whenever the blobs the patch was cut against are in the
-     * repository, which for a drupal.org patch on its own project is the
-     * common case. A patch that fails both is genuinely stale, and the git
-     * output from the *first* attempt is what gets reported: the three-way
-     * failure talks about missing blobs, which tells a maintainer nothing
-     * about their patch.
+     * Each rung loosens something different, and none loosens what has to
+     * *match* — the changed lines are compared exactly throughout:
+     *
+     *   1. straight — the patch as cut.
+     *   2. three-way — resolves hunks plain context matching rejects, whenever
+     *      the blobs the patch was generated against are in the repository,
+     *      which for a drupal.org patch on its own project is common.
+     *   3. reduced context — requires one line of surrounding context instead
+     *      of three. The usual cause of needing this is not a stale patch but
+     *      trailing-whitespace drift: drupal.org patches are generated against
+     *      an export whose files may carry a trailing blank line the repository
+     *      does not, so a hunk header promises seven context lines for a
+     *      six-line file and git refuses all nine files over one of them.
+     *
+     * Only when all three fail is the patch genuinely stale, and then the
+     * report names which files are stale rather than only that something was.
      */
     private function applyPatchFile(string $moduleDir, PatchApplication $patch, string $baseBranch): void
     {
-        $straight = $this->runner->capture(
-            array_merge(['git', '-C', $moduleDir], PatchCheckout::applyArgs($patch->localPath)),
-        );
-        if ($straight->exitCode === 0) {
+        $attempts = [
+            'straight' => PatchCheckout::applyArgs($patch->localPath),
+            'three-way' => PatchCheckout::threeWayApplyArgs($patch->localPath),
+            'reduced context' => PatchCheckout::reducedContextApplyArgs($patch->localPath),
+        ];
+
+        $first = true;
+        foreach ($attempts as $label => $args) {
+            if (!$first) {
+                ($this->log)(sprintf('Retrying with %s ...', $label));
+            }
+            $first = false;
+
+            $result = $this->runner->capture(array_merge(['git', '-C', $moduleDir], $args));
+            if ($result->exitCode !== 0) {
+                continue;
+            }
+
+            if ($label !== 'straight') {
+                // A hunk placed on one line of context is a weaker guarantee
+                // than one placed on three. The operator is told which they
+                // got, because they are the one reviewing the result.
+                ($this->log)(sprintf(
+                    'Applied via %s — the patch did not match the working copy exactly; review the result with '
+                    . 'that in mind.',
+                    $label,
+                ));
+            }
+
             return;
         }
 
-        ($this->log)('Straight apply failed; retrying three-way ...');
-        $threeWay = $this->runner->capture(
-            array_merge(['git', '-C', $moduleDir], PatchCheckout::threeWayApplyArgs($patch->localPath)),
+        // Nothing applied. Ask git what it wanted and where it failed, so the
+        // report can name the stale file rather than just the stale patch.
+        $stat = $this->runner->capture(
+            array_merge(['git', '-C', $moduleDir], PatchCheckout::statArgs($patch->localPath)),
         );
-        if ($threeWay->exitCode === 0) {
-            return;
-        }
+        $check = $this->runner->capture(
+            array_merge(['git', '-C', $moduleDir], PatchCheckout::checkArgs($patch->localPath)),
+        );
 
         // Leave the working copy on the base rather than half-patched: the
         // next command must not inherit a tree nobody chose.
         $this->runner->tryRun(['git', '-C', $moduleDir, 'reset', '--hard']);
         $this->runner->tryRun(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
 
-        throw PatchCheckout::unappliableException($patch, $baseBranch, $straight->output);
+        throw PatchCheckout::unappliableException($patch, $baseBranch, $stat->output, $check->output);
     }
 
     public function loadFixture(Environment $environment, string $fixtureName): void
