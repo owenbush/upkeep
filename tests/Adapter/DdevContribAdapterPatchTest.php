@@ -161,20 +161,61 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
 
         self::assertTrue($runner->issued('--3way'));
         self::assertTrue($runner->issued('commit --no-verify'), 'A three-way success still commits.');
-        self::assertTrue($this->loggedContaining('retrying three-way'));
+        self::assertTrue($this->loggedContaining('Retrying with three-way'));
+        self::assertFalse($runner->issued('-C1'), 'no need to loosen context when three-way worked');
     }
 
     /**
-     * Both attempts failing is the review finding: this patch no longer
-     * applies. The working copy goes back to the base rather than being left
-     * half-patched for the next command to inherit.
+     * The rung that matters in practice, and the one whose absence made every
+     * Project Update Bot patch look stale.
+     *
+     * drupal.org generates patches against an export whose files may carry a
+     * trailing blank line the repository does not, so a hunk header promises
+     * seven context lines for a six-line file. Both exact attempts fail; -C1
+     * applies the whole thing. Verified against
+     * entity_type_access_conditions #3597857, where nine files were refused
+     * over one trailing newline.
      */
-    public function testAPatchThatWillNotApplyIsReportedAndTheTreeIsPutBack(): void
+    public function testAPatchRefusedOnlyOverContextIsAppliedWithReducedContext(): void
     {
         $runner = $this->engine([
             'status --porcelain' => '',
             'symbolic-ref --short HEAD' => "1.0.x\n",
             'config --get upkeep.base-branch' => null,
+            'rev-parse HEAD' => "bbbbbbb\n",
+            '-C1' => '',
+            'apply --index' => null,
+        ]);
+
+        $this->adapter($runner)->applyPatch($this->environment(), $this->patch());
+
+        self::assertTrue($runner->issued('apply --index -p1 -C1'));
+        self::assertTrue($runner->issued('commit --no-verify'), 'a reduced-context success still commits');
+        // A hunk placed on one line of context is a weaker guarantee than one
+        // placed on three; the operator is told which they got.
+        self::assertTrue($this->loggedContaining('Applied via reduced context'));
+        self::assertTrue($this->loggedContaining('did not match the working copy exactly'));
+    }
+
+    /**
+     * All three rungs failing is the review finding: this patch really is
+     * stale. The working copy goes back to the base rather than being left
+     * half-patched for the next command to inherit, and the report names the
+     * file that moved on.
+     */
+    public function testAPatchThatWillNotApplyIsReportedAndTheTreeIsPutBack(): void
+    {
+        $checkOutput = "Checking patch a.php...\n"
+            . "error: while searching for:\nsome missing context\n"
+            . "error: patch failed: tests/thing.info.yml:1\n"
+            . "error: tests/thing.info.yml: patch does not apply\n";
+
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'apply --stat' => " a.php | 2 +-\n 3 files changed, 2 insertions(+)\n",
+            'apply --check' => $checkOutput,
             'apply --index' => null,
         ]);
 
@@ -182,11 +223,16 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
             $this->adapter($runner)->applyPatch($this->environment(), $this->patch());
             self::fail('Expected the unappliable patch to be reported.');
         } catch (AdapterException $e) {
-            self::assertStringContainsString('needs a re-roll', $e->getMessage());
+            self::assertStringContainsString('does not apply to "1.0.x"', $e->getMessage());
             self::assertStringContainsString('3597808-9-fix.patch', $e->getMessage());
-            self::assertStringContainsString('"1.0.x"', $e->getMessage());
+            self::assertStringContainsString('3 file(s); 2 apply, 1 do not', $e->getMessage());
+            self::assertStringContainsString('tests/thing.info.yml', $e->getMessage());
+            self::assertStringContainsString('some missing context', $e->getMessage());
         }
 
+        // All three rungs were tried before giving up.
+        self::assertTrue($runner->issued('--3way'));
+        self::assertTrue($runner->issued('-C1'));
         self::assertTrue($runner->issued('reset --hard'));
         self::assertFalse($runner->issued('commit --no-verify'), 'Nothing may be committed after a failed apply.');
     }

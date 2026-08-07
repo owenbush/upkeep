@@ -21,9 +21,17 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   rejects either as a base. A managed branch used as a base would silently
   stack one contribution on another. `applyPatch` commits what it applies
   (checks must run against a clean tree) and resets the branch from the base
-  every time (a re-roll is tested alone, not stacked on the last one); a patch
-  that will not apply after a three-way retry is an `AdapterException` phrased
-  as a review finding, because "needs a re-roll" is what it tells a maintainer.
+  every time (a re-roll is tested alone, not stacked on the last one). Applying
+  escalates: straight, then `--3way`, then `-C1` (reduced context). The third
+  rung is load-bearing — drupal.org generates patches against an export whose
+  files may carry a trailing blank line the repository does not, so a hunk
+  header promises seven context lines for a six-line file and git refuses the
+  whole patch over one of them; without `-C1` essentially every Project Update
+  Bot patch reads as stale. A non-exact rung succeeding is logged, because a
+  hunk placed on one line of context is a weaker guarantee. Only when all three
+  fail is it an `AdapterException`, built from `git apply --stat` and
+  `--check -v` so the message names which files are stale and what context git
+  could not find.
 - `src/Command/` — one class per CLI command; thin, delegating to the
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
@@ -140,7 +148,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (4889/4889), methods (562/562) and classes (125/125), 1036 tests.
+lines (4942/4942), methods (568/568) and classes (125/125), 1042 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
