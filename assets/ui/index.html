@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>upkeep</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <h1>upkeep</h1>
+  <input id="filter" type="search" placeholder="Filter modules, issues, titles…" autocomplete="off">
+  <span id="meta"></span>
+</header>
+
+<main id="modules" aria-live="polite">Loading…</main>
+
+<aside id="drawer" hidden>
+  <div class="drawer-head">
+    <strong id="job-label"></strong>
+    <span id="job-state"></span>
+    <button id="drawer-close" type="button" aria-label="Close">×</button>
+  </div>
+  <pre id="job-output"></pre>
+</aside>
+
+<template id="module-template">
+  <section class="module">
+    <button class="module-head" type="button" aria-expanded="false">
+      <span class="chev" aria-hidden="true">▸</span>
+      <span class="name"></span>
+      <span class="counts"></span>
+      <span class="cached"></span>
+    </button>
+    <div class="rows" hidden></div>
+  </section>
+</template>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

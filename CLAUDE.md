@@ -114,6 +114,27 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `CredentialEnvironment` (removes `UPKEEP_GITLAB_TOKEN` from every child
   process environment).
 - `src/Notes/`, `src/Config/` — release-notes drafting; config resolution.
+- `src/Ui/` — the browser UI (`upkeep ui`), a **second renderer over the same
+  core**, never a second source of truth: `Ui\StateBuilder` reads
+  `Dashboard\RowFactory`, and actions shell out to `bin/upkeep` itself, so exit
+  codes, adapter behaviour and redaction are inherited rather than
+  reimplemented. `Ui\Api` is the whole request surface as one pure
+  Request→Response function; `bin/upkeep-ui-router.php` is the only place that
+  touches a superglobal or emits a byte. Four properties are load-bearing:
+  every path (assets included) sits behind `Ui\LaunchToken`, compared with
+  `hash_equals`; **the browser never supplies argv** — `Ui\Jobs\JobAction` is a
+  closed whitelist of recipes whose parameters are validated into shapes they
+  already had to have; jobs record their exit status to a sentinel file so they
+  outlive the server (`JobStore` reconciles); and the page polls with a byte
+  offset rather than holding a stream, because the built-in server has few
+  workers and an offset is the only thing a client must remember across a
+  refresh. **Merging is deliberately absent** — the DA stance is one human
+  approval per merge and a button that POSTs an action name is not the per-MR
+  prompt that earns it; that needs its own design before it needs code.
+  `Ui\UiServer` is the single documented exception to the
+  credential-scrubbing invariant (see
+  `tests/Security/ProcessEnvironmentInvariantTest`), because its children are
+  upkeep itself; served job output is redacted again on the way out regardless.
 - `tests/` — PHPUnit, mirroring `src/`.
 
 ## Quality gates
@@ -148,7 +169,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (4942/4942), methods (568/568) and classes (125/125), 1042 tests.
+lines (5337/5337), methods (649/649) and classes (137/137), 1118 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

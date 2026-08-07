@@ -25,6 +25,7 @@ final readonly class Cockpit
     public const RESULTS_DIR = 'results';
     public const DASHBOARD_CACHE_DIR = 'cache/dashboard';
     public const PATCH_CACHE_DIR = 'cache/patches';
+    public const UI_JOBS_DIR = 'cache/ui/jobs';
     public const ENV_VAR = 'UPKEEP_COCKPIT';
 
     public string $root;
@@ -108,6 +109,12 @@ final readonly class Cockpit
     public function patchCachePath(): string
     {
         return $this->root . '/' . self::PATCH_CACHE_DIR;
+    }
+
+    /** Where the browser UI keeps its job records and captured output. */
+    public function uiJobsPath(): string
+    {
+        return $this->root . '/' . self::UI_JOBS_DIR;
     }
 
     public function loadRegistry(): ModuleRegistry
