@@ -24,6 +24,7 @@ final readonly class Cockpit
     public const PROJECTS_DIR = 'projects';
     public const RESULTS_DIR = 'results';
     public const DASHBOARD_CACHE_DIR = 'cache/dashboard';
+    public const PATCH_CACHE_DIR = 'cache/patches';
     public const ENV_VAR = 'UPKEEP_COCKPIT';
 
     public string $root;
@@ -101,6 +102,12 @@ final readonly class Cockpit
     public function dashboardCachePath(): string
     {
         return $this->root . '/' . self::DASHBOARD_CACHE_DIR;
+    }
+
+    /** Where the patch commands cache the diff files they download, by issue. */
+    public function patchCachePath(): string
+    {
+        return $this->root . '/' . self::PATCH_CACHE_DIR;
     }
 
     public function loadRegistry(): ModuleRegistry

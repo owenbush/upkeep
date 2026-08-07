@@ -22,6 +22,7 @@ use Upkeep\Command\InitCommand;
 use Upkeep\Command\ModulesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Drupal\DrupalOrgClient;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Tests\Support\CliHarness;
 use Upkeep\Tests\Support\FakeEngineAdapter;
@@ -225,7 +226,7 @@ final class ExitCodeContractTest extends TestCase
     {
         (new ResultsCache($cli->cockpit . '/results'))->store(
             'widget',
-            5,
+            ResultKey::mergeRequest(5),
             '11',
             'abc123def456abc123def456abc123def456abcd',
             self::checkOutcome(CheckStatus::Passed, 0),

@@ -19,6 +19,7 @@ use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\Unauthorized;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\WorkflowException;
@@ -224,7 +225,8 @@ final class MergeCommand extends UpkeepCommand
         // Re-classify against the fresh MR and re-read local evidence: this
         // catches CI regression, a new draft marker, and stale local results
         // with the exact same conservative logic that admitted the row.
-        $verdict = (new FastLaneGate())->classify($fresh, $row->core, $cache->latest($row->module, $iid, $row->core));
+        $local = $cache->latest($row->module, ResultKey::mergeRequest($iid), $row->core);
+        $verdict = (new FastLaneGate())->classify($fresh, $row->core, $local);
         if ($verdict->status !== GateStatus::ReadyAuto) {
             $reasons = array_merge($reasons, $verdict->reasons);
         }

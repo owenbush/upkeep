@@ -182,19 +182,72 @@ upkeep base-artifacts:status
 
 ### Dashboard
 
+The dashboard has two tiers, because volume is real: a mature contrib project
+can carry a hundred open merge requests, and multiplying that by tracked core
+versions puts a *single* module past two hundred rows.
+
 ```bash
-upkeep dashboard
+upkeep dashboard              # overview: one line per module
+upkeep dashboard pathauto     # drill in: that module's individual rows
+upkeep dashboard --all        # every row of every module
 ```
 
-shows every open MR across all registered modules and tracked core versions,
-with the linked drupal.org issue status, upstream CI state, local check
-results (from your cached `check` runs), and the fast-lane gate status:
+The overview answers "where should I look?":
+
+```
+MODULE      CORES    MRS    READY    REVIEW    BLOCKED    PATCHES    UNCHECKED    CACHED
+
+pathauto    10,11    100    –        200       –          22         244          17h ago
+paragraphs  11        12    2         10       1          61          73          2m ago
+```
+
+`MRS` and `PATCHES` count *subjects* — one merge request tracked across two
+cores is one merge request. `READY`/`REVIEW`/`BLOCKED` and `UNCHECKED` count
+per (subject × core), because the same branch can be green on 10 and red on
+11, which is the whole reason both are tracked. `UNCHECKED` is the actionable
+number: rows with no local verdict, plus rows whose verdict is about a
+revision that is no longer current.
+
+The counts are aggregated from exactly the rows the drill-down prints, never
+recounted — a module whose overview says two READY-AUTO shows two when you
+open it.
+
+Naming a module narrows everything about the run, including the fetch: `upkeep
+dashboard pathauto --refresh` re-fetches pathauto and nothing else.
+
+Drilling in (or `--all`) shows every open contribution across tracked core
+versions — merge requests *and* patch-only issues — with the linked drupal.org
+issue, upstream CI state, local check results (from your cached `check` and
+`patch:check` runs), and the fast-lane gate status:
 
 - `READY-AUTO` — a Project Update Bot compat MR with green CI and green local
   checks; eligible for the fast-lane merge prompt.
 - `REVIEW` — needs a human look (draft, missing/failed CI, failed local
   checks, or simply not a bot compat MR); listed with its reasons.
 - `BLOCKED` — cannot proceed (e.g. merge conflicts).
+
+Rows whose MR column reads `patch` are contributions with no branch behind
+them. They carry no CI (drupal.org runs pipelines on branches, not on
+attachments — half the reason patch work goes unreviewed) and no gate status,
+because there is nothing there upkeep could merge. Their STATUS says what
+arrived instead:
+
+```
+MODULE   MR     ISSUE      CORE  TITLE                      CI  LOCAL  STATUS
+
+widget   !7     3467675    11    Make URL field required    ok  pass   READY-AUTO
+widget   patch  3597808    11    Drupal 12 compatibility    –   pass   PATCH 1 patch
+widget   patch  3597857    11    Config schema for form     –   stale  PATCH 4 patches, !1 empty
+```
+
+`LOCAL` on a patch row is its cached `patch:check` verdict, keyed to the exact
+patch it was recorded against. A re-roll posted since then is a new upload, so
+the row reads `stale` rather than showing you a green light for code nobody
+checked. An issue whose work a *real* branch already carries gets no patch row
+— it already has its MR row above, and the classification is the same one
+`upkeep patches` uses, so the two views cannot disagree about what is covered.
+
+`upkeep dashboard --no-patches` restores the merge-request-only view.
 
 Filter to one core version with `upkeep dashboard --version=11`.
 
@@ -208,6 +261,40 @@ upkeep dashboard --refresh=widget     # re-fetch one module only
 
 Local check results and gate verdicts are always resolved fresh — only the
 remote API data is cached. The cache age is shown below the table.
+
+**`--refresh` costs more than it did.** It now also scans each module's Needs
+Review / RTBC issues for patches, and drupal.org returns attachments as
+references that must each be fetched individually — a busy module can be
+several hundred requests. Those run **8 at a time**, which brings them down to
+~50ms each against ~530ms serialised; what remains is dominated by the issue
+listing pages themselves, which must be read in order. Expect tens of seconds
+per module on a cold cache, near-instant when drupal.org's own cache is warm.
+Cached runs are unaffected. A progress bar is shown on stderr while fetching,
+so stdout stays exactly the table a pipe expects. Use `--no-patches` to skip
+the scan entirely.
+
+**A degraded scan says so.** drupal.org's API fails by returning less, not by
+erroring: a dropped attachment makes an issue look like it carries fewer
+patches, and a truncated listing page makes a project look like it has fewer
+issues. Both are reported explicitly, with the counts underneath flagged as
+lower bounds:
+
+```
+ [WARNING] 3 drupal.org request(s) did not answer.
+           Attachment 7128077 could not be read (HTTP 500); an issue may
+           report fewer patches than it has.
+           ...
+           Counts below are lower bounds: re-run to pick up what was missed.
+```
+
+**Rate limits.** git.drupalcode.org publishes its budget in `RateLimit-*`
+headers — 180 requests/minute unauthenticated, more with a token — and Upkeep's
+GitLab calls stay sequential and few (a project lookup, an MR list, one detail
+per MR), so the concurrency added here does not touch that budget. drupal.org's
+api-d7 publishes no quota at all, which is why the cap is a conservative 8
+rather than something tuned to a published limit. A 429 from either is honoured:
+the batch waits for `Retry-After` and retries once, and anything asking for more
+than 10 seconds is reported rather than slept through.
 
 ### Check an MR
 
@@ -402,6 +489,101 @@ exists it is used, and it already knows which MRs are empty; otherwise the
 scan asks GitLab for the detail of each MR attached to a scanned issue, since
 GitLab's merge-request *list* omits the diff refs that settle the question.
 
+### Check a patch
+
+A patch contribution costs the same as a merge request:
+
+```bash
+upkeep patch:check widget 3597808 --version=11
+```
+
+takes the drupal.org issue node id straight out of the `patches` table above,
+downloads the patch, applies it onto a branch off the module's base, runs the
+full check suite, and reports:
+
+```
+Resolving issue #3597808 via drupal.org ...
+Patch: 3597808-9-d11.patch (comment 9, 4.2 KB, 2026-06-11)
+Issue #3597808 "Automated Drupal 12 compatibility fixes" (review)
+Target: Drupal core 11, module widget
+
+[Patch] Applying patch "3597808-9-d11.patch" onto 1.0.x as patch-3597808 ...
+
+ Check    Status   Exit  Duration
+ phpunit  passed   0     31.2s
+ phpcs    FAILED   1      2.1s
+
+ [ERROR] 1 check(s) failed for 3597808-9-d11.patch (issue #3597808).
+ Report it at https://www.drupal.org/node/3597808 — the drupal.org API is
+ read-only, so the status change is a browser action.
+```
+
+Same exit-code contract as `check`: **0** all green, **1** a check failed,
+**2** upkeep could not produce a verdict — which includes a patch that no
+longer applies, reported as what it means:
+
+```
+Patch "3597808-4-old.patch" (issue #3597808) does not apply to "1.0.x" —
+it needs a re-roll.
+error: patch failed: widget.module:12
+```
+
+**Choosing the patch.** An issue routinely carries several — an original, two
+re-rolls, an interdiff. With one patch attached there is nothing to choose.
+With several, you are asked:
+
+```
+ Which patch should be applied?
+  [0] 3597808-12-reroll.patch (comment 12, 5.1 KB, 2026-06-14) [newest]
+  [1] 3597808-9-d11.patch (comment 9, 4.2 KB, 2026-06-11)
+  [2] 3597808-4-first.patch (comment 4, 3.8 KB, 2026-05-02)
+```
+
+Three ways to skip the question:
+
+```bash
+upkeep patch:check widget 3597808 --latest                    # newest, no prompt
+upkeep patch:check widget 3597808 --file=3597808-9-d11.patch  # that exact one
+upkeep patch:check widget 3597808 --url=https://example.test/reroll.patch
+```
+
+`--url` covers the re-roll posted somewhere other than the issue — a fork, a
+pipeline artefact. The issue id is still required, because the branch, the
+commit message and the report are keyed on it. A name `--file` cannot match is
+refused and the available patches listed; it never quietly falls back to a
+different one. Non-interactively (a pipe, cron, `--no-interaction`) the newest
+is taken and *said*, so a scripted run never reports a verdict on a patch
+nobody named.
+
+`--fixture=NAME` works exactly as it does on `check`.
+
+### Apply a patch without checking it
+
+```bash
+cd $(upkeep patch:apply widget 3597808 --version=11)
+```
+
+downloads and applies the patch, then stops — for when you want to click
+through the site or run something the suite does not cover. It takes the same
+selection options, prints the environment path on stdout and nothing else, and
+leaves the working copy on `patch-<nid>`.
+
+**Where the verdict goes.** Results are cached exactly as `check`'s are, and
+show up in the LOCAL column of that issue's dashboard row. They are keyed by
+the patch's source URL, so a verdict about a patch that has since been
+re-rolled reads as `stale` rather than as a current pass.
+
+They are stored under a separate namespace (`results/<module>/patch-<nid>/…`)
+from merge-request results (`results/<module>/<iid>/…`). That separation is
+deliberate and structural: the fast-lane gate reads merge-request entries only,
+so a patch verdict can never become grounds for merging a branch. A patch is
+not something upkeep can merge — if it is good, the way to move it into the
+pipeline is to push it as a branch and open an MR.
+
+Known limitation: the key is the patch's URL, not its bytes. drupal.org mints a
+distinct URL per upload, so a re-roll is always detected; a `--url` pointing at
+something edited in place (a gist) is not.
+
 ## Fixtures
 
 Checks run against a clean install by default. When a check (or your manual
@@ -529,7 +711,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep api:probe <module>` | Probe the GitLab API for a module: open MRs and head pipeline status |
 | `upkeep base-artifacts:build --version=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
-| `upkeep dashboard [--version=N] [--refresh[=MODULE]]` | All open MRs with CI, local check, and fast-lane status (cached; `--refresh` re-fetches) |
+| `upkeep dashboard [<module>] [--version=N] [--refresh[=MODULE]] [--no-patches] [--all]` | Per-module overview; name a module (or `--all`) for individual MR and patch rows |
 | `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR |
 | `upkeep review <module> <mr> [--version=N]` | Apply an MR to a running site and print its browsable URL |
 | `upkeep dev <module> [--version=N] [--branch=B]` | Prepare an environment for active development: provision if needed, optionally check out a branch, print the path |
@@ -538,6 +720,8 @@ above describe every invocation Upkeep actually runs.
 | `upkeep issue <module> <mr> [--no-open]` | Show the linked drupal.org issue and open it in the browser |
 | `upkeep needs-work <module> <mr> [--version=N] [--dry-run] [--no-open]` | Post the local check results as a comment on the merge request |
 | `upkeep patches [--module=NAME] [--without-mr]` | drupal.org issues in Needs Review / RTBC carrying patch files, and the state of any MR beside them |
+| `upkeep patch:check <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--fixture=NAME]` | Run one drupal.org patch through the full isolated check flow |
+| `upkeep patch:apply <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest]` | Download and apply a patch, then print the environment path |
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |

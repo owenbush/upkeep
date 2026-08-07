@@ -44,6 +44,20 @@ interface EngineAdapterInterface
     public function applyMr(Environment $environment, MergeRequest $mergeRequest): void;
 
     /**
+     * Applies an already-downloaded patch file onto a branch off the module
+     * working copy's base, and commits it so the checks that follow run
+     * against a clean tree.
+     *
+     * A patch that does not apply is reported as an AdapterException naming
+     * the patch and the base it was tried against — for a maintainer that is
+     * a review finding ("needs a re-roll"), not a tool malfunction.
+     *
+     * @throws AdapterException when the working copy is dirty, the base cannot
+     *                          be resolved, or the patch does not apply
+     */
+    public function applyPatch(Environment $environment, PatchApplication $patch): void;
+
+    /**
      * Restores the named fixture's database state into the environment,
      * replacing whatever state it currently holds.
      *

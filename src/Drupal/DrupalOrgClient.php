@@ -5,16 +5,48 @@ declare(strict_types=1);
 namespace Upkeep\Drupal;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * Read-only client for the drupal.org REST API (Drupal 7 Services).
  *
  * The API is public and requires no authentication for reads. Fetched issues
- * are memoized per instance (same model as GitlabClient). Failures are
- * absorbed: the caller gets null and decides how to degrade.
+ * are memoized per instance (same model as GitlabClient).
+ *
+ * **Failures are absorbed but never silent.** Every request that does not
+ * answer is recorded in warnings(), because this client's failure mode is to
+ * return *less data*, not an error: a dropped attachment makes an issue look
+ * like it carries fewer patches, and a truncated listing page makes a project
+ * look like it has fewer issues. Both are indistinguishable from the truth at
+ * the call site, and both are exactly the under-reporting the patch surface
+ * exists to prevent. The caller renders the warnings; nothing here throws.
+ *
+ * **Attachment lookups run concurrently.** api-d7 returns every attachment as
+ * a bare reference, so an issue listing costs one request per distinct file,
+ * and drupal.org's origin is slow when its Varnish cache is cold — measured at
+ * ~530ms per request against ~20ms warm. Serialised, a busy module took ~52s;
+ * at MAX_CONCURRENT in flight the same lookups take a few seconds.
  */
 final class DrupalOrgClient
 {
+    /**
+     * How many attachment lookups may be in flight at once.
+     *
+     * Deliberately modest. api-d7 publishes no rate-limit headers and no
+     * documented quota, so there is no budget to read and stay inside — which
+     * makes politeness the only available policy. Eight was measured as taking
+     * essentially all of the available speedup (13x on cold lookups) while
+     * staying well inside what the endpoint answers cleanly.
+     */
+    public const MAX_CONCURRENT = 8;
+
+    /**
+     * A 429 is retried once, after at most this long. Anything demanding a
+     * longer wait is reported rather than slept through: a CLI that appears to
+     * hang is worse than one that says it was throttled.
+     */
+    private const MAX_RETRY_AFTER_SECONDS = 10;
+
     /** @var array<int, ?Issue> */
     private array $cache = [];
 
@@ -24,10 +56,43 @@ final class DrupalOrgClient
     /** @var array<int, array<array-key, mixed>|null> file id => file resource, misses kept */
     private array $fileDetails = [];
 
+    /** @var list<string> what this client could not read, in the order it happened */
+    private array $warnings = [];
+
+    /** @var \Closure(int): void */
+    private readonly \Closure $sleeper;
+
+    /**
+     * @param ?\Closure(int): void $sleeper the throttle-retry wait; injected in
+     *                                      tests so no suite ever really sleeps
+     */
     public function __construct(
         private readonly HttpClientInterface $http,
         private readonly string $apiBase = 'https://www.drupal.org/api-d7',
+        ?\Closure $sleeper = null,
     ) {
+        $this->sleeper = $sleeper ?? static function (int $seconds): void {
+            sleep($seconds);
+        };
+    }
+
+    /**
+     * Everything this client failed to read during the run.
+     *
+     * Never empty *and* complete at the same time: if there are warnings, the
+     * data returned is a subset of what drupal.org holds, and any count derived
+     * from it is a lower bound.
+     *
+     * @return list<string>
+     */
+    public function warnings(): array
+    {
+        return $this->warnings;
+    }
+
+    private function warn(string $message): void
+    {
+        $this->warnings[] = $message;
     }
 
     public function issue(int $nid): ?Issue
@@ -80,11 +145,10 @@ final class DrupalOrgClient
         // Deliberately unfiltered by node type: only project nodes carry
         // field_project_machine_name, and a maintainer's registry may name a
         // theme or a distribution as readily as a module.
-        $data = $this->getJson(sprintf(
-            '%s/node.json?field_project_machine_name=%s',
-            $this->apiBase,
-            urlencode($machineName),
-        ));
+        $data = $this->getJson(
+            sprintf('%s/node.json?field_project_machine_name=%s', $this->apiBase, urlencode($machineName)),
+            sprintf('the drupal.org project "%s"', $machineName),
+        );
 
         $list = $data['list'] ?? null;
         if (!\is_array($list)) {
@@ -106,81 +170,239 @@ final class DrupalOrgClient
 
     private function fetch(int $nid): ?Issue
     {
-        try {
-            $response = $this->http->request('GET', sprintf('%s/node/%d.json', $this->apiBase, $nid), [
-                'headers' => ['Accept' => 'application/json'],
-                'timeout' => 10,
-            ]);
-
-            if ($response->getStatusCode() !== 200) {
-                return null;
-            }
-
-            $data = json_decode($response->getContent(false), true, 512, \JSON_THROW_ON_ERROR);
-            if (!\is_array($data)) {
-                return null;
-            }
-
-            return Issue::fromApi($this->withResolvedFiles($data));
-        } catch (\Throwable) {
+        $data = $this->getJson(
+            sprintf('%s/node/%d.json', $this->apiBase, $nid),
+            sprintf('issue #%d', $nid),
+        );
+        if ($data === []) {
             return null;
         }
+
+        $this->prefetchAttachments([$data]);
+
+        return Issue::fromApi($this->withResolvedFiles($data));
     }
 
-    /** @return list<Issue> */
+    /**
+     * One status's issue listing, paginated.
+     *
+     * A page that cannot be read ends the listing — there is no way to skip
+     * past it and stay in order — but it says so, because "the rest of this
+     * project's issues" silently missing is the failure this whole surface
+     * exists to prevent.
+     *
+     * @return list<Issue>
+     */
     private function fetchProjectIssues(int $projectNid, IssueStatus $status): array
     {
         $issues = [];
         $page = 0;
 
         do {
-            try {
-                $url = sprintf(
-                    '%s/node.json?type=project_issue&field_project=%d&field_issue_status=%d&page=%d',
-                    $this->apiBase,
-                    $projectNid,
-                    $status->value,
-                    $page,
-                );
+            $url = sprintf(
+                '%s/node.json?type=project_issue&field_project=%d&field_issue_status=%d&page=%d',
+                $this->apiBase,
+                $projectNid,
+                $status->value,
+                $page,
+            );
 
-                $response = $this->http->request('GET', $url, [
-                    'headers' => ['Accept' => 'application/json'],
-                    'timeout' => 15,
-                ]);
-
-                if ($response->getStatusCode() !== 200) {
-                    break;
+            $data = $this->getJson($url, sprintf('%s issues, page %d', $status->shortLabel(), $page + 1), 15);
+            if ($data === []) {
+                if ($page > 0) {
+                    $this->warn(sprintf(
+                        'Stopped reading %s issues after page %d; the listing is incomplete.',
+                        $status->shortLabel(),
+                        $page,
+                    ));
                 }
-
-                $data = json_decode($response->getContent(false), true, 512, \JSON_THROW_ON_ERROR);
-                if (!\is_array($data)) {
-                    break;
-                }
-
-                $list = $data['list'] ?? [];
-                if (!\is_array($list) || $list === []) {
-                    break;
-                }
-
-                foreach ($list as $item) {
-                    if (!\is_array($item)) {
-                        continue;
-                    }
-                    $issue = Issue::fromApi($this->withResolvedFiles($item));
-                    if ($issue !== null) {
-                        $issues[] = $issue;
-                        $this->cache[$issue->nid] = $issue;
-                    }
-                }
-
-                $hasMore = isset($data['next']) && $data['next'] !== '';
-                ++$page;
-            } catch (\Throwable) {
                 break;
             }
+
+            $list = $data['list'] ?? [];
+            if (!\is_array($list) || $list === []) {
+                break;
+            }
+
+            // Every attachment on the page, resolved in one concurrent sweep,
+            // so building the issues below costs no further requests.
+            $items = array_values(array_filter($list, \is_array(...)));
+            $this->prefetchAttachments($items);
+
+            foreach ($items as $item) {
+                $issue = Issue::fromApi($this->withResolvedFiles($item));
+                if ($issue !== null) {
+                    $issues[] = $issue;
+                    $this->cache[$issue->nid] = $issue;
+                }
+            }
+
+            $hasMore = isset($data['next']) && $data['next'] !== '';
+            ++$page;
         } while ($hasMore && $page < 10);
 
         return $issues;
+    }
+
+    /**
+     * Resolve every not-yet-known attachment across a batch of issue payloads,
+     * a bounded number of requests at a time.
+     *
+     * @param list<array<array-key, mixed>> $items
+     */
+    private function prefetchAttachments(array $items): void
+    {
+        $wanted = [];
+        foreach ($items as $item) {
+            foreach (self::attachmentIds($item) as $fid) {
+                if (!\array_key_exists($fid, $this->fileDetails)) {
+                    $wanted[$fid] = true;
+                }
+            }
+        }
+
+        foreach (array_chunk(array_keys($wanted), self::MAX_CONCURRENT) as $chunk) {
+            $this->fetchFileBatch($chunk, true);
+        }
+    }
+
+    /**
+     * One in-flight batch of file lookups.
+     *
+     * Concurrency comes from *creating* the requests before consuming any:
+     * symfony/http-client starts each one immediately and multiplexes them, so
+     * consuming them in order below still overlaps the waiting. Deliberately
+     * not stream(): that yields HTTP errors by throwing out of the generator,
+     * where a per-response catch cannot reach them, and one 404 attachment
+     * would take the whole batch down with it.
+     *
+     * @param list<int> $fids
+     * @param bool      $mayRetry whether a throttled batch may be slept off once
+     */
+    private function fetchFileBatch(array $fids, bool $mayRetry): void
+    {
+        $responses = [];
+        foreach ($fids as $fid) {
+            try {
+                $responses[$fid] = $this->http->request(
+                    'GET',
+                    sprintf('%s/file/%d.json', $this->apiBase, $fid),
+                    self::requestOptions(10),
+                );
+            } catch (\Throwable $e) {
+                $this->recordFileMiss($fid, self::reason($e));
+            }
+        }
+
+        $throttled = [];
+        $retryAfter = 0;
+
+        foreach ($responses as $fid => $response) {
+            try {
+                $status = $response->getStatusCode();
+                if ($status === 429) {
+                    $throttled[] = $fid;
+                    $retryAfter = max($retryAfter, self::retryAfterSeconds($response));
+                    continue;
+                }
+                if ($status !== 200) {
+                    $this->recordFileMiss($fid, sprintf('HTTP %d', $status));
+                    continue;
+                }
+
+                $decoded = json_decode($response->getContent(false), true, 512, \JSON_THROW_ON_ERROR);
+                if (\is_array($decoded) && $decoded !== []) {
+                    $this->fileDetails[$fid] = $decoded;
+                    continue;
+                }
+                $this->recordFileMiss($fid, 'the response was not a file object');
+            } catch (\Throwable $e) {
+                $this->recordFileMiss($fid, self::reason($e));
+            }
+        }
+
+        if ($throttled === []) {
+            return;
+        }
+
+        if (!$mayRetry || $retryAfter > self::MAX_RETRY_AFTER_SECONDS) {
+            foreach ($throttled as $fid) {
+                $this->recordFileMiss($fid, 'drupal.org is rate-limiting this run (HTTP 429)');
+            }
+
+            return;
+        }
+
+        $this->warn(sprintf(
+            'drupal.org returned HTTP 429 for %d attachment lookup(s); waiting %ds and retrying once.',
+            \count($throttled),
+            max(1, $retryAfter),
+        ));
+        ($this->sleeper)(max(1, $retryAfter));
+        $this->fetchFileBatch($throttled, false);
+    }
+
+    /**
+     * Only ever called after getStatusCode() has already answered 429, so the
+     * headers are known to be readable and need no second guard.
+     */
+    private static function retryAfterSeconds(ResponseInterface $response): int
+    {
+        $header = $response->getHeaders(false)['retry-after'][0] ?? null;
+
+        return is_numeric($header) ? max(1, (int) $header) : 1;
+    }
+
+    private function recordFileMiss(int $fid, string $reason): void
+    {
+        $this->fileDetails[$fid] = null;
+        $this->warn(sprintf(
+            'Attachment %d could not be read (%s); an issue may report fewer patches than it has.',
+            $fid,
+            $reason,
+        ));
+    }
+
+    private static function reason(\Throwable $e): string
+    {
+        $message = trim($e->getMessage());
+
+        return $message === '' ? $e::class : $message;
+    }
+
+    /**
+     * The file ids an issue payload references, in either field shape.
+     *
+     * @param array<array-key, mixed> $item
+     * @return list<int>
+     */
+    private static function attachmentIds(array $item): array
+    {
+        $attachments = $item['field_issue_files'] ?? null;
+        if (!\is_array($attachments)) {
+            return [];
+        }
+
+        $envelope = $attachments['und'] ?? null;
+        $entries = \is_array($envelope) ? $envelope : $attachments;
+
+        $fids = [];
+        foreach ($entries as $entry) {
+            if (!\is_array($entry)) {
+                continue;
+            }
+            $file = $entry['file'] ?? null;
+            if (!\is_array($file) || isset($file['name']) || isset($file['filename'])) {
+                continue;
+            }
+            $payload = new ApiPayload($file);
+            $fid = $payload->intOrNull('id') ?? $payload->intOrNull('fid');
+            if ($fid !== null) {
+                $fids[] = $fid;
+            }
+        }
+
+        return $fids;
     }
 
     /**
@@ -247,7 +469,10 @@ final class DrupalOrgClient
             return $entry;
         }
 
-        $detail = $this->fileDetail($fid);
+        // prefetchAttachments() has already visited every attachment this
+        // payload references — successes and misses alike — so the memo holds
+        // an entry for each; null is a recorded miss, not an unasked question.
+        $detail = $this->fileDetails[$fid] ?? null;
 
         // A file that cannot be read stays a reference rather than becoming a
         // half-built attachment: IssueFile::fromApi drops it, and an issue
@@ -255,40 +480,63 @@ final class DrupalOrgClient
         return $detail === null ? $entry : ['file' => $detail] + $entry;
     }
 
-    /** @return array<array-key, mixed>|null */
-    private function fileDetail(int $fid): ?array
+    /**
+     * Request options every call shares.
+     *
+     * `max_duration` is the load-bearing one. Symfony's `timeout` is the *idle*
+     * timeout — the gap allowed between chunks — so on its own it bounds
+     * nothing: a response trickling a byte just inside it keeps the request
+     * alive indefinitely. api-d7 sits behind a cache whose origin is slow when
+     * cold, which is exactly the shape that produces long dribbling responses,
+     * so a total cap is set as well.
+     *
+     * @return array<string, mixed>
+     */
+    private static function requestOptions(float $idleTimeout): array
     {
-        if (!\array_key_exists($fid, $this->fileDetails)) {
-            $detail = $this->getJson(sprintf('%s/file/%d.json', $this->apiBase, $fid));
-            $this->fileDetails[$fid] = $detail === [] ? null : $detail;
-        }
-
-        return $this->fileDetails[$fid];
+        return [
+            'headers' => ['Accept' => 'application/json'],
+            'timeout' => $idleTimeout,
+            'max_duration' => $idleTimeout * 4,
+        ];
     }
 
     /**
      * A GET whose every failure mode — status, transport, unusable body —
-     * reads as the empty array. This client absorbs failures by contract: the
-     * caller gets less data, never an exception.
+     * reads as the empty array, and is reported. This client absorbs failures
+     * by contract: the caller gets less data, never an exception, but never
+     * less data *silently*.
      *
      * @return array<array-key, mixed>
      */
-    private function getJson(string $url): array
+    private function getJson(string $url, string $what, float $idleTimeout = 10): array
     {
         try {
-            $response = $this->http->request('GET', $url, [
-                'headers' => ['Accept' => 'application/json'],
-                'timeout' => 10,
-            ]);
+            $response = $this->http->request('GET', $url, self::requestOptions($idleTimeout));
 
-            if ($response->getStatusCode() !== 200) {
+            $status = $response->getStatusCode();
+            if ($status === 429) {
+                $this->warn(sprintf('drupal.org is rate-limiting this run; %s was not read (HTTP 429).', $what));
+
+                return [];
+            }
+            if ($status !== 200) {
+                $this->warn(sprintf('%s could not be read (HTTP %d).', ucfirst($what), $status));
+
                 return [];
             }
 
             $data = json_decode($response->getContent(false), true, 512, \JSON_THROW_ON_ERROR);
+            if (!\is_array($data)) {
+                $this->warn(sprintf('%s came back in a shape this client cannot read.', ucfirst($what)));
 
-            return \is_array($data) ? $data : [];
-        } catch (\Throwable) {
+                return [];
+            }
+
+            return $data;
+        } catch (\Throwable $e) {
+            $this->warn(sprintf('%s could not be read (%s).', ucfirst($what), self::reason($e)));
+
             return [];
         }
     }

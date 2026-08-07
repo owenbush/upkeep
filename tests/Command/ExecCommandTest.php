@@ -9,6 +9,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
@@ -57,6 +58,10 @@ final class ExecCommandTest extends TestCase
                 throw new \BadMethodCallException();
             }
             public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+
+            public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
             public function loadFixture(Environment $environment, string $fixtureName): void

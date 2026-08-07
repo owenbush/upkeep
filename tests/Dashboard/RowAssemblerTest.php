@@ -15,6 +15,7 @@ use Upkeep\Cockpit\Module;
 use Upkeep\Dashboard\RowAssembler;
 use Upkeep\Gate\GateStatus;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 
 /**
@@ -142,7 +143,7 @@ final class RowAssemblerTest extends TestCase
     {
         (new ResultsCache($this->resultsDir))->store(
             'widget',
-            $iid,
+            ResultKey::mergeRequest($iid),
             '11',
             self::HEAD_SHA,
             new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0)]),

@@ -12,6 +12,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Drupal\DrupalOrgClient;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Tests\Support\CliHarness;
 use Upkeep\Tests\Support\MockGitlab;
@@ -152,8 +153,14 @@ final class BrowserHandoffTest extends TestCase
 
     private function cacheAFailingLocalResult(CliHarness $cli): void
     {
-        (new ResultsCache($cli->cockpit . '/results'))->store('widget', 5, '11', self::HEAD_SHA, new CheckRunResult([
+        (new ResultsCache($cli->cockpit . '/results'))->store(
+            'widget',
+            ResultKey::mergeRequest(5),
+            '11',
+            self::HEAD_SHA,
+            new CheckRunResult([
             new CheckResult(CheckType::PhpCs, CheckStatus::Failed, 2, 'FOUND 3 ERRORS', 1.2),
-        ]));
+            ])
+        );
     }
 }

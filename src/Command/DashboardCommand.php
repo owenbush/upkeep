@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Helper\ProgressBar;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -14,9 +16,12 @@ use Upkeep\Cockpit\Module;
 use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\ModuleSnapshot;
+use Upkeep\Dashboard\ModuleSummary;
 use Upkeep\Dashboard\RowFactory;
 use Upkeep\Drupal\DrupalOrgClient;
+use Upkeep\Drupal\Issue;
 use Upkeep\Drupal\IssueReference;
+use Upkeep\Drupal\IssueStatus;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
@@ -49,6 +54,12 @@ use Upkeep\Workflow\ExitCode;
 final class DashboardCommand extends UpkeepCommand
 {
     /**
+     * The issue statuses a patch row can be about — the same two `patches`
+     * scans, so the two views never disagree about what is in play.
+     */
+    private const PATCH_STATUSES = [IssueStatus::NeedsReview, IssueStatus::Rtbc];
+
+    /**
      * @param ?GitlabClient    $client       injected in tests; built from the resolved token otherwise
      * @param ?DrupalOrgClient $drupalClient injected in tests; built with HttpClient::create() otherwise
      */
@@ -61,6 +72,11 @@ final class DashboardCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->addArgument(
+            'module',
+            InputArgument::OPTIONAL,
+            'Drill into one module: its individual merge requests and patch issues. Omit for the overview.',
+        );
         $this->addCockpitOption()
             ->addCoreFilterOption()
             ->addOption(
@@ -69,6 +85,19 @@ final class DashboardCommand extends UpkeepCommand
                 InputOption::VALUE_OPTIONAL,
                 'Re-fetch remote data: --refresh for all modules, --refresh=<module> for one',
                 false,
+            )
+            ->addOption(
+                'no-patches',
+                null,
+                InputOption::VALUE_NONE,
+                'Omit patch rows: only merge requests, as the dashboard showed before patch contributions '
+                . 'were included',
+            )
+            ->addOption(
+                'all',
+                null,
+                InputOption::VALUE_NONE,
+                'Every row of every module, rather than the per-module overview',
             );
     }
 
@@ -84,10 +113,25 @@ final class DashboardCommand extends UpkeepCommand
         $modules = $this->modules($cockpit);
 
         $versionFilter = self::stringOption($input, 'version');
+        $withPatches = $input->getOption('no-patches') !== true;
+
+        // Naming a module narrows everything about the run: which module is
+        // shown in detail, and — with a bare --refresh — which one is
+        // re-fetched. Refreshing a cockpit to look at one module would be the
+        // expensive half of a command whose whole point was to be specific.
+        $only = self::stringArgument($input, 'module');
+        $only = $only === '' ? null : self::requireModule($modules, $only)->name;
+        $detailed = $only !== null || $input->getOption('all') === true;
 
         $refresh = $input->getOption('refresh');
-        $refreshAll = $refresh === null;
-        $refreshModule = \is_string($refresh) && $refresh !== '' ? $refresh : null;
+        $refreshAll = $refresh === null && $only === null;
+        $refreshModule = \is_string($refresh) && $refresh !== ''
+            ? $refresh
+            : ($refresh === null ? $only : null);
+
+        if ($only !== null) {
+            $modules = [$only => $modules[$only]];
+        }
 
         $dashCache = new DashboardCache($cockpit->dashboardCachePath());
         $rowFactory = new RowFactory(new ResultsCache($cockpit->resultsPath()));
@@ -104,11 +148,15 @@ final class DashboardCommand extends UpkeepCommand
         // the cache, or by fetching), then turn it straight into rows. Every
         // module therefore leaves the loop having produced either its rows or
         // a failure row — there is no third outcome to defend against later.
+        $progress = self::progress($io, $modules, $refreshAll, $refreshModule);
+
         foreach ($modules as $name => $module) {
             $shouldRefresh = $refreshAll || $refreshModule === $name;
             $snapshot = $shouldRefresh ? null : $dashCache->load($name);
 
             if ($snapshot === null) {
+                $progress?->setMessage($name);
+                $progress?->display();
                 if ($client === null) {
                     // The factory reports the missing-token guidance itself;
                     // without a credential there is nothing to fetch and no
@@ -127,6 +175,7 @@ final class DashboardCommand extends UpkeepCommand
 
                 $snapshot = $fetched;
                 $dashCache->save($name, $snapshot);
+                $progress?->advance();
             }
 
             $snapshots[$name] = $snapshot;
@@ -141,14 +190,27 @@ final class DashboardCommand extends UpkeepCommand
             ) {
                 $rows[] = $row;
             }
+
+            if ($withPatches) {
+                foreach ($rowFactory->patchRows($module, $snapshot, $versionFilter) as $patchRow) {
+                    $rows[] = $patchRow;
+                }
+            }
         }
+
+        $progress?->finish();
+        if ($progress !== null) {
+            $io->newLine(2);
+        }
+
+        self::reportScanWarnings($io, $drupal);
 
         if ($rows === []) {
             $io->note(
                 $versionFilter === null
-                    ? 'No open merge requests across the registered modules.'
+                    ? 'No open contributions across the registered modules.'
                     : sprintf(
-                        'No open merge requests targeting core %s across the registered modules.',
+                        'No open contributions targeting core %s across the registered modules.',
                         $versionFilter,
                     ),
             );
@@ -156,10 +218,108 @@ final class DashboardCommand extends UpkeepCommand
             return ExitCode::OK;
         }
 
-        $this->renderTable($output, $rows, $snapshots);
+        if ($detailed) {
+            $this->renderTable($output, $rows, $snapshots);
+            self::renderFooter($output, $rows, $snapshots);
+
+            return ExitCode::OK;
+        }
+
+        self::renderOverview($output, $rows, $snapshots);
         self::renderFooter($output, $rows, $snapshots);
+        $output->writeln(
+            '<fg=gray>upkeep dashboard <module> for one module\'s rows · --all for every row</>',
+        );
 
         return ExitCode::OK;
+    }
+
+    /**
+     * The overview: one line per module, aggregated from exactly the rows the
+     * detailed view would print.
+     *
+     * Aggregated rather than recounted on purpose. A module whose overview
+     * says three READY-AUTO must show three READY-AUTO when drilled into, and
+     * the only way to guarantee that is for both to be the same list.
+     *
+     * @param list<DashboardRow>            $rows
+     * @param array<string, ModuleSnapshot> $snapshots
+     */
+    private static function renderOverview(OutputInterface $output, array $rows, array $snapshots): void
+    {
+        $byModule = [];
+        foreach ($rows as $row) {
+            $byModule[$row->module][] = $row;
+        }
+
+        $now = new \DateTimeImmutable();
+        $cells = [];
+        foreach ($byModule as $module => $moduleRows) {
+            $snapshot = $snapshots[$module] ?? null;
+            $cells[] = ModuleSummary::fromRows($module, $moduleRows)
+                ->toTableCells($snapshot !== null ? $snapshot->ageLabel($now) : 'never');
+        }
+
+        ColumnTable::render(
+            $output,
+            ['MODULE', 'CORES', 'MRS', 'READY', 'REVIEW', 'BLOCKED', 'PATCHES', 'UNCHECKED', 'CACHED'],
+            $cells,
+            self::colorOverviewCells(...),
+        );
+    }
+
+    /**
+     * @param list<string> $cells [MODULE, CORES, MRS, READY, REVIEW, BLOCKED, PATCHES, UNCHECKED, CACHED]
+     * @return list<string>
+     */
+    private static function colorOverviewCells(array $cells): array
+    {
+        $fmt = $cells;
+
+        // READY is the only cell that means "you can act right now"; BLOCKED
+        // is the only one that means "nobody can". Those two earn colour, and
+        // the muted dashes keep the zeros from competing with them.
+        $fmt[3] = $cells[3] === '–' ? '<fg=gray>–</>' : '<fg=green>' . $cells[3] . '</>';
+        $fmt[5] = $cells[5] === '–' ? '<fg=gray>–</>' : '<fg=red>' . $cells[5] . '</>';
+        $fmt[7] = $cells[7] === '–' ? '<fg=gray>–</>' : '<fg=yellow>' . $cells[7] . '</>';
+        foreach ([1, 2, 4, 6] as $i) {
+            $fmt[$i] = $cells[$i] === '–' ? '<fg=gray>–</>' : $cells[$i];
+        }
+        $fmt[8] = '<fg=gray>' . $cells[8] . '</>';
+
+        return array_values($fmt);
+    }
+
+    /**
+     * A per-module progress bar for the fetching path only.
+     *
+     * A refresh is minutes of silence otherwise: each module costs a GitLab
+     * round trip plus a drupal.org scan whose attachment lookups are one
+     * request per file, and drupal.org's origin is slow when its cache is
+     * cold. A cached run needs none of this and gets none — the bar would be
+     * gone before it rendered.
+     *
+     * It lives on the SymfonyStyle, which for this command is already stderr,
+     * so stdout stays exactly the table a pipe expects.
+     *
+     * @param array<string, Module> $modules
+     */
+    private static function progress(
+        SymfonyStyle $io,
+        array $modules,
+        bool $refreshAll,
+        ?string $refreshModule,
+    ): ?ProgressBar {
+        $count = $refreshAll ? \count($modules) : ($refreshModule !== null ? 1 : 0);
+        if ($count === 0 || !$io->isDecorated()) {
+            return null;
+        }
+
+        $bar = $io->createProgressBar($count);
+        $bar->setFormat(' %current%/%max% [%bar%] fetching %message%');
+        $bar->setMessage('');
+
+        return $bar;
     }
 
     /**
@@ -194,6 +354,9 @@ final class DashboardCommand extends UpkeepCommand
      */
     private function issueCell(DashboardRow $row, array $snapshots): string
     {
+        if ($row->contribution !== null) {
+            return (string) $row->contribution->issue->nid;
+        }
         if ($row->mergeRequest === null) {
             return '–';
         }
@@ -227,9 +390,13 @@ final class DashboardCommand extends UpkeepCommand
     private static function renderFooter(OutputInterface $output, array $rows, array $snapshots): void
     {
         $mrKeys = [];
+        $patchKeys = [];
         foreach ($rows as $row) {
             if ($row->mergeRequest !== null) {
                 $mrKeys[$row->module . ':' . $row->mergeRequest->iid] = true;
+            }
+            if ($row->contribution !== null) {
+                $patchKeys[$row->module . ':' . $row->contribution->issue->nid] = true;
             }
         }
         $moduleNames = array_unique(array_map(static fn (DashboardRow $r): string => $r->module, $rows));
@@ -241,14 +408,26 @@ final class DashboardCommand extends UpkeepCommand
             }
         }
 
-        $output->writeln('');
-        $output->writeln(sprintf(
-            '<fg=gray>%d open MRs · %d %s · cached %s · --refresh to update</>',
-            \count($mrKeys),
+        $segments = [sprintf('%d open MRs', \count($mrKeys))];
+        if ($patchKeys !== []) {
+            $segments[] = sprintf(
+                '%d patch %s',
+                \count($patchKeys),
+                \count($patchKeys) === 1 ? 'issue' : 'issues',
+            );
+        }
+        $segments[] = sprintf(
+            '%d %s',
             \count($moduleNames),
             \count($moduleNames) === 1 ? 'module' : 'modules',
-            $oldestSnapshot !== null ? $oldestSnapshot->ageLabel(new \DateTimeImmutable()) : 'never',
-        ));
+        );
+        $segments[] = 'cached ' . ($oldestSnapshot !== null
+            ? $oldestSnapshot->ageLabel(new \DateTimeImmutable())
+            : 'never');
+        $segments[] = '--refresh to update';
+
+        $output->writeln('');
+        $output->writeln('<fg=gray>' . implode(' · ', $segments) . '</>');
     }
 
     private function fetchModule(
@@ -287,11 +466,21 @@ final class DashboardCommand extends UpkeepCommand
             $issueData[$nid] = $issue?->toApiArray();
         }
 
+        // The patch side of the same module, cached alongside the MR side so a
+        // dashboard run off the cache still costs nothing. This is the
+        // expensive half of a --refresh: drupal.org returns attachments as
+        // references, so every one of them is a request (see DrupalOrgClient).
+        $patchIssueData = array_map(
+            static fn (Issue $issue): array => $issue->toApiArray(),
+            $drupal->projectIssues($module->name, self::PATCH_STATUSES),
+        );
+
         return new ModuleSnapshot(
             new \DateTimeImmutable(),
             $projectData,
             $mrData,
             $issueData,
+            $patchIssueData,
         );
     }
 

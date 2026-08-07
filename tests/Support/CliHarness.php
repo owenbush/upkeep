@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Support;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Upkeep\Adapter\CommandRunner;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\VolumeProbe;
@@ -25,6 +26,8 @@ use Upkeep\Command\ModulesAddCommand;
 use Upkeep\Command\ModulesCommand;
 use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\NotesCommand;
+use Upkeep\Command\PatchApplyCommand;
+use Upkeep\Command\PatchCheckCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\ReviewCommand;
@@ -100,6 +103,8 @@ final class CliHarness
 
     private string $display = '';
 
+    private ?HttpClientInterface $patchDownloader = null;
+
     private function __construct(string $home, string $cockpit, string $originalCwd)
     {
         $this->home = $home;
@@ -164,6 +169,21 @@ final class CliHarness
     public function withDrupalOrg(DrupalOrgClient $client): self
     {
         $this->drupalOrg = $client;
+
+        return $this;
+    }
+
+    /**
+     * Injects the HTTP client the patch commands download diff files with.
+     *
+     * Separate from the drupal.org client on purpose: that one speaks api-d7
+     * and is mocked per endpoint, while this one fetches a file from whatever
+     * URL the attachment (or --url) names, including hosts that are not
+     * drupal.org at all.
+     */
+    public function withPatchDownloader(HttpClientInterface $client): self
+    {
+        $this->patchDownloader = $client;
 
         return $this;
     }
@@ -392,6 +412,8 @@ final class CliHarness
             new ModulesAddCommand($this->gitlab),
             new ModulesCommand(),
             new NotesCommand($this->gitlab),
+            new PatchApplyCommand($engines, $this->drupalOrg, $this->patchDownloader),
+            new PatchCheckCommand($engines, $this->drupalOrg, $this->patchDownloader),
             new PatchesCommand($this->drupalOrg, $this->gitlab),
             new PruneCommand($engines, $probe),
             new ReviewCommand($engines, $this->gitlab),

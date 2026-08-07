@@ -9,6 +9,8 @@ use Upkeep\Gate\FastLaneGate;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\Project;
+use Upkeep\Patches\Contribution;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 
 /**
@@ -55,7 +57,7 @@ final readonly class RowFactory
         $rows = [];
         foreach ($mergeRequests as $mergeRequest) {
             foreach ($cores as $core) {
-                $local = $this->cache->latest($module->name, $mergeRequest->iid, $core);
+                $local = $this->cache->latest($module->name, ResultKey::mergeRequest($mergeRequest->iid), $core);
                 $rows[] = DashboardRow::forMergeRequest(
                     $module->name,
                     $core,
@@ -64,6 +66,52 @@ final readonly class RowFactory
                     $local,
                     $this->gate->classify($mergeRequest, $core, $local),
                     $ciFailures[$mergeRequest->iid] ?? null,
+                );
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The patch rows for a module: its Needs Review / RTBC issues whose work
+     * is not reachable from a merge request, expanded across tracked cores.
+     *
+     * Classification is Patches\Contribution's, the same one `upkeep patches`
+     * uses, so an issue the patch report calls covered is one the dashboard
+     * leaves out — the two views cannot disagree about what needs attention.
+     * An issue carried entirely by a real branch already has an MR row above
+     * and contributes nothing here.
+     *
+     * @return list<DashboardRow> ordered by issue nid, then tracked core version
+     */
+    public function patchRows(Module $module, ModuleSnapshot $snapshot, ?string $versionFilter = null): array
+    {
+        $cores = self::cores($module, $versionFilter);
+        if ($cores === []) {
+            return [];
+        }
+
+        $contributions = Contribution::pair(
+            $module->name,
+            $snapshot->patchIssues(),
+            $snapshot->mergeRequests(),
+        );
+        usort(
+            $contributions,
+            static fn (Contribution $a, Contribution $b): int => $a->issue->nid <=> $b->issue->nid,
+        );
+
+        $rows = [];
+        foreach ($contributions as $contribution) {
+            if ($contribution->kind()->isCoveredByMergeRequest()) {
+                continue;
+            }
+            foreach ($cores as $core) {
+                $rows[] = DashboardRow::forPatch(
+                    $core,
+                    $contribution,
+                    $this->cache->latest($module->name, ResultKey::patch($contribution->issue->nid), $core),
                 );
             }
         }

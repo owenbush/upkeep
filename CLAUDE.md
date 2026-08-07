@@ -11,10 +11,19 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   to name a concrete engine. It builds one `Adapter\DdevContribAdapterFactory`
   and injects it into the commands that need an environment.
 - `src/Adapter/` — the engine adapter: everything ddev / ddev-drupal-contrib
-  specific (provisioning, MR checkout, check execution, teardown, the
-  ddev-upkeep fixture add-on). Engine pinned: ddev-drupal-contrib 1.1.5
-  (`Adapter\EngineAddOn`). Commands receive `Adapter\EngineAdapterFactory` and
-  never construct an engine themselves.
+  specific (provisioning, MR checkout, patch application, check execution,
+  teardown, the ddev-upkeep fixture add-on). Engine pinned:
+  ddev-drupal-contrib 1.1.5 (`Adapter\EngineAddOn`). Commands receive
+  `Adapter\EngineAdapterFactory` and never construct an engine themselves.
+  Two operations put the working copy on a branch of upkeep's own —
+  `applyMr` (`mr-<iid>`) and `applyPatch` (`patch-<nid>`) — and
+  `Adapter\ManagedBranch` names both prefixes so base-branch resolution
+  rejects either as a base. A managed branch used as a base would silently
+  stack one contribution on another. `applyPatch` commits what it applies
+  (checks must run against a clean tree) and resets the branch from the base
+  every time (a re-roll is tested alone, not stacked on the last one); a patch
+  that will not apply after a three-way retry is an `AdapterException` phrased
+  as a review finding, because "needs a re-roll" is what it tells a maintainer.
 - `src/Command/` — one class per CLI command; thin, delegating to the
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
@@ -35,9 +44,28 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   and an attachment is always returned as a bare reference
   (`{"file":{"uri":…,"id":…}}`) with no name, so `DrupalOrgClient` dereferences
   each one against `/file/<fid>.json` (once per distinct file per run) before
-  building the `Issue`. Without that, every issue has zero attachments.
+  building the `Issue`. Without that, every issue has zero attachments. Those
+  lookups run `DrupalOrgClient::MAX_CONCURRENT` (8) at a time — measured ~50ms
+  per request against ~530ms serialised on a cold cache. Concurrency is by
+  *creating* requests before consuming any, never `stream()`: that yields HTTP
+  errors by throwing out of the generator, where a per-response catch cannot
+  reach them, so one 404 attachment would take the whole batch down.
+  **The client never fails loudly and never fails silently either**: every
+  request that does not answer is recorded in `warnings()`, because returning
+  less data is indistinguishable at the call site from there *being* less data
+  — the exact under-reporting the patch surface exists to prevent. Commands
+  surface it through `UpkeepCommand::reportScanWarnings()`. Both clients set
+  `max_duration` as well as `timeout`, because Symfony's `timeout` is the
+  *idle* timeout and bounds nothing on its own.
 - `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
-- `src/Patches/` — how an issue's work arrived (`Patches\ContributionKind`:
+- `src/Patches/` — the patch-contribution surface. `Patches\PatchSelector`
+  decides *which* patch on an issue was meant (`--file` pins, `--latest` takes
+  the newest, one candidate settles itself, several are `ambiguous` so the
+  command can prompt — an unmatched `--file` is a refusal, never a fallback);
+  `Patches\PatchFetcher` is the download boundary (http(s) only, name reduced
+  to a safe basename, body sniffed for a diff header, size capped) and the only
+  thing that writes a patch to disk. Also holds how an issue's work arrived
+  (`Patches\ContributionKind`:
   patch-only / patch + MR / patch with an empty MR / MR-only / nothing) and the
   issue-plus-its-MRs pairing `patches` renders. An MR counts as covering an
   issue only when it claims authorship of it
@@ -48,7 +76,22 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   and `detailed_merge_status` reads `draft_status` for a draft, so both lie).
   Unknown emptiness always reads as real work; nothing may treat it as empty.
 - `src/Dashboard/`, `src/Results/` — dashboard row assembly, cached check
-  results (`<cockpit>/results/`).
+  results (`<cockpit>/results/`). The dashboard is two-tier: bare `dashboard`
+  renders `Dashboard\ModuleSummary` (one line per module), naming a module or
+  passing `--all` renders the rows. The summary is aggregated from exactly the
+  rows the drill-down would print, never recounted from the underlying data —
+  two counts of the same thing that can disagree are worse than one. Subjects
+  (MRs, patch issues) are counted once per module; verdicts and check evidence
+  are counted per (subject x core), because they genuinely differ per core. A dashboard row is a merge request, a patch
+  contribution, or a module failure; only the first carries a `GateVerdict`, so
+  `isReadyAuto()` is false for a patch row *by construction* rather than by a
+  check someone has to remember. `Results\ResultKey` keeps MR and patch results
+  in separate path namespaces (`<iid>` vs `patch-<nid>`) — both subjects are
+  identified by a number and nothing keeps the ranges apart, and a patch verdict
+  read as an MR verdict would put unmergeable evidence in front of the
+  fast-lane gate. Patch results are keyed by `Patches\PatchRevision` (a hash of
+  the patch's source URL, not its bytes — the dashboard must judge staleness
+  from the attachment list without downloading anything).
 - `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
 - `src/Maintenance/` — prune/status inventory and selection.
 - `src/Workflow/` — shared MR-flow context and the exit-code contract
@@ -97,7 +140,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (4183/4183), methods (488/488) and classes (112/112), 899 tests.
+lines (4889/4889), methods (562/562) and classes (125/125), 1036 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

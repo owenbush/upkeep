@@ -182,6 +182,96 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ));
     }
 
+    public function applyPatch(Environment $environment, PatchApplication $patch): void
+    {
+        $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        $wcStatus = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+        if ($wcStatus->isDirty()) {
+            throw new AdapterException(sprintf(
+                "Cannot apply patch \"%s\": the module working copy has uncommitted changes:\n  %s\n"
+                . 'Commit or stash your changes first, then re-run.',
+                $patch->name,
+                implode("\n  ", $wcStatus->describe()),
+            ));
+        }
+
+        $currentBranch = $this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD']);
+        $recordedBase = $this->runner->tryRun(['git', '-C', $moduleDir, 'config', '--get', 'upkeep.base-branch']);
+        $baseBranch = MrCheckout::resolveBaseBranch(
+            $currentBranch !== null ? trim($currentBranch) : null,
+            $recordedBase !== null ? trim($recordedBase) : null,
+        );
+
+        $branch = $patch->branchName();
+        ($this->log)(sprintf('Applying patch "%s" onto %s as %s ...', $patch->name, $baseBranch, $branch));
+
+        // Reset the branch from the base on every apply: a re-roll must be
+        // tested on its own, not stacked on whatever was applied last time.
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-B', $branch, $baseBranch]);
+        $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $baseBranch]);
+
+        $this->applyPatchFile($moduleDir, $patch, $baseBranch);
+
+        $this->runner->run([
+            'git', '-C', $moduleDir,
+            '-c', 'user.name=upkeep',
+            '-c', 'user.email=upkeep@localhost',
+            'commit', '--no-verify', '-m', PatchCheckout::commitMessage($patch),
+        ]);
+
+        $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
+
+        ($this->log)('Syncing the composer pin to the patch branch ...');
+        $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch);
+
+        ($this->log)(sprintf(
+            'Patch "%s" applied: working copy on %s at %s (base %s).',
+            $patch->name,
+            $branch,
+            $sha,
+            $baseBranch,
+        ));
+    }
+
+    /**
+     * The apply itself: a straight application, then a three-way retry, then
+     * a report that the patch needs a re-roll.
+     *
+     * The retry is not optimism — three-way resolves hunks that plain context
+     * matching rejects whenever the blobs the patch was cut against are in the
+     * repository, which for a drupal.org patch on its own project is the
+     * common case. A patch that fails both is genuinely stale, and the git
+     * output from the *first* attempt is what gets reported: the three-way
+     * failure talks about missing blobs, which tells a maintainer nothing
+     * about their patch.
+     */
+    private function applyPatchFile(string $moduleDir, PatchApplication $patch, string $baseBranch): void
+    {
+        $straight = $this->runner->capture(
+            array_merge(['git', '-C', $moduleDir], PatchCheckout::applyArgs($patch->localPath)),
+        );
+        if ($straight->exitCode === 0) {
+            return;
+        }
+
+        ($this->log)('Straight apply failed; retrying three-way ...');
+        $threeWay = $this->runner->capture(
+            array_merge(['git', '-C', $moduleDir], PatchCheckout::threeWayApplyArgs($patch->localPath)),
+        );
+        if ($threeWay->exitCode === 0) {
+            return;
+        }
+
+        // Leave the working copy on the base rather than half-patched: the
+        // next command must not inherit a tree nobody chose.
+        $this->runner->tryRun(['git', '-C', $moduleDir, 'reset', '--hard']);
+        $this->runner->tryRun(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
+
+        throw PatchCheckout::unappliableException($patch, $baseBranch, $straight->output);
+    }
+
     public function loadFixture(Environment $environment, string $fixtureName): void
     {
         $this->ensureFixtureAddOn($environment);

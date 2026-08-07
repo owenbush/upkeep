@@ -22,13 +22,42 @@ final readonly class ModuleSnapshot
      * @param list<array<array-key, mixed>>            $mrData      raw GitLab MR detail API payloads
      * @param array<int, array<array-key, mixed>|null> $issueData   raw drupal.org issue API payloads keyed by nid
      *                                                              (a null entry records a lookup that failed)
+     * @param list<array<array-key, mixed>>            $patchIssueData raw drupal.org payloads for the module's
+     *                                                                 Needs Review / RTBC issues, with their
+     *                                                                 attachments already dereferenced
      */
     public function __construct(
         public \DateTimeImmutable $fetchedAt,
         public array $projectData,
         public array $mrData,
         public array $issueData,
+        public array $patchIssueData = [],
     ) {
+    }
+
+    /**
+     * The Needs Review / RTBC issues this module had when the snapshot was
+     * taken, for the dashboard's patch rows.
+     *
+     * Empty for a snapshot written before patch rows existed, which reads as
+     * "this module contributed no patch rows" — the pre-existing dashboard,
+     * until the next --refresh. Cheaper and less surprising than silently
+     * going to the network from a command whose whole promise is that a cached
+     * run costs nothing.
+     *
+     * @return list<Issue>
+     */
+    public function patchIssues(): array
+    {
+        $issues = [];
+        foreach ($this->patchIssueData as $data) {
+            $issue = Issue::fromApi($data);
+            if ($issue !== null) {
+                $issues[] = $issue;
+            }
+        }
+
+        return $issues;
     }
 
     public function project(): Project
@@ -56,6 +85,7 @@ final readonly class ModuleSnapshot
             'project' => $this->projectData,
             'merge_requests' => $this->mrData,
             'issues' => $this->issueData,
+            'patch_issues' => $this->patchIssueData,
         ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT);
     }
 
@@ -88,11 +118,14 @@ final readonly class ModuleSnapshot
             return null;
         }
 
+        $patchIssues = $data['patch_issues'] ?? null;
+
         return new self(
             $fetchedAt,
             $projectData,
             self::payloadList($mrData),
             self::payloadsByNid($data['issues'] ?? null),
+            \is_array($patchIssues) ? self::payloadList($patchIssues) : [],
         );
     }
 

@@ -14,6 +14,7 @@ use Upkeep\Dashboard\RowFactory;
 use Upkeep\Gate\GateStatus;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\Project;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 
 /**
@@ -100,7 +101,7 @@ final class RowFactoryTest extends TestCase
     {
         (new ResultsCache($this->resultsDir))->store(
             'widget',
-            $iid,
+            ResultKey::mergeRequest($iid),
             '11',
             self::HEAD_SHA,
             new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0)]),

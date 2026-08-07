@@ -16,6 +16,7 @@ use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Command\MergeCommand;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
 
@@ -182,7 +183,7 @@ final class MergeCommandTest extends TestCase
     {
         (new ResultsCache($this->cockpit . '/results'))->store(
             'widget',
-            $iid,
+            ResultKey::mergeRequest($iid),
             '11',
             $sha,
             new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.2)]),

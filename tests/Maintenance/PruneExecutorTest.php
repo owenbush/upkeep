@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Maintenance;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
@@ -70,6 +71,10 @@ final class PruneExecutorTest extends TestCase
             }
 
             public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+
+            public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
 
@@ -230,6 +235,10 @@ final class PruneExecutorTest extends TestCase
                 throw new \BadMethodCallException('not used');
             }
             public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
+            {
+            }
+
+            public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
             public function loadFixture(Environment $environment, string $fixtureName): void

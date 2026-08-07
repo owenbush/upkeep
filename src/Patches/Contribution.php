@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Patches;
 
 use Upkeep\Drupal\Issue;
+use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\MergeRequest;
 
 /**
@@ -28,6 +29,43 @@ final readonly class Contribution
         public Issue $issue,
         public array $mergeRequests = [],
     ) {
+    }
+
+    /**
+     * Pair each issue with the merge requests that claim authorship of it.
+     *
+     * Shared by every consumer that has to decide what a contribution *is* —
+     * the patch report and the dashboard — so the two can never disagree about
+     * whether an issue is covered. Merge requests claiming an issue outside
+     * $issues are dropped: they cannot change any row, and dropping them is
+     * what bounds the emptiness probing the caller may do.
+     *
+     * @param list<Issue>        $issues
+     * @param list<MergeRequest> $mergeRequests
+     * @return list<self>
+     */
+    public static function pair(string $module, array $issues, array $mergeRequests): array
+    {
+        $wanted = [];
+        foreach ($issues as $issue) {
+            $wanted[$issue->nid] = true;
+        }
+
+        $byNid = [];
+        foreach ($mergeRequests as $mr) {
+            $nid = IssueReference::extractOwning($mr->title, $mr->sourceBranch, $mr->description);
+            if ($nid === null || !isset($wanted[$nid])) {
+                continue;
+            }
+            $byNid[$nid][] = $mr;
+        }
+
+        $contributions = [];
+        foreach ($issues as $issue) {
+            $contributions[] = new self($module, $issue, $byNid[$issue->nid] ?? []);
+        }
+
+        return $contributions;
     }
 
     /**
@@ -65,6 +103,37 @@ final readonly class Contribution
         return $this->mergeRequests === []
             ? ContributionKind::PatchOnly
             : ContributionKind::PatchWithEmptyMergeRequest;
+    }
+
+    /**
+     * The revision a cached check result must name to be current for this
+     * issue: the newest patch on it. Null when the issue carries no patch at
+     * all, in which case there is nothing a result could be about.
+     */
+    public function currentRevision(): ?string
+    {
+        $latest = $this->issue->latestPatch();
+
+        return $latest === null ? null : PatchRevision::of($latest->url);
+    }
+
+    /**
+     * The dashboard's STATUS cell for a patch row: what arrived, and how much
+     * of it. Deliberately not a gate verdict — nothing here is mergeable, and
+     * a cell that looked like one would invite the wrong action.
+     */
+    public function dashboardStatus(): string
+    {
+        $count = $this->issue->patchCount();
+        $files = $count === 1 ? '1 patch' : $count . ' patches';
+
+        return match ($this->kind()) {
+            ContributionKind::PatchOnly => 'PATCH ' . $files,
+            ContributionKind::PatchAndMergeRequest => 'PATCH ' . $files . ', ' . $this->mergeRequestCell(),
+            ContributionKind::PatchWithEmptyMergeRequest => 'PATCH ' . $files . ', ' . $this->mergeRequestCell(),
+            ContributionKind::Nothing => 'PATCH nothing attached',
+            ContributionKind::MergeRequestOnly => 'PATCH covered by ' . $this->mergeRequestCell(),
+        };
     }
 
     /**

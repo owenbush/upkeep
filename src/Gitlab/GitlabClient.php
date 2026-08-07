@@ -30,6 +30,16 @@ final class GitlabClient
      */
     public const MAX_PAGES = 50;
 
+    /** Idle timeout: the longest gap tolerated between response chunks. */
+    private const IDLE_TIMEOUT = 15.0;
+
+    /**
+     * Total per-request cap. Every call here is a small JSON document or a
+     * single merge; none has a legitimate reason to take a minute, and an
+     * unbounded one is indistinguishable from a hang.
+     */
+    private const MAX_DURATION = 60.0;
+
     /**
      * Per-invocation GET memoization, keyed by full request URL. The client
      * lives for a single command run, so entries are never stale within the
@@ -394,6 +404,13 @@ final class GitlabClient
         try {
             $response = $this->http->request($method, $url, $extraOptions + [
                 'headers' => ['PRIVATE-TOKEN' => $this->token],
+                // Symfony's `timeout` is the *idle* timeout — the gap allowed
+                // between chunks — so on its own it bounds nothing: a response
+                // trickling a byte just inside it stays alive indefinitely.
+                // Without both, a stalled git.drupalcode.org hangs the command
+                // with no output and no way to tell it apart from slow work.
+                'timeout' => self::IDLE_TIMEOUT,
+                'max_duration' => self::MAX_DURATION,
             ]);
             $status = $response->getStatusCode();
             if ($status === 429) {

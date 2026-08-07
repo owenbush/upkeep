@@ -120,6 +120,8 @@ final class PatchesCommand extends UpkeepCommand
             }
         }
 
+        self::reportScanWarnings($io, $drupal);
+
         if ($contributions === []) {
             $io->success(
                 'Nothing to report — every Needs Review / RTBC issue is covered by a merge request '
