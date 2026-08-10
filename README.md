@@ -621,6 +621,44 @@ Known limitation: the key is the patch's URL, not its bytes. drupal.org mints a
 distinct URL per upload, so a re-roll is always detected; a `--url` pointing at
 something edited in place (a gist) is not.
 
+### Browser UI
+
+```bash
+upkeep ui
+```
+
+serves the cockpit as a page on `127.0.0.1` and opens it. One table, filterable,
+modules expandable in place — the progressive disclosure a terminal cannot do,
+which is what makes a 244-row module readable. Rows carry a **Check** button
+that runs `check` or `patch:check` in the background and streams the output
+into a drawer; a finished job refreshes the rows it affected.
+
+`--port=N` picks the port, `--no-open` suppresses the browser. It runs in the
+foreground until Ctrl-C — there is no daemon, no pid file, and no port left
+listening afterwards.
+
+**How it is kept safe.** The link carries a one-time token minted per run and
+never written to disk; every path is behind it, assets included, and every
+refusal is an identical 404. The page swaps the token for an `HttpOnly`,
+`SameSite=Strict` cookie on first load so it stops appearing in the address bar.
+The browser never supplies a command line: it names one of three actions
+(`check`, `patch-check`, `refresh`) whose parameters are validated into shapes
+they already had to have. Binding to loopback keeps the port off the network,
+but not away from other software on the machine — the token is the actual
+barrier.
+
+**It cannot merge.** The Drupal Association stance is one human approval per
+merge, and `merge --fast-lane`'s per-MR prompt is what earns that; a button
+that posts an action name is not the same thing, and a table of checkboxes
+beside a "merge selected" control is exactly the batch mode this tool refuses
+to have. Merging from the browser needs its own design first.
+
+**It is a renderer, not a second tool.** What it shows comes from the same
+`RowFactory` the CLI table and the fast-lane gate consume, and what it *does*
+is run the `upkeep` binary as a subprocess — so exit codes, adapter behaviour
+and secret redaction are inherited rather than reimplemented, and the page
+cannot drift from the terminal.
+
 ## Fixtures
 
 Checks run against a clean install by default. When a check (or your manual
@@ -762,6 +800,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |
+| `upkeep ui [--port=N] [--no-open]` | Serve the cockpit in a browser on localhost; runs until interrupted |
 | `upkeep prune [--trees\|--snapshots\|--projects\|--all] [--older-than=T] [--keep-latest=N] [--yes]` | Reclaim disposable state; dry-run without `--yes` |
 
 Global per-command options: `--cockpit`, and (where environments are

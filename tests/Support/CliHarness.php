@@ -32,6 +32,7 @@ use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StatusCommand;
+use Upkeep\Command\UiCommand;
 use Upkeep\Command\VersionOptionInput;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
@@ -418,6 +419,7 @@ final class CliHarness
             new PruneCommand($engines, $probe),
             new ReviewCommand($engines, $this->gitlab),
             new StatusCommand($probe),
+            new UiCommand(static fn (): int => 0),
         ]);
 
         $definition = $application->getDefinition();

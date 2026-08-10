@@ -17,6 +17,26 @@ use PHPUnit\Framework\TestCase;
  */
 final class ProcessEnvironmentInvariantTest extends TestCase
 {
+    /**
+     * The one deliberate exception, and why it is one.
+     *
+     * `Ui\UiServer` starts the browser UI's own server, whose jobs are the
+     * `upkeep` binary itself — a child that needs the credential to do the
+     * work being asked of it and never prints it. Every other child this tool
+     * spawns is arbitrary, could echo its environment into output that gets
+     * logged, and gets nothing.
+     *
+     * It is exempt from *scrubbing*, not from being explicit: the assertion
+     * still requires it to pass an environment it constructed itself, so it
+     * can never regress to the inherit-everything default that this whole
+     * guard exists to prevent. What that environment contains is asserted in
+     * UiSurfaceTest, and the captured output is redacted again on its way to
+     * the browser rather than trusted.
+     *
+     * @var array<string, string> file suffix => what its $env argument must name
+     */
+    private const DELIBERATE_FORWARDERS = ['src/Ui/UiServer.php' => '$environment'];
+
     public function testEveryProcessConstructionScrubsTheCredentialEnvironment(): void
     {
         $sites = 0;
@@ -25,7 +45,7 @@ final class ProcessEnvironmentInvariantTest extends TestCase
             foreach (self::constructions($source) as $construction) {
                 ++$sites;
                 $this->assertStringContainsString(
-                    'CredentialEnvironment::scrubbed()',
+                    self::expectationFor($file),
                     $construction,
                     sprintf('new Process(...) in %s must not inherit the credential environment.', $file),
                 );
@@ -38,6 +58,31 @@ final class ProcessEnvironmentInvariantTest extends TestCase
         // since the base-artifact build moved onto the adapter's shell-out
         // seam and stopped spawning children of its own.
         $this->assertGreaterThanOrEqual(4, $sites, 'Expected to find the known Process construction sites.');
+    }
+
+    /**
+     * A forwarder must still be listed here to be allowed one, so adding an
+     * unscrubbed construction anywhere else fails exactly as before.
+     */
+    private static function expectationFor(string $file): string
+    {
+        foreach (self::DELIBERATE_FORWARDERS as $suffix => $expected) {
+            if (str_ends_with(str_replace('\\', '/', $file), $suffix)) {
+                return $expected;
+            }
+        }
+
+        return 'CredentialEnvironment::scrubbed()';
+    }
+
+    /**
+     * The exemption list is short and is meant to stay that way: every entry
+     * is a place the credential deliberately reaches a child, so growing it
+     * silently is the failure this asserts against.
+     */
+    public function testExactlyOneConstructionSiteIsAllowedToForwardTheCredential(): void
+    {
+        self::assertSame(['src/Ui/UiServer.php'], array_keys(self::DELIBERATE_FORWARDERS));
     }
 
     /**

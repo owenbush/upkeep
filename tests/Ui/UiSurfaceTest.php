@@ -1,0 +1,431 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Upkeep\Tests\Ui;
+
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Tester\CommandTester;
+use Upkeep\Adapter\CheckResult;
+use Upkeep\Adapter\CheckRunResult;
+use Upkeep\Adapter\CheckStatus;
+use Upkeep\Adapter\CheckType;
+use Upkeep\Cockpit\Cockpit;
+use Upkeep\Command\UiCommand;
+use Upkeep\Dashboard\DashboardCache;
+use Upkeep\Dashboard\ModuleSnapshot;
+use Upkeep\Gitlab\TokenResolver;
+use Upkeep\Patches\PatchRevision;
+use Upkeep\Results\ResultKey;
+use Upkeep\Results\ResultsCache;
+use Upkeep\Ui\Assets;
+use Upkeep\Ui\Http\Request;
+use Upkeep\Ui\Http\Response;
+use Upkeep\Ui\LaunchToken;
+use Upkeep\Ui\StateBuilder;
+use Upkeep\Ui\UiServer;
+use Upkeep\Workflow\ExitCode;
+
+/**
+ * The rest of the UI surface: the token, the HTTP value objects, the state the
+ * page renders, and how the server is started.
+ */
+final class UiSurfaceTest extends TestCase
+{
+    private string $cockpit;
+
+    protected function setUp(): void
+    {
+        $this->cockpit = sys_get_temp_dir() . '/upkeep-ui-surface-' . bin2hex(random_bytes(4));
+        mkdir($this->cockpit, 0o700, true);
+        file_put_contents(
+            $this->cockpit . '/registry.yml',
+            "modules:\n  widget:\n    project: project/widget\n    core_versions: [\"10\", \"11\"]\n",
+        );
+    }
+
+    protected function tearDown(): void
+    {
+        exec('rm -rf ' . escapeshellarg($this->cockpit));
+    }
+
+    // ---------------------------------------------------------------- token
+
+    /**
+     * Binding to loopback keeps the port off the network but not away from
+     * other software on the machine, so the token is the actual barrier.
+     */
+    public function testTheTokenIsUnguessableAndFreshEveryRun(): void
+    {
+        $one = LaunchToken::mint();
+        $two = LaunchToken::mint();
+
+        self::assertSame(64, \strlen($one->value), '256 bits, hex-encoded');
+        self::assertNotSame($one->value, $two->value);
+        self::assertTrue($one->matches($one->value));
+        self::assertFalse($one->matches($two->value));
+        self::assertFalse($one->matches(null));
+        self::assertFalse($one->matches(''));
+        // A prefix must not pass: the comparison is over the whole value.
+        self::assertFalse($one->matches(substr($one->value, 0, 32)));
+    }
+
+    public function testTheLaunchUrlCarriesTheTokenForTheBrowser(): void
+    {
+        $token = LaunchToken::of('abc123');
+
+        self::assertSame('http://127.0.0.1:8721/?token=abc123', $token->launchUrl('127.0.0.1', 8721));
+    }
+
+    // ----------------------------------------------------------------- http
+
+    /**
+     * Superglobals are narrowed once, at the edge — the same discipline
+     * ApiPayload applies to a decoded API body.
+     */
+    public function testARequestIsNarrowedOutOfWhateverTheServerHandsIt(): void
+    {
+        $request = Request::fromGlobals(
+            ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/api/jobs/abc?offset=12'],
+            ['offset' => '12', 'bad' => ['array'], 7 => 'unkeyed'],
+            ['upkeep_ui' => 'tok'],
+            '{"action":"check","mr":5}',
+        );
+
+        self::assertSame('POST', $request->method);
+        self::assertSame('/api/jobs/abc', $request->path, 'the query string is not part of the path');
+        self::assertSame(['offset' => '12'], $request->query, 'non-scalar and unkeyed values are dropped');
+        self::assertSame('tok', $request->token());
+        self::assertSame('abc', $request->segment(2));
+        self::assertNull($request->segment(9));
+        self::assertSame('check', $request->bodyString('action'));
+        self::assertSame('5', $request->bodyString('mr'), 'numbers arrive as strings');
+        self::assertNull($request->bodyString('absent'));
+    }
+
+    public function testARequestFromNothingUsableStillHasAShape(): void
+    {
+        $request = Request::fromGlobals([], [], [], 'not json');
+
+        self::assertSame('GET', $request->method);
+        self::assertSame('/', $request->path);
+        self::assertNull($request->token());
+        self::assertNull($request->bodyString('action'));
+    }
+
+    /** The cookie is preferred: it is what the page uses after first load. */
+    public function testTheCookieBeatsTheQueryStringOnceItIsSet(): void
+    {
+        $request = Request::of('GET', '/', ['token' => 'from-url'], ['upkeep_ui' => 'from-cookie']);
+
+        self::assertSame('from-cookie', $request->token());
+    }
+
+    public function testAResponseIsDataRatherThanSideEffects(): void
+    {
+        $json = Response::json(['a' => 1], 202);
+        self::assertSame(202, $json->status);
+        self::assertSame('application/json', $json->headers['Content-Type']);
+        self::assertStringContainsString('"a":1', $json->body);
+
+        $text = Response::text('hello');
+        self::assertStringContainsString('text/plain', $text->headers['Content-Type']);
+
+        $tagged = Response::of(200, 'x')->withHeader('X-Thing', 'y');
+        self::assertSame('y', $tagged->headers['X-Thing']);
+
+        // A header value that is not scalar is dropped rather than rendered.
+        self::assertArrayNotHasKey('Bad', Response::of(200, 'x', ['Bad' => ['a']])->headers);
+    }
+
+    /** A missing asset is a 404 page, not a server that will not start. */
+    public function testAMissingAssetDegradesToNotFound(): void
+    {
+        $assets = new Assets($this->cockpit . '/no-such-dir');
+
+        self::assertSame('', $assets->page());
+        self::assertSame('', $assets->script());
+        self::assertSame('', $assets->style());
+        self::assertSame(404, Response::html($assets->page())->status);
+    }
+
+    public function testTheBundledAssetsAreTheOnesShipped(): void
+    {
+        $assets = Assets::bundled();
+
+        self::assertStringContainsString('<title>upkeep</title>', $assets->page());
+        self::assertStringContainsString('/api/state', $assets->script());
+        self::assertStringContainsString('--accent', $assets->style());
+    }
+
+    // ---------------------------------------------------------------- state
+
+    /**
+     * The page is a second renderer over `Dashboard\RowFactory`, never a second
+     * source of truth — so it cannot show a verdict the terminal disagrees
+     * with.
+     */
+    public function testStateComesFromTheSameRowsTheTerminalPrints(): void
+    {
+        $url = 'https://example.test/a.patch';
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
+            [[
+                'iid' => 7,
+                'title' => 'Issue #3467675: a change',
+                'state' => 'opened',
+                'author' => ['username' => 'alice', 'id' => 1],
+                'source_branch' => '3467675-fix',
+                'target_branch' => '1.0.x',
+                'sha' => str_repeat('a', 40),
+                'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
+                'diff_refs' => ['base_sha' => 'base', 'head_sha' => 'head'],
+            ]],
+            [],
+            [[
+                'nid' => 3597808,
+                'title' => 'A patch issue',
+                'url' => 'https://www.drupal.org/node/3597808',
+                'field_issue_status' => '8',
+                'field_project' => ['machine_name' => 'widget'],
+                'field_issue_files' => [['file' => [
+                    'filename' => 'a.patch',
+                    'url' => $url,
+                    'filesize' => '10',
+                    'timestamp' => '1705400000',
+                ]]],
+            ]],
+        ));
+
+        (new ResultsCache($this->cockpit . '/results'))->store(
+            'widget',
+            ResultKey::patch(3597808),
+            '11',
+            PatchRevision::of($url),
+            new CheckRunResult([new CheckResult(CheckType::PhpCs, CheckStatus::Failed, 1, 'bad', 0.1)]),
+        );
+
+        $state = (new StateBuilder(new Cockpit($this->cockpit)))->build();
+        $module = self::arr(self::arr($state['modules'])[0]);
+        $rows = array_map(self::arr(...), self::arr($module['rows']));
+        $summary = self::arr($module['summary']);
+
+        // One MR and one patch issue, each across two tracked cores.
+        self::assertCount(4, $rows);
+        self::assertSame(1, $summary['merge_requests']);
+        self::assertSame(1, $summary['patch_issues']);
+
+        $patchRows = array_values(array_filter($rows, static fn (array $r): bool => $r['kind'] === 'patch'));
+        self::assertSame(3597808, $patchRows[0]['issue']);
+        self::assertSame('https://www.drupal.org/node/3597808', $patchRows[0]['url']);
+        self::assertSame(1, $patchRows[0]['patches']);
+        self::assertSame('fail', $patchRows[1]['local'], 'the core-11 row carries its cached verdict');
+
+        $mrRows = array_values(array_filter($rows, static fn (array $r): bool => $r['kind'] === 'mr'));
+        self::assertSame(7, $mrRows[0]['mr']);
+        self::assertFalse($mrRows[0]['ready_auto']);
+        self::assertSame('widget', $module['module']);
+        self::assertSame(['widget'], (new StateBuilder(new Cockpit($this->cockpit)))->moduleNames());
+    }
+
+    /** A module whose MRs could not be listed is still a visible row. */
+    public function testAFailedModuleIsRenderedRatherThanOmitted(): void
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
+            [],
+            [],
+        ));
+
+        $state = (new StateBuilder(new Cockpit($this->cockpit)))->build();
+        $module = self::arr(self::arr($state['modules'])[0]);
+
+        self::assertSame([], $module['rows']);
+        self::assertSame(0, self::arr($module['summary'])['merge_requests']);
+        self::assertNotNull($module['cached']);
+    }
+
+    // --------------------------------------------------------------- server
+
+    public function testTheServerIsBoundToLoopbackAndRoutedThroughTheFrontController(): void
+    {
+        $server = new UiServer(LaunchToken::of('tok'), new Cockpit($this->cockpit), 9999);
+        $arguments = $server->arguments();
+
+        self::assertContains('-S', $arguments);
+        self::assertContains('127.0.0.1:9999', $arguments, 'never 0.0.0.0');
+        self::assertSame($server->router(), end($arguments));
+        self::assertStringEndsWith('/bin/upkeep-ui-router.php', $server->router());
+        self::assertStringEndsWith('/assets/ui', $server->documentRoot());
+        self::assertStringEndsWith('/bin/upkeep', UiServer::binary());
+    }
+
+    /**
+     * Both secrets travel in the environment, because a command line is
+     * readable by every process on the machine.
+     */
+    public function testTheTokenAndTheCredentialTravelInTheEnvironment(): void
+    {
+        $previous = getenv(TokenResolver::DEFAULT_ENV_VAR);
+        putenv(TokenResolver::DEFAULT_ENV_VAR . '=glpat-forwarded');
+
+        try {
+            $env = (new UiServer(LaunchToken::of('tok'), new Cockpit($this->cockpit), 9999))->environment();
+
+            self::assertSame('tok', $env['UPKEEP_UI_TOKEN']);
+            self::assertSame($this->cockpit, $env['UPKEEP_UI_COCKPIT']);
+            self::assertStringEndsWith('/bin/upkeep', $env['UPKEEP_UI_BINARY']);
+            // Forwarded deliberately: the children are upkeep itself, which
+            // needs it and never prints it. Api redacts the captured log again
+            // on the way out rather than trusting that.
+            self::assertSame('glpat-forwarded', $env[TokenResolver::DEFAULT_ENV_VAR]);
+            self::assertArrayHasKey('PHP_CLI_SERVER_WORKERS', $env);
+        } finally {
+            $previous === false
+                ? putenv(TokenResolver::DEFAULT_ENV_VAR)
+                : putenv(TokenResolver::DEFAULT_ENV_VAR . '=' . $previous);
+        }
+    }
+
+    public function testNoCredentialInTheEnvironmentForwardsNothing(): void
+    {
+        $previous = getenv(TokenResolver::DEFAULT_ENV_VAR);
+        putenv(TokenResolver::DEFAULT_ENV_VAR . '=');
+
+        try {
+            $env = (new UiServer(LaunchToken::of('tok'), new Cockpit($this->cockpit), 9999))->environment();
+
+            self::assertArrayNotHasKey(TokenResolver::DEFAULT_ENV_VAR, $env);
+        } finally {
+            $previous === false
+                ? putenv(TokenResolver::DEFAULT_ENV_VAR)
+                : putenv(TokenResolver::DEFAULT_ENV_VAR . '=' . $previous);
+        }
+    }
+
+    public function testTheDefaultRunnerIsARealProcessCall(): void
+    {
+        $server = new UiServer(LaunchToken::of('tok'), new Cockpit($this->cockpit), 9999);
+        $runner = $server->runner();
+
+        // Run something that is not a server, to prove the runner returns the
+        // child's exit code rather than assuming success.
+        self::assertSame(0, $runner(sys_get_temp_dir(), [\PHP_BINARY, '-r', 'exit(0);'], []));
+        self::assertSame(3, $runner(sys_get_temp_dir(), [\PHP_BINARY, '-r', 'exit(3);'], []));
+    }
+
+    // -------------------------------------------------------------- command
+
+
+    /**
+     * Narrows a decoded value so the assertions work with a real array rather
+     * than mixed — the wire format is deliberately untyped, so the tests do
+     * the narrowing the handlers would.
+     *
+     * @return array<array-key, mixed>
+     */
+    private static function arr(mixed $value): array
+    {
+        self::assertIsArray($value);
+
+        return $value;
+    }
+
+    private static function str(mixed $value): string
+    {
+        self::assertIsString($value);
+
+        return $value;
+    }
+
+    private function ui(?\Closure $serve = null): CommandTester
+    {
+        return new CommandTester(new UiCommand($serve ?? static fn (): int => 0));
+    }
+
+    public function testTheCommandPrintsTheLaunchUrlAndStartsTheServer(): void
+    {
+        $captured = [];
+        $tester = $this->ui(function (string $cwd, array $arguments, array $env) use (&$captured): int {
+            $captured = ['cwd' => $cwd, 'arguments' => $arguments, 'env' => $env];
+
+            return 0;
+        });
+
+        $exit = $tester->execute(['--cockpit' => $this->cockpit, '--no-open' => true, '--port' => '9310']);
+
+        self::assertSame(ExitCode::OK, $exit, $tester->getDisplay());
+        self::assertMatchesRegularExpression('#http://127\.0\.0\.1:9310/\?token=[0-9a-f]{64}#', $tester->getDisplay());
+        self::assertStringContainsString('Ctrl-C', $tester->getDisplay());
+        self::assertContains('127.0.0.1:9310', self::arr($captured['arguments']));
+        self::assertSame(64, \strlen(self::str(self::arr($captured['env'])['UPKEEP_UI_TOKEN'])));
+    }
+
+    /** A server that will not start is an infrastructure outcome, not a crash. */
+    public function testAServerThatCannotStartExitsTwo(): void
+    {
+        $tester = $this->ui(static fn (): int => 1);
+
+        self::assertSame(
+            ExitCode::INFRASTRUCTURE,
+            $tester->execute(['--cockpit' => $this->cockpit, '--no-open' => true]),
+        );
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function refusedPorts(): iterable
+    {
+        yield 'not a number' => ['http'];
+        yield 'privileged' => ['80'];
+        yield 'out of range' => ['70000'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('refusedPorts')]
+    public function testAPortThatIsNotOneIsRefused(string $port): void
+    {
+        $tester = $this->ui();
+        $exit = $tester->execute(['--cockpit' => $this->cockpit, '--no-open' => true, '--port' => $port]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('--port must be a number', $tester->getDisplay());
+    }
+
+    /**
+     * The browser is opened unless told not to. Driven through the real
+     * BrowserOpener with a stub binary first on PATH, so no browser ever
+     * launches and the platform call still runs.
+     */
+    public function testTheBrowserIsOpenedOnTheLaunchUrlUnlessSuppressed(): void
+    {
+        $bin = $this->cockpit . '/fake-bin';
+        mkdir($bin, 0o700, true);
+        $log = $this->cockpit . '/opened';
+        foreach (['xdg-open', 'open'] as $name) {
+            file_put_contents($bin . '/' . $name, "#!/bin/sh\nprintf '%s' \"$1\" >> " . escapeshellarg($log) . "\n");
+            chmod($bin . '/' . $name, 0o700);
+        }
+
+        $previousPath = getenv('PATH');
+        putenv('PATH=' . $bin . ':' . ($previousPath === false ? '/usr/bin:/bin' : $previousPath));
+
+        try {
+            $tester = $this->ui();
+            $tester->execute(['--cockpit' => $this->cockpit, '--port' => '9311']);
+
+            self::assertFileExists($log);
+            self::assertStringContainsString('http://127.0.0.1:9311/?token=', (string) file_get_contents($log));
+        } finally {
+            $previousPath === false ? putenv('PATH') : putenv('PATH=' . $previousPath);
+        }
+    }
+
+    public function testTheDefaultPortIsUsedWhenNoneIsGiven(): void
+    {
+        $tester = $this->ui();
+        $tester->execute(['--cockpit' => $this->cockpit, '--no-open' => true]);
+
+        self::assertStringContainsString(':' . UiServer::DEFAULT_PORT . '/', $tester->getDisplay());
+    }
+}
