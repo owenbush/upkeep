@@ -60,12 +60,22 @@ final readonly class Request
     }
 
     /**
-     * The token the caller presented, from the cookie the page sets or the
-     * query string it was launched with.
+     * The token the caller presented.
+     *
+     * **The URL wins over the cookie**, and the order is the whole point. A
+     * token in the query string is the operator deliberately presenting a
+     * credential — they have just been handed a launch URL and followed it —
+     * while the cookie is only what some earlier visit left behind.
+     *
+     * Preferring the cookie made a restart unrecoverable: `upkeep ui` mints a
+     * fresh token each run, so the browser arrives at the new URL still
+     * holding the old cookie, the old value shadows the new one, and every
+     * fresh link is refused as expired. Restarting again produced another
+     * link that could not work, which is exactly how it was reported.
      */
     public function token(): ?string
     {
-        return $this->cookies['upkeep_ui'] ?? $this->query['token'] ?? null;
+        return $this->query['token'] ?? $this->cookies['upkeep_ui'] ?? null;
     }
 
     /**

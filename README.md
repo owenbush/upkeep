@@ -708,6 +708,9 @@ the token lives only in the running process and is never written to disk — so:
 1. use the URL the running `upkeep ui` printed when it started; or
 2. stop it with Ctrl-C and run `upkeep ui` again for a fresh one.
 
+Following the new launch URL is enough — the token in it takes precedence over
+whatever cookie the browser is still holding, and refreshes it.
+
 Starting a second `upkeep ui` while the first still holds the port is refused
 rather than half-started, because the port would keep answering with the *old*
 token and any URL printed would already be dead.

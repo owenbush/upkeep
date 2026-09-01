@@ -113,10 +113,27 @@ final class UiSurfaceTest extends TestCase
         self::assertNull($request->bodyString('action'));
     }
 
-    /** The cookie is preferred: it is what the page uses after first load. */
-    public function testTheCookieBeatsTheQueryStringOnceItIsSet(): void
+    /**
+     * The URL beats the cookie, and the order is load-bearing.
+     *
+     * A token in the query string is the operator deliberately presenting a
+     * credential — they have just been handed a launch URL and followed it.
+     * The cookie is only what an earlier visit left behind. With the
+     * precedence the other way round a restart was unrecoverable: every fresh
+     * launch URL arrived at a browser still holding the previous run's cookie,
+     * which shadowed it, and the new link was refused as expired.
+     */
+    public function testTheUrlTokenBeatsAStaleCookie(): void
     {
-        $request = Request::of('GET', '/', ['token' => 'from-url'], ['upkeep_ui' => 'from-cookie']);
+        $request = Request::of('GET', '/', ['token' => 'from-url'], ['upkeep_ui' => 'stale']);
+
+        self::assertSame('from-url', $request->token());
+    }
+
+    /** With no token in the URL, the cookie is what keeps the session going. */
+    public function testTheCookieCarriesTheSessionOnceTheUrlHasBeenCleaned(): void
+    {
+        $request = Request::of('GET', '/api/state', [], ['upkeep_ui' => 'from-cookie']);
 
         self::assertSame('from-cookie', $request->token());
     }
