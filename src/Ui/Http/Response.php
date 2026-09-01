@@ -56,9 +56,9 @@ final readonly class Response
         return self::json(['error' => $message], $status);
     }
 
-    public static function html(string $body): self
+    public static function html(string $body, int $status = 200): self
     {
-        return self::of($body === '' ? 404 : 200, $body, self::securityHeaders() + [
+        return self::of($body === '' ? 404 : $status, $body, self::securityHeaders() + [
             'Content-Type' => 'text/html; charset=utf-8',
         ]);
     }

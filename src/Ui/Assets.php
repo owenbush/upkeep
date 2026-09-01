@@ -42,6 +42,17 @@ final readonly class Assets
     }
 
     /**
+     * What a browser holding a token from a previous run is shown.
+     *
+     * Its own file rather than a string in PHP for the same reason as the
+     * others: it is a page, and it is edited as one.
+     */
+    public function expiredPage(): string
+    {
+        return $this->read('expired.html');
+    }
+
+    /**
      * A missing asset is the empty string, not an exception: it can only mean
      * a broken install, and a blank page that still serves its error JSON is
      * more diagnosable than a server that will not start.

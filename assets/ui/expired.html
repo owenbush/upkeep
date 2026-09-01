@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>upkeep — this link has expired</title>
+<!--
+  Deliberately self-contained: every other asset is behind the launch token,
+  and the whole point of this page is that the reader does not have one. A
+  stylesheet link would 404 and leave it unstyled. Inline styles are allowed by
+  the response CSP (style-src 'self' 'unsafe-inline'); nothing is fetched.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #12141a; --panel: #191c24; --line: #262b36; --text: #dfe3ec; --muted: #858da0;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f7f9; --panel: #fff; --line: #e2e5ea; --text: #1c2028; --muted: #6b7280; }
+  }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 34rem; margin: 4rem auto; padding: 0 1.5rem; }
+  h1 { margin: 0 0 .35rem; font-size: 1rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  h2 { margin: 0 0 1rem; font-size: 1.25rem; }
+  p { margin: 0 0 1rem; color: var(--muted); }
+  code {
+    padding: .15rem .4rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>upkeep</h1>
+  <h2>This link is from a previous run.</h2>
+  <p>
+    <code>upkeep ui</code> mints a fresh token each time it starts, so a tab left open
+    across a restart — or a bookmark — carries one that no longer works. Nothing is
+    wrong with your cockpit.
+  </p>
+  <p>
+    Use the link the running <code>upkeep ui</code> printed. If it is not running, start
+    it again and follow the URL it gives you.
+  </p>
+</main>
+</body>
+</html>
