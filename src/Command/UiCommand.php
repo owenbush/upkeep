@@ -36,9 +36,13 @@ final class UiCommand extends UpkeepCommand
     /**
      * @param ?\Closure(string, list<string>, array<string, string>): int $serve
      *        injected in tests; runs the server process and returns its exit code
+     * @param ?\Closure(string, int): bool $portInUse injected in tests, so no
+     *        test has to bind a real port to exercise the collision
      */
-    public function __construct(private readonly ?\Closure $serve = null)
-    {
+    public function __construct(
+        private readonly ?\Closure $serve = null,
+        private readonly ?\Closure $portInUse = null,
+    ) {
         parent::__construct();
     }
 
@@ -64,6 +68,25 @@ final class UiCommand extends UpkeepCommand
     {
         $cockpit = $this->requireCockpit($input);
         $port = self::port($input);
+
+        // Before anything is minted or printed. A busy port means the server
+        // cannot bind, but the port still answers — from the previous run,
+        // with the previous token. Printing a launch URL first would hand the
+        // operator a link that was dead the moment it was written.
+        $occupied = $this->portInUse ?? UiServer::isPortInUse(...);
+        if ($occupied(UiServer::HOST, $port) === true) {
+            throw new WorkflowException(sprintf(
+                "Something is already listening on %s:%d.\n\n"
+                . "If it is another `upkeep ui`, that one still owns the port and its link is the one that "
+                . "works — its token is the only one it accepts. Either use the URL it printed, or stop it "
+                . "(Ctrl-C in its terminal) and run this again to get a fresh one.\n\n"
+                . 'If it is something else, pick another port: upkeep ui --port=%d',
+                UiServer::HOST,
+                $port,
+                $port + 1,
+            ));
+        }
+
         $token = LaunchToken::mint();
         $url = $token->launchUrl(UiServer::HOST, $port);
 

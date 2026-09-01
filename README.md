@@ -702,8 +702,15 @@ listening afterwards.
 
 **If the page says the link is from a previous run:** the token is minted fresh
 each time `upkeep ui` starts, so a tab left open across a restart (or a
-bookmark) carries a dead one. Use the link the running server printed. Nothing
-is wrong with your cockpit.
+bookmark) carries a dead one. There is no way to re-print the current link —
+the token lives only in the running process and is never written to disk — so:
+
+1. use the URL the running `upkeep ui` printed when it started; or
+2. stop it with Ctrl-C and run `upkeep ui` again for a fresh one.
+
+Starting a second `upkeep ui` while the first still holds the port is refused
+rather than half-started, because the port would keep answering with the *old*
+token and any URL printed would already be dead.
 
 **How it is kept safe.** The link carries a one-time token minted per run and
 never written to disk; every path is behind it, assets included, and every
