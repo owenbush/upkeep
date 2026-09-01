@@ -748,6 +748,29 @@ fixture model and the `tests/fixtures/` convention.
 > checkout path, or any source `ddev add-on get` accepts). This is temporary
 > and disappears at publication.
 
+### When the engine refuses a project name
+
+ddev project names are global to your machine, and upkeep derives them from
+`upkeep-<module>-d<core>`. So if your projects root moves — a new cockpit, or a
+`--projects-root` / `UPKEEP_PROJECTS_ROOT` that differs from one you used
+before — ddev still has the old path registered under that name and refuses to
+configure the new one.
+
+upkeep now catches this before it seeds anything, and tells you what to run:
+
+```
+The engine already knows a project called "upkeep-widget-d11", at a different path:
+  registered: /Users/owen/.upkeep-scratch/projects/upkeep-widget-d11
+  wanted:     /Users/owen/contrib/upkeep/projects/upkeep-widget-d11
+
+If the registered path is stale, deregister it and re-run:
+  ddev stop --unlist upkeep-widget-d11
+
+That removes the engine's record of it; it does not delete the directory or
+anything in it. If the registered path is the one you actually want, point
+--projects-root at it instead.
+```
+
 ## Disk housekeeping
 
 ```bash
