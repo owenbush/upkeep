@@ -313,10 +313,4 @@ $('#drawer-close').addEventListener('click', () => {
   $('#drawer').hidden = true;
 });
 
-// The token arrived in the URL and is now in a cookie; drop it from the address
-// bar so it stops appearing in history and in screenshots.
-if (location.search.includes('token=')) {
-  history.replaceState(null, '', location.pathname);
-}
-
 load();

@@ -53,14 +53,16 @@
   </p>
   <h3>To get a working link</h3>
   <ol>
-    <li>Find the terminal running <code>upkeep ui</code> and use the URL it printed
-      when it started — that token is the only one this server accepts.</li>
-    <li>If you cannot find it, press <kbd>Ctrl</kbd>+<kbd>C</kbd> in that terminal to
-      stop it, then run <code>upkeep ui</code> again and follow the new URL.</li>
+    <li>Look in your browser history for a <code>127.0.0.1</code> address ending in
+      <code>?token=…</code> — the current run's link is kept there, and the newest one
+      is the one that works.</li>
+    <li>Or use the URL the running <code>upkeep ui</code> printed when it started.</li>
+    <li>If neither is to hand, press <kbd>Ctrl</kbd>+<kbd>C</kbd> in that terminal to stop
+      it, then run <code>upkeep ui</code> again and follow the new URL.</li>
   </ol>
   <p class="note">
-    There is no way to re-print the current link: the token is held only in the
-    running process and never written to disk. Restarting is the way to get a new one.
+    No command re-prints the current link: the token is held only in the running
+    process and never written to disk.
   </p>
 </main>
 </body>
