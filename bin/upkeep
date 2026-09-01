@@ -16,6 +16,7 @@ use Upkeep\Command\DevCommand;
 use Upkeep\Command\EnvPathCommand;
 use Upkeep\Command\ExecCommand;
 use Upkeep\Command\InitCommand;
+use Upkeep\Command\IssuesCommand;
 use Upkeep\Command\IssueCommand;
 use Upkeep\Command\MergeCommand;
 use Upkeep\Command\ModulesAddCommand;
@@ -26,7 +27,9 @@ use Upkeep\Command\PatchApplyCommand;
 use Upkeep\Command\PatchCheckCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
+use Upkeep\Command\PublishCommand;
 use Upkeep\Command\ReviewCommand;
+use Upkeep\Command\StartCommand;
 use Upkeep\Command\StatusCommand;
 use Upkeep\Command\UiCommand;
 use Upkeep\Command\VersionOptionInput;
@@ -65,6 +68,7 @@ $application->addCommands([
     new ExecCommand($engines),
     new InitCommand(),
     new IssueCommand(),
+    new IssuesCommand(),
     new MergeCommand(),
     new NeedsWorkCommand(),
     new ModulesAddCommand(),
@@ -74,7 +78,9 @@ $application->addCommands([
     new PatchCheckCommand($engines),
     new PatchesCommand(),
     new PruneCommand($engines, $volumeProbe),
+    new PublishCommand($engines),
     new ReviewCommand($engines),
+    new StartCommand($engines),
     new StatusCommand($volumeProbe),
     new UiCommand(),
 ]);

@@ -306,6 +306,102 @@ final class DdevContribAdapter implements EngineAdapterInterface
         throw PatchCheckout::unappliableException($patch, $baseBranch, $stat->output, $check->output);
     }
 
+    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+    {
+        $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        $status = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+        if ($status->isDirty()) {
+            throw new AdapterException(sprintf(
+                "Cannot start work on \"%s\": the module working copy has uncommitted changes:\n  %s\n"
+                . 'Commit or stash them first — starting here would mix them into the new branch.',
+                $branch->name,
+                implode("\n  ", $status->describe()),
+            ));
+        }
+
+        // Existing work is resumed exactly as it stands. `checkout -B`, which
+        // the disposable-branch paths use, would silently discard commits that
+        // may exist nowhere else.
+        $existing = $this->runner->tryRun(['git', '-C', $moduleDir, 'rev-parse', '--verify', $branch->name]);
+        if ($existing !== null) {
+            $this->runner->run(['git', '-C', $moduleDir, 'checkout', $branch->name]);
+            ($this->log)(sprintf('Resumed existing work branch "%s".', $branch->name));
+            $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch->name);
+
+            return true;
+        }
+
+        // A branch already pushed but not yet local — the maintainer started
+        // this on another machine, or in another environment for another core.
+        $remote = $this->runner->tryRun(
+            ['git', '-C', $moduleDir, 'ls-remote', '--exit-code', '--heads', 'origin', $branch->name],
+        );
+        if ($remote !== null && trim($remote) !== '') {
+            $this->runner->run(['git', '-C', $moduleDir, 'fetch', 'origin', $branch->name]);
+            $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-b', $branch->name, 'FETCH_HEAD']);
+            ($this->log)(sprintf('Resumed work branch "%s" from origin.', $branch->name));
+            $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch->name);
+
+            return true;
+        }
+
+        // The base defaults to whatever the working copy already sits on —
+        // the same rule applyMr and applyPatch resolve against, so a branch
+        // started here and a contribution checked out here share an origin.
+        $base = $baseBranch ?? MrCheckout::resolveBaseBranch(
+            self::trimmed($this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD'])),
+            self::trimmed($this->runner->tryRun(['git', '-C', $moduleDir, 'config', '--get', 'upkeep.base-branch'])),
+        );
+
+        ($this->log)(sprintf('Starting work branch "%s" off %s ...', $branch->name, $base));
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', $base]);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-b', $branch->name, $base]);
+        // Recorded so a later applyMr/applyPatch from this working copy knows
+        // what the base was, exactly as those paths record it for each other.
+        $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $base]);
+        $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch->name);
+
+        return false;
+    }
+
+    private static function trimmed(?string $value): ?string
+    {
+        return $value === null ? null : trim($value);
+    }
+
+    public function pushWork(Environment $environment, IssueBranch $branch): string
+    {
+        $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        $status = WorkingCopyStatus::inspect($moduleDir, $this->runner);
+        if ($status->isDirty()) {
+            throw new AdapterException(sprintf(
+                "Cannot publish \"%s\": the module working copy has uncommitted changes:\n  %s\n"
+                . 'Commit them first — what is not committed cannot be pushed.',
+                $branch->name,
+                implode("\n  ", $status->describe()),
+            ));
+        }
+
+        $head = self::trimmed($this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD']));
+        if ($head !== $branch->name) {
+            throw new AdapterException(sprintf(
+                'The module working copy is on "%s", not "%s". Publishing would push a branch you are not looking '
+                . 'at; switch to it first.',
+                $head ?? 'a detached HEAD',
+                $branch->name,
+            ));
+        }
+
+        // No --force, and no lease: a rejected push means the remote moved,
+        // which is a thing to look at rather than to overwrite.
+        ($this->log)(sprintf('Pushing %s to origin ...', $branch->name));
+        $this->runner->run(['git', '-C', $moduleDir, 'push', '--set-upstream', 'origin', $branch->name]);
+
+        return trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
+    }
+
     public function loadFixture(Environment $environment, string $fixtureName): void
     {
         $this->ensureFixtureAddOn($environment);

@@ -72,6 +72,21 @@ final readonly class MrCheckout
             ));
         }
 
+        // A work branch is a base nobody meant. Cutting mr-<iid> or
+        // patch-<nid> from it would test the contribution *plus* whatever the
+        // maintainer has written and not pushed, and report the result as a
+        // verdict on the contribution alone. Refused rather than guessed,
+        // because the wrong answer here is a green check on code that was
+        // never actually tested.
+        if (IssueBranch::isWorkBranch($currentBranch)) {
+            throw new AdapterException(sprintf(
+                'The module working copy is on your own work branch "%s". Checking a contribution from here would '
+                . 'test it on top of that work. Switch to the target branch first (git -C <module> checkout <base>), '
+                . 'then re-run.',
+                $currentBranch,
+            ));
+        }
+
         return $currentBranch;
     }
 

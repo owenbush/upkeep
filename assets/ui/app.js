@@ -9,6 +9,7 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
   modules: [],
   filter: '',
+  view: 'work',         // 'work' = contributions waiting on you; 'issues' = the whole queue
   open: new Set(),      // module names expanded; survives a refresh of the data
   job: null,            // { id, offset, timer }
 };
@@ -28,20 +29,35 @@ async function api(path, options) {
 
 // ---------------------------------------------------------------- rendering
 
+function entriesFor(module) {
+  return state.view === 'issues' ? module.issues : module.rows;
+}
+
 function matches(module, needle) {
   if (!needle) return true;
   if (module.module.includes(needle)) return true;
-  return module.rows.some((row) =>
-    String(row.issue || '').includes(needle) ||
-    String(row.mr || '').includes(needle) ||
-    (row.title || '').toLowerCase().includes(needle));
+  return entriesFor(module).some((entry) =>
+    String(entry.issue || entry.nid || '').includes(needle) ||
+    String(entry.mr || '').includes(needle) ||
+    (entry.title || '').toLowerCase().includes(needle));
 }
 
 function countsFor(module) {
   const s = module.summary;
   if (!s) return 'never fetched';
   if (s.failed) return 'unavailable';
+
   const parts = [];
+  if (state.view === 'issues') {
+    const issues = module.issues || [];
+    const unclaimed = issues.filter((i) => i.unclaimed).length;
+    const awaiting = issues.filter((i) => i.awaits_maintainer).length;
+    if (issues.length) parts.push(`${issues.length} open`);
+    if (awaiting) parts.push(`${awaiting} awaiting you`);
+    if (unclaimed) parts.push(`${unclaimed} unclaimed`);
+    return parts.length ? parts.join(' · ') : 'nothing open';
+  }
+
   if (s.merge_requests) parts.push(`${s.merge_requests} MR${s.merge_requests === 1 ? '' : 's'}`);
   if (s.patch_issues) parts.push(`${s.patch_issues} patch`);
   if (s.ready_auto) parts.push(`${s.ready_auto} ready`);
@@ -82,6 +98,64 @@ function rowElement(module, row) {
   return el;
 }
 
+function issueElement(module, issue) {
+  const el = document.createElement('div');
+  el.className = `row row-issue${issue.unclaimed ? ' row-unclaimed' : ''}`;
+
+  const contribution = issue.mr ? `!${issue.mr}` : (issue.patches ? `${issue.patches} patch` : 'unclaimed');
+  el.innerHTML = `
+    <span class="subject"><a href="${issue.url}" target="_blank" rel="noreferrer noopener">#${issue.nid}</a></span>
+    <span class="cell status-${issue.status.replace(/\s+/g, '-')}">${issue.status}</span>
+    <span class="cell">${issue.priority || '–'}</span>
+    <span class="cell contribution">${contribution}</span>
+    <span class="title"></span>`;
+  // Titles are remote text; set as a text node so no issue title can ever be
+  // markup on this page.
+  el.querySelector('.title').textContent = issue.title || '';
+
+  const actions = document.createElement('span');
+  actions.className = 'actions';
+
+  const start = document.createElement('button');
+  start.type = 'button';
+  start.className = 'run';
+  start.textContent = 'Start';
+  start.title = 'Provision an environment and open a work branch (resumes if one exists)';
+  start.addEventListener('click', () => startJob({
+    action: 'start', module: module.module, issue: String(issue.nid),
+  }));
+  actions.append(start);
+
+  // The one control that reaches outside this machine, so it asks first: a
+  // merge request is public the moment it exists.
+  const publish = document.createElement('button');
+  publish.type = 'button';
+  publish.className = 'run publish';
+  publish.textContent = 'Publish';
+  publish.title = 'Push the work branch and open its merge request';
+  publish.addEventListener('click', () => confirmPublish(module.module, issue));
+  actions.append(publish);
+
+  el.append(actions);
+
+  return el;
+}
+
+function confirmPublish(module, issue) {
+  const dialog = $('#confirm');
+  $('#confirm-text').textContent =
+    `Push the work branch for #${issue.nid} and open a merge request on drupal.org?`;
+
+  const onClose = () => {
+    dialog.removeEventListener('close', onClose);
+    if (dialog.returnValue === 'ok') {
+      startJob({ action: 'publish', module, issue: String(issue.nid) });
+    }
+  };
+  dialog.addEventListener('close', onClose);
+  dialog.showModal();
+}
+
 function moduleElement(module) {
   const node = $('#module-template').content.cloneNode(true);
   const section = node.querySelector('.module');
@@ -105,13 +179,18 @@ function moduleElement(module) {
   // and the whole reason this UI exists is that rendering all of them at once
   // is what made the terminal unusable.
   if (expanded) {
-    if (!module.rows.length) {
+    const entries = entriesFor(module);
+    if (!entries.length) {
       const empty = document.createElement('p');
       empty.className = 'empty';
-      empty.textContent = module.cached ? 'Nothing open.' : 'Not fetched yet — refresh this module.';
+      empty.textContent = module.cached
+        ? (state.view === 'issues' ? 'No open issues.' : 'Nothing waiting on you.')
+        : 'Not fetched yet — refresh this module.';
       rows.append(empty);
     }
-    module.rows.forEach((row) => rows.append(rowElement(module, row)));
+    entries.forEach((entry) => rows.append(
+      state.view === 'issues' ? issueElement(module, entry) : rowElement(module, entry),
+    ));
 
     const refresh = document.createElement('button');
     refresh.type = 'button';
@@ -202,7 +281,7 @@ async function poll() {
 async function load() {
   try {
     const data = await api('/api/state');
-    state.modules = data.modules;
+    state.modules = data.modules.map((m) => ({ ...m, issues: m.issues || [] }));
     $('#meta').textContent = `${data.modules.length} module${data.modules.length === 1 ? '' : 's'}`;
     render();
   } catch (error) {
@@ -214,6 +293,15 @@ $('#filter').addEventListener('input', (event) => {
   state.filter = event.target.value;
   render();
 });
+
+function setView(view) {
+  state.view = view;
+  $('#view-work').setAttribute('aria-selected', String(view === 'work'));
+  $('#view-issues').setAttribute('aria-selected', String(view === 'issues'));
+  render();
+}
+$('#view-work').addEventListener('click', () => setView('work'));
+$('#view-issues').addEventListener('click', () => setView('issues'));
 $('#drawer-close').addEventListener('click', () => {
   stopPolling();
   $('#drawer').hidden = true;

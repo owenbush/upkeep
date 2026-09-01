@@ -8,8 +8,11 @@ use Upkeep\Cockpit\Cockpit;
 use Upkeep\Cockpit\Module;
 use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\DashboardRow;
+use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Dashboard\ModuleSummary;
 use Upkeep\Dashboard\RowFactory;
+use Upkeep\Patches\Contribution;
+use Upkeep\Patches\ContributionKind;
 use Upkeep\Results\ResultsCache;
 
 /**
@@ -57,6 +60,7 @@ final readonly class StateBuilder
                     'cached' => null,
                     'summary' => null,
                     'rows' => [],
+                    'issues' => [],
                 ];
                 continue;
             }
@@ -72,10 +76,55 @@ final readonly class StateBuilder
                 'cached' => $snapshot->ageLabel($now),
                 'summary' => self::summary(ModuleSummary::fromRows($name, $rows)),
                 'rows' => array_map(self::row(...), $rows),
+                'issues' => self::issues($name, $snapshot),
             ];
         }
 
         return ['modules' => $out, 'generated_at' => $now->format(\DateTimeInterface::ATOM)];
+    }
+
+    /**
+     * The module's whole open issue queue, contribution as a *column*.
+     *
+     * The counterpart to rows(): those answer "what is waiting for me?", these
+     * answer "what could I work on?". Both come out of the same snapshot, so
+     * the page cannot show an issue the terminal would not.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function issues(string $module, ModuleSnapshot $snapshot): array
+    {
+        $contributions = Contribution::pair(
+            $module,
+            $snapshot->patchIssues(),
+            $snapshot->mergeRequests(),
+        );
+
+        // Most actionable first, exactly as `upkeep issues` orders it: what
+        // awaits a maintainer's verdict, then everything else, newest first.
+        usort($contributions, static function (Contribution $a, Contribution $b): int {
+            $byAttention = ($b->issue->status->needsMaintainer() ? 1 : 0)
+                <=> ($a->issue->status->needsMaintainer() ? 1 : 0);
+
+            return $byAttention !== 0 ? $byAttention : $b->issue->nid <=> $a->issue->nid;
+        });
+
+        return array_map(static function (Contribution $contribution): array {
+            $issue = $contribution->issue;
+            $substantive = $contribution->substantiveMergeRequests();
+
+            return [
+                'nid' => $issue->nid,
+                'title' => $issue->title,
+                'url' => $issue->url,
+                'status' => $issue->status->shortLabel(),
+                'priority' => $issue->priorityLabel(),
+                'awaits_maintainer' => $issue->status->needsMaintainer(),
+                'patches' => $issue->patchCount(),
+                'mr' => $substantive === [] ? null : $substantive[0]->iid,
+                'unclaimed' => $contribution->kind() === ContributionKind::Nothing,
+            ];
+        }, $contributions);
     }
 
     /**

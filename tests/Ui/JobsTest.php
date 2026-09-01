@@ -68,6 +68,10 @@ final class JobsTest extends TestCase
         yield 'check with MR zero' => ['check', ['module' => 'widget', 'mr' => '0']];
         yield 'patch-check without an issue' => ['patch-check', ['module' => 'widget']];
         yield 'patch-check with a flag as the issue' => ['patch-check', ['module' => 'widget', 'issue' => '--help']];
+        yield 'start without an issue' => ['start', ['module' => 'widget']];
+        yield 'start with a shell attempt' => ['start', ['module' => 'widget', 'issue' => '1; rm -rf /']];
+        yield 'publish without an issue' => ['publish', ['module' => 'widget']];
+        yield 'publish with issue zero' => ['publish', ['module' => 'widget', 'issue' => '0']];
     }
 
     /**
@@ -77,6 +81,37 @@ final class JobsTest extends TestCase
     public function testOnlyWhitelistedRecipesEverBecomeACommandLine(string $action, array $params): void
     {
         self::assertNull(JobAction::build($action, $params));
+    }
+
+    /**
+     * The issue loop, as the browser may ask for it. `start` is local and
+     * resumes rather than resets, so a button that fires twice loses nothing;
+     * `publish` is the one action that reaches outside the machine.
+     */
+    public function testTheIssueLoopIsAvailableToTheBrowser(): void
+    {
+        $start = JobAction::build('start', ['module' => 'widget', 'issue' => '3223746', 'core' => '11']);
+        self::assertNotNull($start);
+        self::assertSame(['start', 'widget', '3223746', '--version=11', '--no-interaction'], $start->argv);
+        self::assertSame('start widget #3223746', $start->label);
+
+        $publish = JobAction::build('publish', ['module' => 'widget', 'issue' => '3223746', 'core' => '11']);
+        self::assertNotNull($publish);
+        self::assertSame(['publish', 'widget', '3223746', '--version=11', '--no-interaction'], $publish->argv);
+    }
+
+    /**
+     * `publish` opens a merge request; it is not, and must never become, the
+     * merge call. Those are opposite acts.
+     */
+    public function testPublishIsNotAMergeInDisguise(): void
+    {
+        $publish = JobAction::build('publish', ['module' => 'widget', 'issue' => '3223746']);
+
+        self::assertNotNull($publish);
+        self::assertNotContains('merge', $publish->argv);
+        self::assertNotContains('--fast-lane', $publish->argv);
+        self::assertSame('publish', $publish->argv[0]);
     }
 
     public function testTheThreeActionsBuildTheCommandsTheirNamesPromise(): void
@@ -230,6 +265,14 @@ final class JobsTest extends TestCase
     /**
      * Offset-based reads are the one thing a browser can hold across a poll, a
      * refresh or a reconnect without the server remembering anything about it.
+     *
+     * The second read is also the regression guard for a stale stat cache.
+     * PHP caches file sizes per process; in production the log is appended to
+     * by the detached job while a long-lived server worker polls it, so a
+     * cached size means the poll reports no new output and a healthy job looks
+     * hung. The cache is warmed deliberately below, because which PHP version
+     * invalidates it eagerly is not something to depend on — 8.4 does after an
+     * in-process append and 8.2 does not, which is how CI found this.
      */
     public function testOutputIsReadFromAnOffsetAndSaysWhereToResume(): void
     {
@@ -243,12 +286,37 @@ final class JobsTest extends TestCase
         self::assertSame(6, $one['offset']);
         self::assertTrue($one['complete']);
 
+        // Warm the stat cache with the pre-append size, as a previous poll in
+        // a persistent worker would have done.
+        self::assertSame(6, filesize($log));
+
         file_put_contents($log, "second\n", \FILE_APPEND);
         $two = $store->readFrom('a1b2c3d4e5f60718', $one['offset']);
         self::assertSame("second\n", $two['output'], 'only what is new');
         self::assertSame(13, $two['offset']);
 
         self::assertSame('', $store->readFrom('a1b2c3d4e5f60718', 13)['output'], 'nothing new');
+    }
+
+    /**
+     * The same hazard on the path that matters most: output written by another
+     * process entirely, which is what every real job does.
+     */
+    public function testOutputWrittenByAnotherProcessIsSeenOnTheNextPoll(): void
+    {
+        $store = $this->store();
+        $store->create($this->job());
+        $log = $this->dir . '/a1b2c3d4e5f60718/output.log';
+
+        file_put_contents($log, "one\n");
+        $first = $store->readFrom('a1b2c3d4e5f60718', 0);
+        self::assertSame("one\n", $first['output']);
+
+        // A detached child appends, exactly as a running job does.
+        exec('printf %s ' . escapeshellarg("two\n") . ' >> ' . escapeshellarg($log));
+
+        $second = $store->readFrom('a1b2c3d4e5f60718', $first['offset']);
+        self::assertSame("two\n", $second['output'], 'a running job must not look hung');
     }
 
     /** A long check must not make each poll heavier than the last. */

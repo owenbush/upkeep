@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Maintenance;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\ServeResult;
@@ -77,6 +78,18 @@ final class PruneExecutorTest extends TestCase
             public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
+
+            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+            {
+                return false;
+            }
+
+            public function pushWork(Environment $environment, IssueBranch $branch): string
+            {
+                return 'abc1234';
+            }
+
+
 
             public function loadFixture(Environment $environment, string $fixtureName): void
             {
@@ -241,6 +254,17 @@ final class PruneExecutorTest extends TestCase
             public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
+
+            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+            {
+                return false;
+            }
+
+            public function pushWork(Environment $environment, IssueBranch $branch): string
+            {
+                return 'abc1234';
+            }
+
             public function loadFixture(Environment $environment, string $fixtureName): void
             {
             }

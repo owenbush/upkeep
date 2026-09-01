@@ -442,6 +442,61 @@ drafts paste-ready Markdown release notes: every MR merged since the module's
 last tag, grouped and linked. Takes a registered machine name or a full
 project path (e.g. `project/conditions_helper`).
 
+### Work on an issue
+
+The other three commands start from a *contribution* — a merge request, or a
+patch somebody already posted. These start from the issue itself, which is
+where a maintainer's own work begins.
+
+```bash
+upkeep issues pathauto                  # every open issue, and what is on it
+upkeep issues pathauto --unclaimed      # only what nobody has started
+upkeep issues pathauto --status=active
+```
+
+```
+ISSUE       STATUS      PRIORITY  CONTRIBUTION  TITLE
+
+#3608478    RTBC        Major     !183          Memcache Transaction-Aware Issue After…
+#3616056    review      Normal    1 patch       Deprecated function: Using null as an…
+#3223746    review      Normal    unclaimed     JSON API response has empty path when…
+#3611658    active      Normal    unclaimed     Generator pattern cache grows unbounded…
+
+93 open issues · 42 awaiting you · 29 unclaimed
+```
+
+`unclaimed` is the point of the view: an issue nobody has contributed to is the
+most actionable row on the list. The old scan covered Needs Review and RTBC
+only — 42 of pathauto's 93 open issues — so everything Active, Needs work or
+Postponed was invisible, which is precisely where work begins.
+
+Then:
+
+```bash
+cd $(upkeep start pathauto 3223746 --version=11)
+# ... write the fix, commit it ...
+upkeep publish pathauto 3223746
+```
+
+`start` provisions the environment and opens a branch named to drupal.org's
+issue-fork convention (`<nid>-<slug>`), so drupal.org, GitLab and upkeep all
+recognise it as belonging to that issue. Re-running **resumes** — an existing
+branch is checked out as it stands, and nothing here ever resets, forces or
+discards. That is the difference from the `mr-` and `patch-` branches, which
+*are* reset on every apply so a contribution is tested alone.
+
+`publish` pushes the branch and opens the merge request. What it pushes
+re-enters the pipeline that already existed: an ordinary MR that `dashboard`,
+`check` and `merge` have always handled. Re-running after more commits reports
+the MR that exists rather than duplicating it.
+
+**It opens merge requests; it never merges them.** Those are opposite acts, and
+merging stays behind `merge --fast-lane`'s per-MR prompt.
+
+**It cannot create issues or change their status.** drupal.org's API is
+read-only (a POST answers 403), so that will always be a browser action —
+`upkeep issue` gets you there in one step.
+
 ### Patch contributions
 
 The dashboard is MR-centric, so contributions that arrive as a patch file
@@ -627,11 +682,19 @@ something edited in place (a gist) is not.
 upkeep ui
 ```
 
-serves the cockpit as a page on `127.0.0.1` and opens it. One table, filterable,
-modules expandable in place — the progressive disclosure a terminal cannot do,
-which is what makes a 244-row module readable. Rows carry a **Check** button
-that runs `check` or `patch:check` in the background and streams the output
-into a drawer; a finished job refreshes the rows it affected.
+serves the cockpit as a page on `127.0.0.1` and opens it. Filterable, modules
+expandable in place — the progressive disclosure a terminal cannot do, which is
+what makes a 244-row module readable.
+
+Two views, mirroring the two questions:
+
+- **Waiting for you** — the contribution rows. A **Check** button runs `check`
+  or `patch:check` in the background and streams the output into a drawer.
+- **Issue queue** — every open issue, contribution as a column, unclaimed work
+  highlighted. **Start** opens a work branch; **Publish** pushes it and opens
+  the merge request.
+
+A finished job refreshes the rows it affected.
 
 `--port=N` picks the port, `--no-open` suppresses the browser. It runs in the
 foreground until Ctrl-C — there is no daemon, no pid file, and no port left
@@ -647,11 +710,19 @@ they already had to have. Binding to loopback keeps the port off the network,
 but not away from other software on the machine — the token is the actual
 barrier.
 
+**Publish is the only thing that leaves your machine, and it asks first.** A
+merge request is public the moment it exists, so the button opens a
+confirmation rather than firing. `Start` needs no such guard: it is local, and
+resumes an existing branch rather than resetting it, so pressing it twice loses
+nothing.
+
 **It cannot merge.** The Drupal Association stance is one human approval per
 merge, and `merge --fast-lane`'s per-MR prompt is what earns that; a button
 that posts an action name is not the same thing, and a table of checkboxes
 beside a "merge selected" control is exactly the batch mode this tool refuses
-to have. Merging from the browser needs its own design first.
+to have. Publishing is not that call — it proposes work for review, which is
+what the policy protects rather than restricts — but *merging* from the browser
+still needs its own design first.
 
 **It is a renderer, not a second tool.** What it shows comes from the same
 `RowFactory` the CLI table and the fast-lane gate consume, and what it *does*
@@ -794,6 +865,9 @@ above describe every invocation Upkeep actually runs.
 | `upkeep env:path <module> [--version=N]` | Print the absolute path of a module's environment directory |
 | `upkeep issue <module> <mr> [--no-open]` | Show the linked drupal.org issue and open it in the browser |
 | `upkeep needs-work <module> <mr> [--version=N] [--dry-run] [--no-open]` | Post the local check results as a comment on the merge request |
+| `upkeep issues <module> [--status=S] [--unclaimed]` | Every open issue and what has been contributed to it |
+| `upkeep start <module> <issue> [--version=N] [--branch=B] [--base=B]` | Provision and open a work branch for an issue (resumes if it exists) |
+| `upkeep publish <module> <issue> [--title=T] [--target=B] [--draft]` | Push the work branch and open its merge request |
 | `upkeep patches [--module=NAME] [--without-mr]` | drupal.org issues in Needs Review / RTBC carrying patch files, and the state of any MR beside them |
 | `upkeep patch:check <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--fixture=NAME]` | Run one drupal.org patch through the full isolated check flow |
 | `upkeep patch:apply <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest]` | Download and apply a patch, then print the environment path |
