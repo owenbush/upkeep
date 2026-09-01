@@ -265,6 +265,14 @@ final class JobsTest extends TestCase
     /**
      * Offset-based reads are the one thing a browser can hold across a poll, a
      * refresh or a reconnect without the server remembering anything about it.
+     *
+     * The second read is also the regression guard for a stale stat cache.
+     * PHP caches file sizes per process; in production the log is appended to
+     * by the detached job while a long-lived server worker polls it, so a
+     * cached size means the poll reports no new output and a healthy job looks
+     * hung. The cache is warmed deliberately below, because which PHP version
+     * invalidates it eagerly is not something to depend on — 8.4 does after an
+     * in-process append and 8.2 does not, which is how CI found this.
      */
     public function testOutputIsReadFromAnOffsetAndSaysWhereToResume(): void
     {
@@ -278,12 +286,37 @@ final class JobsTest extends TestCase
         self::assertSame(6, $one['offset']);
         self::assertTrue($one['complete']);
 
+        // Warm the stat cache with the pre-append size, as a previous poll in
+        // a persistent worker would have done.
+        self::assertSame(6, filesize($log));
+
         file_put_contents($log, "second\n", \FILE_APPEND);
         $two = $store->readFrom('a1b2c3d4e5f60718', $one['offset']);
         self::assertSame("second\n", $two['output'], 'only what is new');
         self::assertSame(13, $two['offset']);
 
         self::assertSame('', $store->readFrom('a1b2c3d4e5f60718', 13)['output'], 'nothing new');
+    }
+
+    /**
+     * The same hazard on the path that matters most: output written by another
+     * process entirely, which is what every real job does.
+     */
+    public function testOutputWrittenByAnotherProcessIsSeenOnTheNextPoll(): void
+    {
+        $store = $this->store();
+        $store->create($this->job());
+        $log = $this->dir . '/a1b2c3d4e5f60718/output.log';
+
+        file_put_contents($log, "one\n");
+        $first = $store->readFrom('a1b2c3d4e5f60718', 0);
+        self::assertSame("one\n", $first['output']);
+
+        // A detached child appends, exactly as a running job does.
+        exec('printf %s ' . escapeshellarg("two\n") . ' >> ' . escapeshellarg($log));
+
+        $second = $store->readFrom('a1b2c3d4e5f60718', $first['offset']);
+        self::assertSame("two\n", $second['output'], 'a running job must not look hung');
     }
 
     /** A long check must not make each poll heavier than the last. */

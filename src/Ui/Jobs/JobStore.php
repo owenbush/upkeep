@@ -175,6 +175,16 @@ final class JobStore
             return ['output' => '', 'offset' => $offset, 'complete' => true];
         }
 
+        // PHP caches stat results per process, and both conditions that make
+        // that dangerous hold here: the log is appended to by a *different*
+        // process (the detached job), and this one is a long-lived server
+        // worker that stat-ed the same path on an earlier poll. Without this,
+        // the size can be the one from the previous poll — the read returns
+        // nothing, the page shows no new output, and a job that is running
+        // perfectly well looks hung until something else happens to clear the
+        // cache. Which version of PHP invalidates it eagerly is not something
+        // to depend on: 8.4 does after an in-process append, 8.2 does not.
+        clearstatcache(true, $path);
         $size = (int) @filesize($path);
         $from = max(0, min($offset, $size));
         $length = min(self::MAX_CHUNK_BYTES, $size - $from);
