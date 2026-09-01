@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Support;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
@@ -31,6 +32,15 @@ final class FakeEngineAdapter implements EngineAdapterInterface
     /** @var list<PatchApplication> patches applied, in order */
     public array $appliedPatches = [];
 
+    /** @var list<string> work branches started or resumed, in order */
+    public array $startedBranches = [];
+
+    /** @var list<string> the base each work branch was started from */
+    public array $startedBases = [];
+
+    /** @var list<string> work branches pushed, in order */
+    public array $pushedBranches = [];
+
     private function __construct(
         private readonly ?Environment $environment = null,
         private readonly ?string $envPath = null,
@@ -40,7 +50,29 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         private readonly ?ServeResult $serveResult = null,
         private readonly ?\Throwable $fixtureFailure = null,
         private readonly ?\Throwable $patchFailure = null,
+        private readonly ?\Throwable $workFailure = null,
+        private readonly bool $resumeWork = false,
+        private readonly ?\Throwable $pushFailure = null,
+        private readonly string $pushedSha = 'abc1234def5678',
     ) {
+    }
+
+    /** An environment whose push is rejected — the remote moved. */
+    public static function withFailingPush(Environment $environment, \Throwable $failure): self
+    {
+        return new self(environment: $environment, pushFailure: $failure);
+    }
+
+    /** An environment where the issue's work branch already exists. */
+    public static function resumingWork(Environment $environment): self
+    {
+        return new self(environment: $environment, resumeWork: true);
+    }
+
+    /** An environment that refuses to start work — a dirty working copy. */
+    public static function withFailingWorkStart(Environment $environment, \Throwable $failure): self
+    {
+        return new self(environment: $environment, workFailure: $failure);
     }
 
     /** An environment whose patch apply fails — a patch needing a re-roll. */
@@ -113,6 +145,29 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         }
 
         $this->appliedPatches[] = $patch;
+    }
+
+    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+    {
+        if ($this->workFailure !== null) {
+            throw $this->workFailure;
+        }
+
+        $this->startedBranches[] = $branch->name;
+        $this->startedBases[] = $baseBranch ?? '(from working copy)';
+
+        return $this->resumeWork;
+    }
+
+    public function pushWork(Environment $environment, IssueBranch $branch): string
+    {
+        if ($this->pushFailure !== null) {
+            throw $this->pushFailure;
+        }
+
+        $this->pushedBranches[] = $branch->name;
+
+        return $this->pushedSha;
     }
 
     public function loadFixture(Environment $environment, string $fixtureName): void

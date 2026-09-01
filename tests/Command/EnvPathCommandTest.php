@@ -9,6 +9,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
@@ -57,6 +58,18 @@ final class EnvPathCommandTest extends TestCase
             public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
+
+            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+            {
+                return false;
+            }
+
+            public function pushWork(Environment $environment, IssueBranch $branch): string
+            {
+                return 'abc1234';
+            }
+
+
             public function loadFixture(Environment $environment, string $fixtureName): void
             {
             }
@@ -115,6 +128,17 @@ final class EnvPathCommandTest extends TestCase
             public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
+
+            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+            {
+                return false;
+            }
+
+            public function pushWork(Environment $environment, IssueBranch $branch): string
+            {
+                return 'abc1234';
+            }
+
             public function loadFixture(Environment $environment, string $fixtureName): void
             {
             }
@@ -172,6 +196,17 @@ final class EnvPathCommandTest extends TestCase
             public function applyPatch(Environment $environment, PatchApplication $patch): void
             {
             }
+
+            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
+            {
+                return false;
+            }
+
+            public function pushWork(Environment $environment, IssueBranch $branch): string
+            {
+                return 'abc1234';
+            }
+
             public function loadFixture(Environment $environment, string $fixtureName): void
             {
             }

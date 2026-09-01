@@ -66,6 +66,22 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `max_duration` as well as `timeout`, because Symfony's `timeout` is the
   *idle* timeout and bounds nothing on its own.
 - `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
+- **The issue loop** (`issues` / `start` / `publish`) is the entry point the
+  tool lacked: every other verb begins at a contribution, so writing a fix
+  happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —
+  the old Needs Review + RTBC pair is `awaitingReview()` and saw 42 of
+  pathauto's 93 open issues. `Adapter\IssueBranch` names a maintainer's own
+  branch to drupal.org's `<nid>-<slug>` convention; it is **not** an
+  `Adapter\ManagedBranch`, and the distinction is load-bearing: `mr-<iid>` and
+  `patch-<nid>` are reset with `checkout -B` on every apply, which against a
+  work branch would destroy commits held nowhere else. The two are disjoint by
+  construction (no managed prefix starts with a digit; a work branch always
+  does), `startWork()` never resets, `pushWork()` never forces, and
+  `MrCheckout::resolveBaseBranch()` refuses a work branch as a base — cutting a
+  disposable branch from it would test the contribution *plus* unpushed work
+  and report a verdict on the contribution alone. `publish` opens merge
+  requests and never merges: proposing work for review is the opposite of the
+  risk the one-approval-per-merge stance manages.
 - `src/Patches/` — the patch-contribution surface. `Patches\PatchSelector`
   decides *which* patch on an issue was meant (`--file` pins, `--latest` takes
   the newest, one candidate settles itself, several are `ambiguous` so the
@@ -102,7 +118,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   from the attachment list without downloading anything).
 - `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
 - `src/Maintenance/` — prune/status inventory and selection.
-- `src/Workflow/` — shared MR-flow context and the exit-code contract
+- `src/Workflow/` — shared MR- and patch-flow context and the exit-code contract
   (0 did what was asked / 1 the supervised work failed / 2 upkeep could not do
   the job).
 - `src/Filesystem/` — the single write path (`FileWriter`: atomic
@@ -169,7 +185,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5337/5337), methods (649/649) and classes (137/137), 1118 tests.
+lines (5727/5727), methods (683/683) and classes (141/141), 1178 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

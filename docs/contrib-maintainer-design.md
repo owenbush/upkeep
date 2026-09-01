@@ -39,6 +39,16 @@ first-class dimension of the design, not a hard-coded assumption.
 
 **Goals**
 
+- One place to see the state of every open **issue** across all maintained
+  modules — not only the ones carrying a merge request or a patch. *(Added
+  after v1: the original scan was Needs Review + RTBC, the two statuses a
+  contribution sits in, which on a real module is under half the open queue and
+  excludes Active entirely. Measured on pathauto: 42 of 93.)*
+- A way to **start** work on an issue nobody has contributed to yet, and to
+  **publish** it as a merge request. *(Added after v1. The tool began at a
+  contribution, so the half of the job where a maintainer writes the fix
+  happened outside it — a manual clone, branch and push. Everything downstream
+  of a merge request was already good; the entry point was simply too late.)*
 - One place to see the state of every open MR across all maintained modules.
 - Fast, isolated testing of any MR — any issue, any module, any core version.
 - Automatic handling up to *merge* for trusted, homogeneous compatibility MRs
@@ -53,7 +63,14 @@ first-class dimension of the design, not a hard-coded assumption.
   changes to batch in before tagging. The tool drafts notes; the human tags.
 - Not a new test rig. The per-project testing environment already exists and is
   good; this design reuses it rather than reinventing it.
-- Not a hosted service. This is local, maintainer-side tooling.
+- Not a hosted service. This is local, maintainer-side tooling. (`upkeep ui`
+  serves a page on the loopback interface only, and exits with the command.)
+- **No issue *creation*, and no status changes.** drupal.org's api-d7 is
+  read-only — a POST answers 403 — so anything that writes to an issue queue
+  can only be a pre-filled browser form. `issue` and `needs-work` already hand
+  off that way, and that is the ceiling until drupal.org ships a write API. The
+  GitLab side is different and genuinely writable, which is why `publish` can
+  open a merge request but nothing can move an issue to RTBC.
 
 ## 3. Guiding principle: isolate each axis with the cheapest mechanism that works
 

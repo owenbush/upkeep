@@ -269,6 +269,68 @@ final class GitlabClient
     }
 
     /**
+     * Open a merge request from a pushed branch.
+     *
+     * The write that closes upkeep's loop: a branch started by `upkeep start`
+     * and pushed by `upkeep publish` becomes a merge request, which is what
+     * every other verb in this tool already knows how to handle.
+     *
+     * Deliberately *not* a merge, and subject to none of the fast-lane policy:
+     * opening a merge request proposes work for review, which is the opposite
+     * of the unattended-merge risk that policy exists to prevent.
+     */
+    public function createMergeRequest(
+        Project $project,
+        string $sourceBranch,
+        string $targetBranch,
+        string $title,
+        string $description = '',
+    ): MergeRequest|ApiFailure {
+        $data = $this->request(
+            'POST',
+            $this->apiBase . '/projects/' . $project->id . '/merge_requests',
+            ['json' => [
+                'source_branch' => $sourceBranch,
+                'target_branch' => $targetBranch,
+                'title' => $title,
+                'description' => $description,
+                // Drupal.org convention: the branch is the contributor's and
+                // stays theirs. Nothing here deletes what it did not create.
+                'remove_source_branch' => false,
+            ]],
+            $project->webUrl . '/-/merge_requests/new',
+        );
+
+        return $data instanceof ApiFailure ? $data : MergeRequest::fromApi($data);
+    }
+
+    /**
+     * The open merge request whose source is this branch, when there is one.
+     *
+     * Asked before opening a new one, because GitLab answers a duplicate with
+     * a 409 whose message is about validation rather than about the merge
+     * request that already exists — and the useful outcome for an operator
+     * re-running `publish` is a link to their own MR, not an error.
+     */
+    public function mergeRequestForBranch(Project $project, string $sourceBranch): MergeRequest|ApiFailure|null
+    {
+        $url = $this->apiBase . '/projects/' . $project->id . '/merge_requests?state=opened&per_page=100'
+            . '&source_branch=' . rawurlencode($sourceBranch);
+        $browserUrl = $project->webUrl . '/-/merge_requests';
+
+        $data = $this->get($url, $browserUrl);
+        if ($data instanceof ApiFailure) {
+            return $data;
+        }
+        $rows = self::objectRows($data, 'merge requests', $url, $browserUrl);
+        if ($rows instanceof ApiFailure) {
+            return $rows;
+        }
+
+        return $rows === [] ? null : MergeRequest::fromApi($rows[0]);
+    }
+
+    /**
      * Post a note (comment) on a merge request.
      */
     public function postNote(Project $project, int $iid, string $body): true|ApiFailure

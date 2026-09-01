@@ -11,6 +11,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\VolumeProbe;
+use Upkeep\Dashboard\DashboardCache;
+use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Command\ApiProbeCommand;
 use Upkeep\Command\BaseArtifactsBuildCommand;
 use Upkeep\Command\BaseArtifactsStatusCommand;
@@ -20,6 +22,7 @@ use Upkeep\Command\DevCommand;
 use Upkeep\Command\EnvPathCommand;
 use Upkeep\Command\ExecCommand;
 use Upkeep\Command\InitCommand;
+use Upkeep\Command\IssuesCommand;
 use Upkeep\Command\IssueCommand;
 use Upkeep\Command\MergeCommand;
 use Upkeep\Command\ModulesAddCommand;
@@ -30,7 +33,9 @@ use Upkeep\Command\PatchApplyCommand;
 use Upkeep\Command\PatchCheckCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
+use Upkeep\Command\PublishCommand;
 use Upkeep\Command\ReviewCommand;
+use Upkeep\Command\StartCommand;
 use Upkeep\Command\StatusCommand;
 use Upkeep\Command\UiCommand;
 use Upkeep\Command\VersionOptionInput;
@@ -155,6 +160,24 @@ final class CliHarness
     public function withEngineFactory(EngineAdapterFactory $factory): self
     {
         $this->engines = $factory;
+
+        return $this;
+    }
+
+    /**
+     * Writes a dashboard snapshot holding these merge requests, for the
+     * commands that read cached MRs rather than fetching them.
+     *
+     * @param list<array<string, mixed>> $mrs raw merge-request API payloads
+     */
+    public function saveSnapshotWithMrs(string $module, array $mrs): self
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save($module, new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            ['id' => 42, 'path_with_namespace' => 'project/' . $module, 'path' => $module],
+            $mrs,
+            [],
+        ));
 
         return $this;
     }
@@ -408,6 +431,7 @@ final class CliHarness
             new ExecCommand($engines),
             new InitCommand(),
             new IssueCommand($this->gitlab, $this->drupalOrg),
+            new IssuesCommand($this->drupalOrg),
             new MergeCommand($this->gitlab),
             new NeedsWorkCommand($this->gitlab),
             new ModulesAddCommand($this->gitlab),
@@ -417,7 +441,9 @@ final class CliHarness
             new PatchCheckCommand($engines, $this->drupalOrg, $this->patchDownloader),
             new PatchesCommand($this->drupalOrg, $this->gitlab),
             new PruneCommand($engines, $probe),
+            new PublishCommand($engines, $this->gitlab, $this->drupalOrg),
             new ReviewCommand($engines, $this->gitlab),
+            new StartCommand($engines, $this->drupalOrg),
             new StatusCommand($probe),
             new UiCommand(static fn (): int => 0),
         ]);

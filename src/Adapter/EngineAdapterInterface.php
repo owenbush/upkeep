@@ -58,6 +58,41 @@ interface EngineAdapterInterface
     public function applyPatch(Environment $environment, PatchApplication $patch): void;
 
     /**
+     * Opens the maintainer's own work branch for an issue, creating it off the
+     * base or resuming it if it already exists.
+     *
+     * Unlike applyMr() and applyPatch(), this **never resets anything**. Those
+     * two reset their disposable branch on every call so a contribution is
+     * tested alone; this one holds the only copy of something a human wrote,
+     * so an existing branch is checked out as it stands.
+     *
+     * @param ?string $baseBranch what to branch from; null resolves it from
+     *                             the working copy, which is where that
+     *                             knowledge lives
+     *
+     * @return bool true when an existing branch was resumed, false when one
+     *              was created
+     *
+     * @throws AdapterException when the working copy is dirty or the base
+     *                          cannot be checked out
+     */
+    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool;
+
+    /**
+     * Pushes a work branch to origin.
+     *
+     * Push only — never force, never delete. The remote copy may be the only
+     * one, and a branch this tool did not create is not a branch it may
+     * overwrite.
+     *
+     * @return string the head SHA that was pushed
+     *
+     * @throws AdapterException when the working copy is dirty, is not on that
+     *                          branch, or the push is rejected
+     */
+    public function pushWork(Environment $environment, IssueBranch $branch): string;
+
+    /**
      * Restores the named fixture's database state into the environment,
      * replacing whatever state it currently holds.
      *
