@@ -40,10 +40,7 @@ final readonly class Api
     public function handle(Request $request): Response
     {
         if (!$this->token->matches($request->token())) {
-            // Deliberately uninformative and identical for every unauthorised
-            // path: a 404 that varied by route would map the surface for
-            // anything probing the port.
-            return Response::error('Not found.', 404);
+            return $this->unauthorised($request);
         }
 
         return match (true) {
@@ -55,6 +52,31 @@ final readonly class Api
             $request->segment(0) === 'api' && $request->segment(1) === 'jobs' => $this->jobResponse($request),
             default => Response::error('Not found.', 404),
         };
+    }
+
+    /**
+     * Every refusal is a flat, identical 404 — a response that varied by route
+     * would map the surface for anything probing the port — with exactly one
+     * exception.
+     *
+     * A person navigating to the page itself gets an explanation, because
+     * three deliberate choices combine into a dead end that looks like a bug:
+     * the token is minted per run, the page strips it from the URL once it has
+     * it, and the refusal says nothing. A tab left open across a restart
+     * therefore holds a cookie that no longer works, has no token left in its
+     * address bar to retry with, and is told only "Not found."
+     *
+     * It costs nothing to say so. Anything probing this port already knows
+     * something answers on it, and the actions stay behind the same flat 404
+     * they always were.
+     */
+    private function unauthorised(Request $request): Response
+    {
+        if ($request->method === 'GET' && $request->path === '/') {
+            return Response::html($this->assets->expiredPage(), 401);
+        }
+
+        return Response::error('Not found.', 404);
     }
 
     /**

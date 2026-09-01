@@ -700,6 +700,11 @@ A finished job refreshes the rows it affected.
 foreground until Ctrl-C — there is no daemon, no pid file, and no port left
 listening afterwards.
 
+**If the page says the link is from a previous run:** the token is minted fresh
+each time `upkeep ui` starts, so a tab left open across a restart (or a
+bookmark) carries a dead one. Use the link the running server printed. Nothing
+is wrong with your cockpit.
+
 **How it is kept safe.** The link carries a one-time token minted per run and
 never written to disk; every path is behind it, assets included, and every
 refusal is an identical 404. The page swaps the token for an `HttpOnly`,

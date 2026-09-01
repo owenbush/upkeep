@@ -21,6 +21,12 @@ async function api(path, options) {
     ...options,
   });
   if (!response.ok) {
+    // A 404 on every route means the server no longer accepts this tab's
+    // token — it was restarted, and a fresh one was minted. Reloading lands on
+    // the page route, which explains that rather than repeating this.
+    if (response.status === 404 && !path.startsWith('/api/jobs/')) {
+      throw new Error('This tab is from a previous run of upkeep ui. Reload to see what to do.');
+    }
     const body = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(body.error || 'Request failed');
   }

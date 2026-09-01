@@ -120,7 +120,9 @@ final class ApiTest extends TestCase
      */
     public static function protectedPaths(): iterable
     {
-        yield 'the page' => ['/'];
+        // The page route is absent deliberately: a person navigating there is
+        // the one case that gets an explanation rather than a flat refusal.
+        // Its own tests are below.
         yield 'the script' => ['/app.js'];
         yield 'the stylesheet' => ['/app.css'];
         yield 'the state' => ['/api/state'];
@@ -142,12 +144,73 @@ final class ApiTest extends TestCase
         self::assertSame(['error' => 'Not found.'], self::decode($response));
     }
 
+    /**
+     * The one exception, and the reason it exists: three deliberate choices —
+     * a per-run token, a page that strips it from the URL, and a refusal that
+     * says nothing — combine into a tab left open across a restart that cannot
+     * recover and cannot say why. Reported by a maintainer as a bare
+     * `{"error":"Not found."}`.
+     */
+    public function testANavigationToThePageWithAStaleTokenIsExplainedRatherThanRefusedBlankly(): void
+    {
+        $stale = str_repeat('b', 64);
+        $response = $this->api()->handle(Request::of('GET', '/', [], ['upkeep_ui' => $stale]));
+
+        self::assertSame(401, $response->status);
+        self::assertStringContainsString('text/html', $response->headers['Content-Type'] ?? '');
+        self::assertStringContainsString('from a previous run', $response->body);
+        self::assertStringContainsString('upkeep ui', $response->body);
+    }
+
+    /**
+     * The explanation is self-contained, because every asset it might link is
+     * behind the very token its reader does not have.
+     */
+    public function testTheExplanationNeedsNoAssetItCannotFetch(): void
+    {
+        $body = $this->api()->handle(Request::of('GET', '/'))->body;
+
+        self::assertStringNotContainsString('/app.css', $body);
+        self::assertStringNotContainsString('/app.js', $body);
+        self::assertStringContainsString('<style>', $body);
+    }
+
+    /**
+     * Only that one navigation is explained. The actions, the state and the
+     * assets stay behind the same flat, identical 404, so nothing maps the
+     * surface.
+     */
+    public function testNothingButThePageNavigationIsExplained(): void
+    {
+        $stale = ['upkeep_ui' => str_repeat('b', 64)];
+
+        foreach (['/app.js', '/app.css', '/api/state', '/api/jobs'] as $path) {
+            $response = $this->api()->handle(Request::of('GET', $path, [], $stale));
+            self::assertSame(404, $response->status, $path);
+            self::assertSame(['error' => 'Not found.'], self::decode($response), $path);
+        }
+
+        // A POST to the page route is not a person navigating to it.
+        $posted = $this->api()->handle(Request::of('POST', '/', [], $stale));
+        self::assertSame(404, $posted->status);
+    }
+
     public function testAWrongTokenIsRefusedLikeAnAbsentOne(): void
     {
         $wrong = str_repeat('f', 64);
         $response = $this->api()->handle(Request::of('GET', '/api/state', ['token' => $wrong]));
 
         self::assertSame(404, $response->status);
+    }
+
+    /** The page is still protected — it serves the app to nobody without a token. */
+    public function testThePageItselfIsStillNotServedWithoutAToken(): void
+    {
+        $response = $this->api()->handle(Request::of('GET', '/'));
+
+        self::assertSame(401, $response->status);
+        self::assertStringNotContainsString('<title>upkeep</title>', $response->body, 'not the app');
+        self::assertStringNotContainsString('/app.js', $response->body);
     }
 
     public function testTheTokenIsAcceptedFromTheLaunchUrlOrTheCookie(): void
