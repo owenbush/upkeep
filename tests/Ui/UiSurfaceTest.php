@@ -345,6 +345,24 @@ final class UiSurfaceTest extends TestCase
     }
 
     /** The page offers both views and the confirmation the outward act needs. */
+    /**
+     * The explanation has to be actionable on its own: its reader has no token,
+     * so it cannot link them anywhere, and there is no way to re-print the
+     * current one. It has to say to restart.
+     */
+    public function testTheExpiredPageSaysHowToGetAWorkingLink(): void
+    {
+        $page = Assets::bundled()->expiredPage();
+
+        self::assertStringContainsString('Ctrl', $page);
+        self::assertStringContainsString('upkeep ui', $page);
+        self::assertStringContainsString('never written to disk', $page);
+        // Self-contained: every asset it might link is behind the token its
+        // reader does not have.
+        self::assertStringNotContainsString('/app.css', $page);
+        self::assertStringNotContainsString('/app.js', $page);
+    }
+
     public function testTheShippedPageOffersBothViewsAndConfirmsPublishing(): void
     {
         $assets = Assets::bundled();
@@ -456,7 +474,12 @@ final class UiSurfaceTest extends TestCase
 
     private function ui(?\Closure $serve = null): CommandTester
     {
-        return new CommandTester(new UiCommand($serve ?? static fn (): int => 0));
+        // The port is reported free unless a test says otherwise, so no test
+        // has to bind one to exercise the ordinary path.
+        return new CommandTester(new UiCommand(
+            $serve ?? static fn (): int => 0,
+            static fn (): bool => false,
+        ));
     }
 
     public function testTheCommandPrintsTheLaunchUrlAndStartsTheServer(): void
@@ -475,6 +498,72 @@ final class UiSurfaceTest extends TestCase
         self::assertStringContainsString('Ctrl-C', $tester->getDisplay());
         self::assertContains('127.0.0.1:9310', self::arr($captured['arguments']));
         self::assertSame(64, \strlen(self::str(self::arr($captured['env'])['UPKEEP_UI_TOKEN'])));
+    }
+
+    /**
+     * The failure that made a stale link look like a bug: on a busy port the
+     * server cannot bind, but the port keeps answering — from the previous run,
+     * with the previous token. Printing a launch URL first hands the operator a
+     * link that was dead the moment it was written.
+     */
+    public function testABusyPortIsRefusedBeforeAnyUrlIsPrinted(): void
+    {
+        $served = false;
+        $tester = new CommandTester(new UiCommand(
+            function () use (&$served): int {
+                $served = true;
+
+                return 0;
+            },
+            static fn (): bool => true,
+        ));
+
+        $exit = $tester->execute(['--cockpit' => $this->cockpit, '--no-open' => true, '--port' => '9320']);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertFalse($served, 'nothing may be started on a port that is taken');
+        // Above all: no URL, because any URL printed here could not work.
+        self::assertStringNotContainsString('token=', $tester->getDisplay());
+        self::assertStringContainsString('already listening on 127.0.0.1:9320', $tester->getDisplay());
+        self::assertStringContainsString('Ctrl-C', $tester->getDisplay());
+        self::assertStringContainsString('--port=9321', $tester->getDisplay());
+    }
+
+    /**
+     * The probe itself, against a real socket — the one thing here that cannot
+     * be proven with a double, since its whole job is to ask the operating
+     * system a question.
+     */
+    public function testThePortProbeAnswersForARealListener(): void
+    {
+        // Port 0 lets the OS choose a free one, so this cannot collide with
+        // anything else on the machine running the suite.
+        $listener = stream_socket_server('tcp://' . UiServer::HOST . ':0', $errno, $errstr);
+        self::assertIsResource($listener, 'could not open a listening socket: ' . $errstr);
+
+        $name = stream_socket_get_name($listener, false);
+        self::assertIsString($name);
+        $port = (int) substr($name, (int) strrpos($name, ':') + 1);
+
+        self::assertTrue(UiServer::isPortInUse(UiServer::HOST, $port), 'something is plainly listening');
+
+        fclose($listener);
+
+        self::assertFalse(UiServer::isPortInUse(UiServer::HOST, $port), 'and nothing is once it closes');
+    }
+
+    /** A free port is the ordinary path, and still prints a working link. */
+    public function testAFreePortProceedsAsBefore(): void
+    {
+        $tester = new CommandTester(new UiCommand(
+            static fn (): int => 0,
+            static fn (): bool => false,
+        ));
+
+        $exit = $tester->execute(['--cockpit' => $this->cockpit, '--no-open' => true, '--port' => '9321']);
+
+        self::assertSame(ExitCode::OK, $exit);
+        self::assertStringContainsString('token=', $tester->getDisplay());
     }
 
     /** A server that will not start is an infrastructure outcome, not a crash. */

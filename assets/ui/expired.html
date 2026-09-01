@@ -26,6 +26,15 @@
   h1 { margin: 0 0 .35rem; font-size: 1rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   h2 { margin: 0 0 1rem; font-size: 1.25rem; }
   p { margin: 0 0 1rem; color: var(--muted); }
+  h3 { margin: 1.75rem 0 .6rem; font-size: .95rem; }
+  ol { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--muted); }
+  li { margin-bottom: .5rem; }
+  .note { font-size: .9em; }
+  kbd {
+    padding: .1rem .35rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   code {
     padding: .15rem .4rem;
     background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
@@ -40,11 +49,18 @@
   <p>
     <code>upkeep ui</code> mints a fresh token each time it starts, so a tab left open
     across a restart — or a bookmark — carries one that no longer works. Nothing is
-    wrong with your cockpit.
+    wrong with your cockpit, and there is nothing to repair.
   </p>
-  <p>
-    Use the link the running <code>upkeep ui</code> printed. If it is not running, start
-    it again and follow the URL it gives you.
+  <h3>To get a working link</h3>
+  <ol>
+    <li>Find the terminal running <code>upkeep ui</code> and use the URL it printed
+      when it started — that token is the only one this server accepts.</li>
+    <li>If you cannot find it, press <kbd>Ctrl</kbd>+<kbd>C</kbd> in that terminal to
+      stop it, then run <code>upkeep ui</code> again and follow the new URL.</li>
+  </ol>
+  <p class="note">
+    There is no way to re-print the current link: the token is held only in the
+    running process and never written to disk. Restarting is the way to get a new one.
   </p>
 </main>
 </body>

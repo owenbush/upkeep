@@ -149,7 +149,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `hash_equals` — refusals are a flat identical 404 with exactly one exception,
   a GET of `/`, which serves a self-contained explanation because a per-run
   token plus a URL the page strips plus a silent refusal otherwise leaves a tab
-  open across a restart unable to recover or to say why; **the browser never supplies argv** — `Ui\Jobs\JobAction` is a
+  open across a restart unable to recover or to say why; and `upkeep ui`
+  refuses a port that is already answering *before* minting or printing
+  anything, because a second run otherwise announces a fresh URL, fails to
+  bind, and leaves the port replying with the previous run's token — a link
+  dead the moment it was written; **the browser never supplies argv** — `Ui\Jobs\JobAction` is a
   closed whitelist of recipes whose parameters are validated into shapes they
   already had to have; jobs record their exit status to a sentinel file so they
   outlive the server (`JobStore` reconciles); and the page polls with a byte
@@ -200,7 +204,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5819/5819), methods (695/695) and classes (142/142), 1202 tests.
+lines (5836/5836), methods (696/696) and classes (142/142), 1206 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

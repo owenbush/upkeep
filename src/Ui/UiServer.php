@@ -99,6 +99,31 @@ final readonly class UiServer
         return $env;
     }
 
+    /**
+     * Whether something is already listening on the port.
+     *
+     * Asked *before* a token is minted or a URL printed, because the failure
+     * mode otherwise is genuinely misleading: the command announces a fresh
+     * launch URL, the server then fails to bind, and the port keeps answering
+     * from the *previous* run with the *previous* token. The operator clicks a
+     * link created a second ago and is told it has expired.
+     *
+     * Tested by connecting rather than by binding: binding would race with the
+     * child that is about to do it for real, and "is something already there?"
+     * is the question that actually matters.
+     */
+    public static function isPortInUse(string $host, int $port): bool
+    {
+        $socket = @fsockopen($host, $port, $errno, $errstr, 0.5);
+        if ($socket === false) {
+            return false;
+        }
+
+        fclose($socket);
+
+        return true;
+    }
+
     /** The `upkeep` binary a job should run: this one. */
     public static function binary(): string
     {
