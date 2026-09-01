@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Adapter;
 
 use PHPUnit\Framework\TestCase;
+use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\DdevContribAdapter;
 use Upkeep\Adapter\EngineAddOn;
 use Upkeep\Adapter\Environment;
@@ -113,12 +114,14 @@ abstract class DdevAdapterTestCase extends TestCase
      * A runner scripted with the engine's default happy-path behaviour,
      * including the on-disk effects each command has.
      *
-     * @param array<string, string|null> $overrides command-line substring => replacement outcome
+     * @param array<string, string|AdapterException|null> $overrides an
+     *        AdapterException is thrown as written, so a test can reproduce an
+     *        engine's own wording where failure handling reads it command-line substring => replacement outcome
      *                                              (null makes that command fail)
      */
     protected function engine(array $overrides = []): ScriptedCommandRunner
     {
-        return new ScriptedCommandRunner(function (array $command, ?string $cwd) use ($overrides): ?string {
+        return new ScriptedCommandRunner(function (array $command, ?string $cwd) use ($overrides) {
             $line = implode(' ', $command);
             foreach ($overrides as $needle => $outcome) {
                 if (str_contains($line, $needle)) {

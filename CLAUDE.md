@@ -17,6 +17,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `Adapter\EngineAdapterFactory` and never construct an engine themselves.
   Two operations put the working copy on a branch of upkeep's own —
   `applyMr` (`mr-<iid>`) and `applyPatch` (`patch-<nid>`) — and
+  `Adapter\ProjectRegistration` guards the one collision the layout makes
+  structural: engine project names are global to the machine while the projects
+  root is configurable, so a moved root collides with whatever the old one
+  registered. Checked *before* provisioning does any work (the engine only
+  raises it at `ddev config`, after a seeded codebase and a cloned repo), and
+  the engine's own refusal is translated for the case `describe` cannot see —
+  the record survives, the directory it names is gone. Both messages name the
+  recovery command and say that it deregisters rather than deletes.
   `Adapter\ManagedBranch` names both prefixes so base-branch resolution
   rejects either as a base. A managed branch used as a base would silently
   stack one contribution on another. `applyPatch` commits what it applies
@@ -189,7 +197,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5771/5771), methods (686/686) and classes (141/141), 1188 tests.
+lines (5815/5815), methods (693/693) and classes (142/142), 1199 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

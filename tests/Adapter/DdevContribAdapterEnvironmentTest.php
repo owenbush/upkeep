@@ -424,4 +424,99 @@ final class DdevContribAdapterEnvironmentTest extends DdevAdapterTestCase
             self::assertDirectoryExists($this->projectPath());
         }
     }
+
+    /**
+     * The failure a maintainer actually hit, and the reason it is worth
+     * catching early: engine project names are global to the machine while the
+     * projects root is configurable, so moving the root collides with whatever
+     * the old one registered.
+     *
+     * Caught before anything is built. Discovered at `ddev config` time — which
+     * is where the engine raises it — the same refusal costs a seeded codebase,
+     * a cloned repository and a teardown first.
+     */
+    public function testProvisioningStopsBeforeAnyWorkWhenTheNameIsRegisteredElsewhere(): void
+    {
+        $runner = $this->engine([
+            'ddev describe' => (string) json_encode(['raw' => [
+                'status' => 'running',
+                'approot' => '/somewhere/else/' . self::projectName(),
+            ]]),
+        ]);
+
+        try {
+            $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+            self::fail('Expected the registration conflict to be refused.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('/somewhere/else/' . self::projectName(), $e->getMessage());
+            self::assertStringContainsString('ddev stop --unlist ' . self::projectName(), $e->getMessage());
+            self::assertStringContainsString('does not delete', $e->getMessage());
+        }
+
+        // Nothing was built, so there is nothing to tear down either.
+        self::assertFalse($runner->issued('cp -a'), 'no codebase may be seeded');
+        self::assertFalse($runner->issued('git clone'), 'no repository may be cloned');
+        self::assertFalse($runner->issued('ddev config'));
+        self::assertFalse($runner->issued('ddev delete'));
+    }
+
+    /**
+     * A registration the engine did not report an approot for is a question
+     * that was not answered, not a conflict — an older engine, or a
+     * description shape this tool does not know. Provisioning proceeds and the
+     * engine keeps the right to refuse for itself. (This is also the default
+     * every other provisioning test runs under.)
+     */
+    public function testProvisioningProceedsWhenTheEngineReportsNoProjectRoot(): void
+    {
+        $runner = $this->engine();
+
+        $environment = $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+
+        self::assertSame(self::projectName(), $environment->projectName);
+        self::assertTrue($runner->issued('ddev config'));
+    }
+
+    /**
+     * The case the pre-flight cannot see: the engine's record survives but the
+     * directory it names is gone, so `describe` has no approot to report and
+     * the refusal only arrives from `ddev config`. Translated to the same
+     * guidance rather than surfaced as a wall of engine output.
+     *
+     * The engine's exact wording is reproduced, because that is what the
+     * translation reads — a generic failure would never exercise it.
+     */
+    public function testTheEnginesOwnRootRefusalIsTranslatedIntoTheSameGuidance(): void
+    {
+        $enginesWords = 'could not write DDEV config file /new/path/.ddev/config.yaml: project '
+            . self::projectName() . ' project root is already set to /Users/owen/.upkeep-scratch/projects/'
+            . self::projectName() . ', refusing to change it to /new/path';
+
+        $runner = $this->engine(['ddev config' => new AdapterException($enginesWords)]);
+
+        try {
+            $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+            self::fail('Expected the engine refusal to surface.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('ddev stop --unlist ' . self::projectName(), $e->getMessage());
+            self::assertStringContainsString('does not delete', $e->getMessage());
+            // The engine's own text is kept underneath: it names the old path,
+            // which is the thing the operator has to recognise.
+            self::assertStringContainsString('/Users/owen/.upkeep-scratch/projects/', $e->getMessage());
+        }
+    }
+
+    /** An unrelated provisioning failure is left exactly as the engine wrote it. */
+    public function testAnUnrelatedProvisioningFailureIsNotDressedUpAsThisOne(): void
+    {
+        $runner = $this->engine(['ddev config' => new AdapterException('docker: daemon not running')]);
+
+        try {
+            $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+            self::fail('Expected the engine failure to surface.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('daemon not running', $e->getMessage());
+            self::assertStringNotContainsString('ddev stop --unlist', $e->getMessage());
+        }
+    }
 }

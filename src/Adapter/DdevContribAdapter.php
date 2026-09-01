@@ -612,6 +612,17 @@ final class DdevContribAdapter implements EngineAdapterInterface
             $coreMajor,
         ));
 
+        // Asked before anything is built. Engine project names are global to
+        // the machine while the projects root is configurable, so a moved root
+        // collides with whatever the old one registered — and the engine
+        // refuses that at `config` time, which is after a codebase has been
+        // seeded and a repository cloned. Same refusal, a minute earlier, and
+        // with the recovery command in it.
+        $registration = ProjectRegistration::of($projectName, $this->describe($projectName));
+        if ($registration->conflictsWith($projectPath)) {
+            throw $registration->conflictException($projectPath);
+        }
+
         // Warning suppressed, not the failure: the reason a projects root
         // cannot be created belongs in the AdapterException naming the path,
         // not in a PHP notice on stderr ahead of it.
@@ -709,6 +720,16 @@ final class DdevContribAdapter implements EngineAdapterInterface
             } catch (\Throwable $cleanup) {
                 ($this->log)('Cleanup after failed provisioning also failed: ' . $cleanup->getMessage());
             }
+
+            // The pre-flight above catches this when the engine can still
+            // describe the old registration. It cannot when the old directory
+            // is gone but the record survives — so the engine's own refusal is
+            // translated too, rather than surfacing as an unactionable wall of
+            // its output.
+            if (ProjectRegistration::isRootConflict($e->getMessage())) {
+                throw ProjectRegistration::of($projectName, null)->rootConflictException($projectPath, $e);
+            }
+
             throw $e;
         }
     }

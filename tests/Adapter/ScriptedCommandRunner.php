@@ -30,11 +30,11 @@ final class ScriptedCommandRunner implements CommandRunner
     /** @var list<array{command: list<string>, cwd: ?string, timeout: int}> */
     public array $invocations = [];
 
-    /** @var \Closure(list<string>, ?string): (string|CapturedProcess|null) */
+    /** @var \Closure(list<string>, ?string): (string|CapturedProcess|AdapterException|null) */
     private \Closure $responder;
 
     /**
-     * @param ?\Closure(list<string>, ?string): (string|CapturedProcess|null) $responder
+     * @param ?\Closure(list<string>, ?string): (string|CapturedProcess|AdapterException|null) $responder
      *        null answers every command with empty, successful output
      */
     public function __construct(?\Closure $responder = null)
@@ -45,6 +45,12 @@ final class ScriptedCommandRunner implements CommandRunner
     public function run(array $command, ?string $cwd = null, int $timeout = self::DEFAULT_TIMEOUT): string
     {
         $result = $this->answer($command, $cwd, $timeout);
+        // A scripted AdapterException is thrown as written, so a test can
+        // reproduce an engine's *own wording* — which some failure handling
+        // reads, and which a generic "Command failed" could never exercise.
+        if ($result instanceof AdapterException) {
+            throw $result;
+        }
         if (!\is_string($result)) {
             throw new AdapterException(sprintf('Command failed: %s', implode(' ', $command)));
         }
@@ -66,9 +72,16 @@ final class ScriptedCommandRunner implements CommandRunner
             return $result;
         }
 
+        // A scripted exception is a *thrown* failure, which capture() by
+        // contract never does: it reports the outcome as data. So it becomes
+        // the failing outcome, carrying its message as the output would.
         return new CapturedProcess(
             exitCode: \is_string($result) ? 0 : 1,
-            output: $result ?? '',
+            output: match (true) {
+                \is_string($result) => $result,
+                $result instanceof AdapterException => $result->getMessage(),
+                default => '',
+            },
             timedOut: false,
             durationSeconds: 0.0,
         );
@@ -105,7 +118,7 @@ final class ScriptedCommandRunner implements CommandRunner
     /**
      * @param list<string> $command
      */
-    private function answer(array $command, ?string $cwd, int $timeout): string|CapturedProcess|null
+    private function answer(array $command, ?string $cwd, int $timeout): string|CapturedProcess|AdapterException|null
     {
         $this->invocations[] = ['command' => $command, 'cwd' => $cwd, 'timeout' => $timeout];
 
