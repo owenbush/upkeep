@@ -46,6 +46,20 @@ h1 { margin: 0; font-size: 1rem; letter-spacing: .06em; text-transform: uppercas
 
 #meta { margin-left: auto; color: var(--muted); }
 
+.views { display: flex; gap: .25rem; }
+.views button {
+  padding: .35rem .8rem;
+  background: none; color: var(--muted);
+  border: 1px solid transparent; border-radius: 6px;
+  font: inherit; cursor: pointer;
+}
+.views button:hover { color: var(--text); }
+.views button[aria-selected="true"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 main { padding: 1rem 1.25rem 6rem; }
 
 .module { margin-bottom: .5rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
@@ -72,6 +86,22 @@ main { padding: 1rem 1.25rem 6rem; }
   border-top: 1px solid var(--line);
 }
 .row-patch .subject { color: var(--amber); }
+
+/* The issue queue: one more column than a contribution row, and the actions
+   sit together at the end. */
+.row-issue {
+  grid-template-columns: 6rem 6rem 5rem 6rem minmax(12rem, 1fr) auto;
+}
+.row-issue .contribution { color: var(--muted); }
+/* Unclaimed work is the point of this view, so it is highlighted rather than
+   muted like an absence. */
+.row-unclaimed .contribution { color: var(--accent); }
+.status-RTBC { color: var(--green); }
+.status-review { color: var(--amber); }
+.status-active { color: var(--accent); }
+
+.actions { display: flex; gap: .4rem; }
+button.publish:hover { border-color: var(--amber); color: var(--amber); }
 .subject a { color: inherit; }
 .core, .cell, .status { color: var(--muted); }
 .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -109,6 +139,23 @@ button.refresh { margin-top: .9rem; border-radius: 6px; }
   font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap; word-break: break-word;
 }
+
+#confirm {
+  max-width: 26rem; padding: 1.25rem;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+#confirm::backdrop { background: rgb(0 0 0 / .55); }
+#confirm p { margin: 0 0 .75rem; }
+.confirm-note { color: var(--muted); font-size: .9em; }
+#confirm menu { display: flex; gap: .5rem; justify-content: flex-end; margin: 1rem 0 0; padding: 0; }
+#confirm menu button {
+  padding: .35rem .9rem;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px;
+  font: inherit; cursor: pointer;
+}
+#confirm menu button.danger { border-color: var(--amber); color: var(--amber); }
 
 .state-running { color: var(--accent); }
 .state-succeeded { color: var(--green); }

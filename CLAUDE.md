@@ -144,7 +144,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   outlive the server (`JobStore` reconciles); and the page polls with a byte
   offset rather than holding a stream, because the built-in server has few
   workers and an offset is the only thing a client must remember across a
-  refresh. **Merging is deliberately absent** — the DA stance is one human
+  refresh. The page has two views over one snapshot — contribution rows and the
+  whole issue queue — and offers `start` and `publish` alongside the check
+  actions. `publish` is the only action reaching outside the machine, so the
+  page confirms it before asking; `start` needs no guard because it resumes
+  rather than resets. **Merging is deliberately absent** — the DA stance is one human
   approval per merge and a button that POSTs an action name is not the per-MR
   prompt that earns it; that needs its own design before it needs code.
   `Ui\UiServer` is the single documented exception to the
@@ -185,7 +189,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5727/5727), methods (683/683) and classes (141/141), 1178 tests.
+lines (5770/5770), methods (686/686) and classes (141/141), 1187 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

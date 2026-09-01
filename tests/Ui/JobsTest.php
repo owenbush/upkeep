@@ -68,6 +68,10 @@ final class JobsTest extends TestCase
         yield 'check with MR zero' => ['check', ['module' => 'widget', 'mr' => '0']];
         yield 'patch-check without an issue' => ['patch-check', ['module' => 'widget']];
         yield 'patch-check with a flag as the issue' => ['patch-check', ['module' => 'widget', 'issue' => '--help']];
+        yield 'start without an issue' => ['start', ['module' => 'widget']];
+        yield 'start with a shell attempt' => ['start', ['module' => 'widget', 'issue' => '1; rm -rf /']];
+        yield 'publish without an issue' => ['publish', ['module' => 'widget']];
+        yield 'publish with issue zero' => ['publish', ['module' => 'widget', 'issue' => '0']];
     }
 
     /**
@@ -77,6 +81,37 @@ final class JobsTest extends TestCase
     public function testOnlyWhitelistedRecipesEverBecomeACommandLine(string $action, array $params): void
     {
         self::assertNull(JobAction::build($action, $params));
+    }
+
+    /**
+     * The issue loop, as the browser may ask for it. `start` is local and
+     * resumes rather than resets, so a button that fires twice loses nothing;
+     * `publish` is the one action that reaches outside the machine.
+     */
+    public function testTheIssueLoopIsAvailableToTheBrowser(): void
+    {
+        $start = JobAction::build('start', ['module' => 'widget', 'issue' => '3223746', 'core' => '11']);
+        self::assertNotNull($start);
+        self::assertSame(['start', 'widget', '3223746', '--version=11', '--no-interaction'], $start->argv);
+        self::assertSame('start widget #3223746', $start->label);
+
+        $publish = JobAction::build('publish', ['module' => 'widget', 'issue' => '3223746', 'core' => '11']);
+        self::assertNotNull($publish);
+        self::assertSame(['publish', 'widget', '3223746', '--version=11', '--no-interaction'], $publish->argv);
+    }
+
+    /**
+     * `publish` opens a merge request; it is not, and must never become, the
+     * merge call. Those are opposite acts.
+     */
+    public function testPublishIsNotAMergeInDisguise(): void
+    {
+        $publish = JobAction::build('publish', ['module' => 'widget', 'issue' => '3223746']);
+
+        self::assertNotNull($publish);
+        self::assertNotContains('merge', $publish->argv);
+        self::assertNotContains('--fast-lane', $publish->argv);
+        self::assertSame('publish', $publish->argv[0]);
     }
 
     public function testTheThreeActionsBuildTheCommandsTheirNamesPromise(): void

@@ -81,7 +81,8 @@ final readonly class RowFactory
      * uses, so an issue the patch report calls covered is one the dashboard
      * leaves out — the two views cannot disagree about what needs attention.
      * An issue carried entirely by a real branch already has an MR row above
-     * and contributes nothing here.
+     * and contributes nothing here, and neither does one carrying no patch:
+     * that is `upkeep issues`' subject, not the dashboard's.
      *
      * @return list<DashboardRow> ordered by issue nid, then tracked core version
      */
@@ -105,6 +106,15 @@ final readonly class RowFactory
         $rows = [];
         foreach ($contributions as $contribution) {
             if ($contribution->kind()->isCoveredByMergeRequest()) {
+                continue;
+            }
+            // The dashboard is about *contributions*, so a patch row needs a
+            // patch. This became a real filter when the snapshot widened to
+            // every open status: an issue nobody has contributed to is no
+            // longer a rare curiosity but most of the queue (29 of pathauto's
+            // 93), and it belongs in `upkeep issues`, where being unclaimed is
+            // the point rather than an oddity.
+            if ($contribution->issue->patchCount() === 0) {
                 continue;
             }
             foreach ($cores as $core) {

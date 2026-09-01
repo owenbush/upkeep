@@ -23,6 +23,11 @@ use Upkeep\Adapter\ProjectName;
  * table of checkboxes next to a "merge selected" control is precisely the
  * batch mode the CLI refuses to have. Merging from the UI needs its own design
  * before it needs code.
+ *
+ * `publish` is the one action that reaches outside this machine, and it is
+ * *not* the same call: it proposes work for review, which is what the merge
+ * policy exists to protect rather than to restrict. The page still confirms it
+ * before asking, because a merge request is public the moment it exists.
  */
 final readonly class JobAction
 {
@@ -58,6 +63,8 @@ final readonly class JobAction
                 sprintf('refresh %s', $module),
                 ['dashboard', '--refresh=' . $module, '--no-interaction'],
             ),
+            'start' => self::start($module, $core, self::positive($params['issue'] ?? null)),
+            'publish' => self::publish($module, $core, self::positive($params['issue'] ?? null)),
             default => null,
         };
     }
@@ -90,6 +97,45 @@ final readonly class JobAction
                 self::coreOption($core),
                 ['--latest', '--no-interaction'],
             ),
+        );
+    }
+
+    /**
+     * Open a work branch for an issue. Local and non-destructive: `start`
+     * resumes an existing branch as it stands rather than resetting it, so a
+     * button that fires twice cannot lose anything.
+     */
+    private static function start(string $module, ?string $core, ?int $issue): ?self
+    {
+        if ($issue === null) {
+            return null;
+        }
+
+        return new self(
+            sprintf('start %s #%d', $module, $issue),
+            array_merge(['start', $module, (string) $issue], self::coreOption($core), ['--no-interaction']),
+        );
+    }
+
+    /**
+     * Push a work branch and open its merge request.
+     *
+     * The only action here that reaches outside this machine, so the page
+     * confirms it before asking — a merge request is public the moment it
+     * exists, and closing one is not the same as never having opened it.
+     * Still not a merge: proposing work for review is the opposite of the risk
+     * the one-approval-per-merge stance manages, and no action name maps onto
+     * `merge` at all.
+     */
+    private static function publish(string $module, ?string $core, ?int $issue): ?self
+    {
+        if ($issue === null) {
+            return null;
+        }
+
+        return new self(
+            sprintf('publish %s #%d', $module, $issue),
+            array_merge(['publish', $module, (string) $issue], self::coreOption($core), ['--no-interaction']),
         );
     }
 

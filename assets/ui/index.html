@@ -10,6 +10,10 @@
 <header>
   <h1>upkeep</h1>
   <input id="filter" type="search" placeholder="Filter modules, issues, titles…" autocomplete="off">
+  <div class="views" role="tablist" aria-label="View">
+    <button id="view-work" type="button" role="tab" aria-selected="true">Waiting for you</button>
+    <button id="view-issues" type="button" role="tab" aria-selected="false">Issue queue</button>
+  </div>
   <span id="meta"></span>
 </header>
 
@@ -35,6 +39,17 @@
     <div class="rows" hidden></div>
   </section>
 </template>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <p class="confirm-note">This is the only thing here that leaves your machine.</p>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button id="confirm-ok" value="ok" class="danger">Publish</button>
+    </menu>
+  </form>
+</dialog>
 
 <script src="/app.js" defer></script>
 </body>

@@ -54,12 +54,6 @@ use Upkeep\Workflow\ExitCode;
 final class DashboardCommand extends UpkeepCommand
 {
     /**
-     * The issue statuses a patch row can be about — the same two `patches`
-     * scans, so the two views never disagree about what is in play.
-     */
-    private const PATCH_STATUSES = [IssueStatus::NeedsReview, IssueStatus::Rtbc];
-
-    /**
      * @param ?GitlabClient    $client       injected in tests; built from the resolved token otherwise
      * @param ?DrupalOrgClient $drupalClient injected in tests; built with HttpClient::create() otherwise
      */
@@ -466,13 +460,16 @@ final class DashboardCommand extends UpkeepCommand
             $issueData[$nid] = $issue?->toApiArray();
         }
 
-        // The patch side of the same module, cached alongside the MR side so a
-        // dashboard run off the cache still costs nothing. This is the
-        // expensive half of a --refresh: drupal.org returns attachments as
-        // references, so every one of them is a request (see DrupalOrgClient).
+        // Every *open* issue, not only the two statuses a contribution sits
+        // in. One snapshot serves both questions a maintainer asks — "what is
+        // waiting for me?" and "what could I work on?" — and each consumer
+        // narrows it: the dashboard to contributions, `issues` and the browser
+        // UI to the whole queue. This is the expensive half of a --refresh:
+        // drupal.org returns attachments as references, so every one of them
+        // is a request (see DrupalOrgClient).
         $patchIssueData = array_map(
             static fn (Issue $issue): array => $issue->toApiArray(),
-            $drupal->projectIssues($module->name, self::PATCH_STATUSES),
+            $drupal->projectIssues($module->name, IssueStatus::open()),
         );
 
         return new ModuleSnapshot(

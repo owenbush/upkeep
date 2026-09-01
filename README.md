@@ -682,11 +682,19 @@ something edited in place (a gist) is not.
 upkeep ui
 ```
 
-serves the cockpit as a page on `127.0.0.1` and opens it. One table, filterable,
-modules expandable in place — the progressive disclosure a terminal cannot do,
-which is what makes a 244-row module readable. Rows carry a **Check** button
-that runs `check` or `patch:check` in the background and streams the output
-into a drawer; a finished job refreshes the rows it affected.
+serves the cockpit as a page on `127.0.0.1` and opens it. Filterable, modules
+expandable in place — the progressive disclosure a terminal cannot do, which is
+what makes a 244-row module readable.
+
+Two views, mirroring the two questions:
+
+- **Waiting for you** — the contribution rows. A **Check** button runs `check`
+  or `patch:check` in the background and streams the output into a drawer.
+- **Issue queue** — every open issue, contribution as a column, unclaimed work
+  highlighted. **Start** opens a work branch; **Publish** pushes it and opens
+  the merge request.
+
+A finished job refreshes the rows it affected.
 
 `--port=N` picks the port, `--no-open` suppresses the browser. It runs in the
 foreground until Ctrl-C — there is no daemon, no pid file, and no port left
@@ -702,11 +710,19 @@ they already had to have. Binding to loopback keeps the port off the network,
 but not away from other software on the machine — the token is the actual
 barrier.
 
+**Publish is the only thing that leaves your machine, and it asks first.** A
+merge request is public the moment it exists, so the button opens a
+confirmation rather than firing. `Start` needs no such guard: it is local, and
+resumes an existing branch rather than resetting it, so pressing it twice loses
+nothing.
+
 **It cannot merge.** The Drupal Association stance is one human approval per
 merge, and `merge --fast-lane`'s per-MR prompt is what earns that; a button
 that posts an action name is not the same thing, and a table of checkboxes
 beside a "merge selected" control is exactly the batch mode this tool refuses
-to have. Merging from the browser needs its own design first.
+to have. Publishing is not that call — it proposes work for review, which is
+what the policy protects rather than restricts — but *merging* from the browser
+still needs its own design first.
 
 **It is a renderer, not a second tool.** What it shows comes from the same
 `RowFactory` the CLI table and the fast-lane gate consume, and what it *does*

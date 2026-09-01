@@ -247,6 +247,120 @@ final class UiSurfaceTest extends TestCase
         self::assertNotNull($module['cached']);
     }
 
+    /**
+     * The queue the page's second view renders: every open issue, contribution
+     * as a column. Built from the same snapshot as the contribution rows, so
+     * the page cannot show an issue the terminal would not.
+     */
+    public function testTheIssueQueueIsExposedAlongsideTheContributionRows(): void
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
+            [[
+                'iid' => 7,
+                'title' => 'Issue #3467675: a change',
+                'state' => 'opened',
+                'author' => ['username' => 'alice', 'id' => 1],
+                'source_branch' => '3467675-fix',
+                'target_branch' => '1.0.x',
+                'sha' => str_repeat('a', 40),
+                'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
+                'diff_refs' => ['base_sha' => 'base', 'head_sha' => 'head'],
+            ]],
+            [],
+            [
+                // Active with nothing on it — invisible under the old scan, and
+                // the row the queue view exists for.
+                self::issuePayload(3611658, '1', 'Cache grows unbounded'),
+                // Needs review, carried by the merge request above.
+                self::issuePayload(3467675, '8', 'A change'),
+                // RTBC with a patch.
+                self::issuePayload(3398583, '14', 'Prevent dot aliases', [['p.patch', 'https://x.test/p.patch']]),
+            ],
+        ));
+
+        $module = self::arr(self::arr((new StateBuilder(new Cockpit($this->cockpit)))->build()['modules'])[0]);
+        $issues = array_map(self::arr(...), self::arr($module['issues']));
+
+        self::assertCount(3, $issues, 'every open status, not only the contribution-shaped two');
+
+        // Ordered most actionable first: what awaits a maintainer, then the
+        // rest newest first — exactly as `upkeep issues` orders it.
+        self::assertSame([3467675, 3398583, 3611658], array_column($issues, 'nid'));
+
+        self::assertTrue($issues[2]['unclaimed'], 'the Active issue is unclaimed');
+        self::assertFalse($issues[2]['awaits_maintainer']);
+        self::assertSame(7, $issues[0]['mr'], 'the covered issue names its merge request');
+        self::assertTrue($issues[0]['awaits_maintainer']);
+        self::assertSame(1, $issues[1]['patches']);
+        self::assertFalse($issues[1]['unclaimed']);
+    }
+
+    /**
+     * The dashboard stayed contribution-shaped when the snapshot widened: an
+     * issue nobody has contributed to is `upkeep issues`' subject, not a row
+     * on a view about what is waiting for you.
+     */
+    public function testAnUnclaimedIssueIsInTheQueueButNotInTheContributionRows(): void
+    {
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
+            [],
+            [],
+            [self::issuePayload(3611658, '1', 'Cache grows unbounded')],
+        ));
+
+        $module = self::arr(self::arr((new StateBuilder(new Cockpit($this->cockpit)))->build()['modules'])[0]);
+
+        self::assertCount(1, self::arr($module['issues']));
+        self::assertSame([], $module['rows'], 'no patch, so no contribution row');
+    }
+
+    /**
+     * @param list<array{string, string}> $patches
+     *
+     * @return array<string, mixed>
+     */
+    private static function issuePayload(int $nid, string $status, string $title, array $patches = []): array
+    {
+        return [
+            'nid' => $nid,
+            'title' => $title,
+            'url' => 'https://www.drupal.org/node/' . $nid,
+            'field_issue_status' => $status,
+            'field_issue_priority' => '200',
+            'field_project' => ['machine_name' => 'widget'],
+            'field_issue_files' => array_map(
+                static fn (array $p): array => ['file' => [
+                    'filename' => $p[0],
+                    'url' => $p[1],
+                    'filesize' => '10',
+                    'timestamp' => '1705400000',
+                ]],
+                $patches,
+            ),
+        ];
+    }
+
+    /** The page offers both views and the confirmation the outward act needs. */
+    public function testTheShippedPageOffersBothViewsAndConfirmsPublishing(): void
+    {
+        $assets = Assets::bundled();
+
+        self::assertStringContainsString('view-issues', $assets->page());
+        self::assertStringContainsString('view-work', $assets->page());
+        self::assertStringContainsString('<dialog id="confirm"', $assets->page());
+        self::assertStringContainsString("action: 'start'", $assets->script());
+        self::assertStringContainsString('confirmPublish', $assets->script());
+        // Publishing goes through the dialog, never straight from the button.
+        self::assertStringNotContainsString(
+            "publish.addEventListener('click', () => startJob(",
+            $assets->script(),
+        );
+    }
+
     // --------------------------------------------------------------- server
 
     public function testTheServerIsBoundToLoopbackAndRoutedThroughTheFrontController(): void
