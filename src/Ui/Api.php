@@ -59,12 +59,10 @@ final readonly class Api
      * would map the surface for anything probing the port — with exactly one
      * exception.
      *
-     * A person navigating to the page itself gets an explanation, because
-     * three deliberate choices combine into a dead end that looks like a bug:
-     * the token is minted per run, the page strips it from the URL once it has
-     * it, and the refusal says nothing. A tab left open across a restart
-     * therefore holds a cookie that no longer works, has no token left in its
-     * address bar to retry with, and is told only "Not found."
+     * A person navigating to the page itself gets an explanation. The token is
+     * minted per run, so a tab left open across a restart — or a bookmark —
+     * presents one the server no longer accepts, and a flat refusal tells them
+     * nothing about which of many possible things is wrong.
      *
      * It costs nothing to say so. Anything probing this port already knows
      * something answers on it, and the actions stay behind the same flat 404
@@ -80,8 +78,22 @@ final readonly class Api
     }
 
     /**
-     * The page, and the one moment the token moves from the URL into a cookie
-     * so it stops living in the address bar, the history, and any screenshot.
+     * The page, and the moment the token is also placed in a cookie.
+     *
+     * The cookie is not a duplicate: the page's own subresources —
+     * `/app.js`, `/app.css` — and its API calls carry no query string, so
+     * something has to authenticate them, and a cookie does it without
+     * threading the token through every request the client makes. It also
+     * gets `SameSite=Strict`, which keeps it off cross-site requests entirely.
+     *
+     * The token deliberately *stays* in the address bar. Removing it read as
+     * tidier and made the tool strand people: a restart mints a new token, and
+     * a tab whose URL had been cleaned had nothing left to present and no way
+     * to find the new link except the terminal it was printed in. Leaving it
+     * there means the current link is always recoverable from the address bar
+     * or browser history. The cost is that a screenshot of the window shows
+     * the token for the life of that run, which is the better trade for a
+     * process that exits when you press Ctrl-C.
      */
     private function page(Request $request): Response
     {

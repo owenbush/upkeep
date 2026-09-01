@@ -374,10 +374,28 @@ final class UiSurfaceTest extends TestCase
         self::assertStringContainsString('Ctrl', $page);
         self::assertStringContainsString('upkeep ui', $page);
         self::assertStringContainsString('never written to disk', $page);
+        // The recovery that does not need the terminal at all.
+        self::assertStringContainsString('browser history', $page);
         // Self-contained: every asset it might link is behind the token its
         // reader does not have.
         self::assertStringNotContainsString('/app.css', $page);
         self::assertStringNotContainsString('/app.js', $page);
+    }
+
+    /**
+     * The token stays in the address bar on purpose.
+     *
+     * Removing it read as tidier and stranded people: a restart mints a new
+     * one, and a tab whose URL had been cleaned had nothing left to present
+     * and no way to find the current link except the terminal it was printed
+     * in. Left there, the link is always recoverable from history.
+     */
+    public function testTheClientDoesNotStripTheTokenFromTheAddressBar(): void
+    {
+        $script = Assets::bundled()->script();
+
+        self::assertStringNotContainsString('replaceState', $script);
+        self::assertStringNotContainsString('location.pathname', $script);
     }
 
     public function testTheShippedPageOffersBothViewsAndConfirmsPublishing(): void

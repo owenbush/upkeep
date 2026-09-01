@@ -150,7 +150,13 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   the operator deliberately presenting a credential while the cookie is only
   what an earlier visit left behind; the other order made a restart
   unrecoverable, every fresh launch link being shadowed by the previous run's
-  cookie — refusals are a flat identical 404 with exactly one exception,
+  cookie. The token stays in the address bar deliberately: stripping it read as
+  tidier and stranded people, since a restart mints a new one and a cleaned URL
+  has nothing left to present. The cookie is not a duplicate — the page's own
+  subresources and API calls carry no query string, and it brings
+  `SameSite=Strict` with it. The point of any of this is that a localhost port
+  is reachable by any page the operator visits, and this one has a GitLab PAT
+  behind it — refusals are a flat identical 404 with exactly one exception,
   a GET of `/`, which serves a self-contained explanation because a per-run
   token plus a URL the page strips plus a silent refusal otherwise leaves a tab
   open across a restart unable to recover or to say why; and `upkeep ui`
@@ -208,7 +214,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5836/5836), methods (696/696) and classes (142/142), 1207 tests.
+lines (5836/5836), methods (696/696) and classes (142/142), 1208 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
