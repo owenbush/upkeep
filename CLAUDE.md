@@ -124,6 +124,26 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `diff_refs.base_sha != head_sha` — `changes_count` is null on an empty MR
   and `detailed_merge_status` reads `draft_status` for a draft, so both lie).
   Unknown emptiness always reads as real work; nothing may treat it as empty.
+  `Patches\PatchAttribution` is the commit message a *promoted* patch travels
+  under (`patch:promote`): promoting is the one operation here that moves
+  another person's work into history under whoever pushes it, so the message
+  names the account that posted the file, in drupal.org's own
+  `Issue #NNN by author: Title` convention — which `IssueReference` already
+  parses, so the resulting MR pairs with its issue by the ordinary rule.
+  **No `--author`, no `Co-authored-by:`, ever**: both want an email, api-d7
+  publishes a username and a profile URL and no address, and a synthesised one
+  would put a guess about somebody's identity into permanent history. An
+  unresolvable author is warned about and the commit says the work is not the
+  promoter's — silence there is the exact misappropriation the attribution
+  exists to prevent. The author costs one extra request and no more: the file
+  resource's `owner` reference is already in the payload the client
+  dereferences for the filename (`IssueFile::$ownerUid`), so only
+  `DrupalOrgClient::user()` is new work, once per promotion.
+  `patch:promote` stops at the commit — `publish` is the outward-facing half,
+  and it routes through `EngineAdapterInterface::promotePatch()`, which
+  delegates to `startWork()` rather than reimplementing it: a work branch may
+  hold the only copy of something, so it must never meet `applyPatch`'s
+  `checkout -B`.
 - `src/Dashboard/`, `src/Results/` — dashboard row assembly, cached check
   results (`<cockpit>/results/`). The dashboard is two-tier: bare `dashboard`
   renders `Dashboard\ModuleSummary` (one line per module), naming a module or
@@ -231,7 +251,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6118/6118), methods (712/712) and classes (145/145), 1243 tests.
+lines (6226/6226), methods (728/728) and classes (148/148), 1272 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

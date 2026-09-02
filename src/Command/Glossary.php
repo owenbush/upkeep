@@ -71,6 +71,19 @@ final readonly class Glossary
                     . 'on many projects. Any patch beside it is the only work there is.',
                 'dashboard STATUS, patches MR column',
             ],
+            'promote' => [
+                'Turning a patch into a merge request: `upkeep patch:promote` applies the patch onto the issue\'s '
+                    . 'work branch and commits it, crediting whoever posted it by name, and `upkeep publish` opens '
+                    . 'the MR. Nothing is pushed by the first step — putting somebody else\'s work on drupal.org '
+                    . 'under your account is a step a human types.',
+                'patch:promote',
+            ],
+            'Patch-author' => [
+                'A trailer on a promoted patch\'s commit naming the drupal.org account that posted the file. There '
+                    . 'is deliberately no Co-authored-by: — that wants an email address, drupal.org publishes none, '
+                    . 'and inventing one would be a guess about somebody\'s identity written into permanent history.',
+                'patch:promote commit message',
+            ],
             'unclaimed' => [
                 'An open issue with no merge request and no patch. Nobody has started it — which makes it the '
                     . 'most actionable row on an issue list, not the least.',

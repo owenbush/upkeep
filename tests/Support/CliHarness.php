@@ -32,6 +32,7 @@ use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\NotesCommand;
 use Upkeep\Command\PatchApplyCommand;
 use Upkeep\Command\PatchCheckCommand;
+use Upkeep\Command\PatchPromoteCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\PublishCommand;
@@ -441,6 +442,7 @@ final class CliHarness
             new NotesCommand($this->gitlab),
             new PatchApplyCommand($engines, $this->drupalOrg, $this->patchDownloader),
             new PatchCheckCommand($engines, $this->drupalOrg, $this->patchDownloader),
+            new PatchPromoteCommand($engines, $this->drupalOrg, $this->patchDownloader),
             new PatchesCommand($this->drupalOrg, $this->gitlab),
             new PruneCommand($engines, $probe),
             new PublishCommand($engines, $this->gitlab, $this->drupalOrg),

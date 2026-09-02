@@ -45,6 +45,8 @@ abstract class AbstractPatchCommand extends UpkeepCommand
         parent::__construct();
     }
 
+    private ?DrupalOrgClient $drupal = null;
+
     protected function configurePatchSurface(): void
     {
         $this->addModuleArgument();
@@ -112,8 +114,7 @@ abstract class AbstractPatchCommand extends UpkeepCommand
         $nid = self::issueNid($input);
 
         $io->writeln(sprintf('Resolving issue #%d via drupal.org ...', $nid));
-        $drupal = $this->drupalClient ?? new DrupalOrgClient(HttpClient::create());
-        $issue = $drupal->issue($nid) ?? throw new WorkflowException(sprintf(
+        $issue = $this->drupal()->issue($nid) ?? throw new WorkflowException(sprintf(
             'drupal.org issue #%d could not be read. Check the node id (it is the number in the issue URL).',
             $nid,
         ));
@@ -192,6 +193,17 @@ abstract class AbstractPatchCommand extends UpkeepCommand
         $index = array_search($answer, $labels, true);
 
         return $candidates[$index === false ? 0 : $index];
+    }
+
+    /**
+     * The drupal.org client for this invocation — one instance, so a command
+     * that asks a follow-up question (patch:promote resolving the author of
+     * the file it just chose) shares the memo and the warning list with the
+     * resolution that preceded it.
+     */
+    protected function drupal(): DrupalOrgClient
+    {
+        return $this->drupal ??= $this->drupalClient ?? new DrupalOrgClient(HttpClient::create());
     }
 
     private function fetcher(Cockpit $cockpit): PatchFetcher
