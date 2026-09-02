@@ -12,12 +12,15 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Adapter\EngineAdapterFactory;
+use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Drupal\DrupalOrgClient;
+use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Gitlab\Project;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\MrContextResolver;
 use Upkeep\Workflow\WorkflowException;
@@ -131,6 +134,10 @@ final class PublishCommand extends UpkeepCommand
             ));
         }
 
+        $io->section('Issue fork');
+        $fork = self::requireIssueFork($client, $project, $issue->nid, $module->name);
+        $io->writeln(sprintf('Pushing to %s', $fork->pathWithNamespace));
+
         $adapter = $this->engines->create(
             $cockpit,
             self::stringOption($input, 'projects-root'),
@@ -140,11 +147,11 @@ final class PublishCommand extends UpkeepCommand
 
         $io->section('Push');
         $environment = $adapter->ensureEnv($module, $coreMajor);
-        $sha = $adapter->pushWork($environment, $branch);
+        $sha = $adapter->pushWork($environment, $branch, GitRemote::issueFork($issue->nid, $fork->sshUrl));
         $io->writeln(sprintf('Pushed %s at %s.', $branch->name, substr($sha, 0, 8)));
 
         $io->section('Merge request');
-        $existing = $client->mergeRequestForBranch($project, $branch->name);
+        $existing = $client->mergeRequestForBranch($project, $branch->name, $fork);
         if ($existing instanceof MergeRequest) {
             // Re-running publish after more commits is the normal way to update
             // an MR: the push above already moved it.
@@ -160,23 +167,30 @@ final class PublishCommand extends UpkeepCommand
             ));
         }
 
-        $target = self::stringOption($input, 'target') ?? $adapter->recordedBaseBranch($environment)
+        // The base the work was cut from, else what the project itself calls
+        // default. Never a tracked core major: those name versions of Drupal,
+        // not branches, and no contrib project has one called "11".
+        $target = self::stringOption($input, 'target')
+            ?? $adapter->recordedBaseBranch($environment)
+            ?? ($project->defaultBranch !== '' ? $project->defaultBranch : null)
             ?? throw new WorkflowException(sprintf(
                 "The branch was pushed, but upkeep does not know what to open the merge request against.\n"
-                . "It records the base when `start`, `patch:promote` or `check` puts work in an environment; "
-                . "this working copy has no record of one.\n"
                 . 'Name it: upkeep publish %s %d --target=<branch> (a branch on the project, like 2.0.x — not '
                 . 'a core version).',
                 $module->name,
                 $nid,
             ));
 
+        // Posted to the *fork*, which holds the branch, naming the canonical
+        // project as the destination. Backwards-looking until you remember
+        // that the branch is the subject of the request.
         $created = $client->createMergeRequest(
-            $project,
+            $fork,
             $branch->name,
             $target,
             self::title($input, $issue->nid, $issue->title),
             sprintf("Fixes %s\n\nOpened with `upkeep publish`.", $issue->url),
+            into: $project,
         );
 
         if ($created instanceof ApiFailure) {
@@ -197,6 +211,63 @@ final class PublishCommand extends UpkeepCommand
         ));
 
         return ExitCode::OK;
+    }
+
+    /**
+     * The issue fork, or a refusal explaining how to make one.
+     *
+     * upkeep does not create it. The fork is minted by drupal.org's own issue
+     * page, which is also what associates it with the issue — a fork conjured
+     * straight from the GitLab API would be a repository nothing links to,
+     * which is harder to clean up than the click was to make. So this is a
+     * browser handoff, like the issue status and the credit.
+     *
+     * Checked *before* anything is pushed: discovering it afterwards would
+     * leave a branch on a remote the operator never chose.
+     *
+     * @throws WorkflowException when there is no fork, or it cannot be read
+     */
+    private static function requireIssueFork(
+        GitlabClient $client,
+        Project $project,
+        int $nid,
+        string $module,
+    ): Project {
+        $fork = $client->issueFork($project, $nid);
+
+        if ($fork instanceof ApiFailure) {
+            throw new WorkflowException(sprintf(
+                'The issue fork for #%d could not be read: %s',
+                $nid,
+                $fork->message,
+            ));
+        }
+
+        if ($fork === null) {
+            throw new WorkflowException(sprintf(
+                "Issue #%d has no issue fork yet, and that is where the branch has to go — on drupal.org a "
+                . "merge request comes from a fork at issue/<module>-<nid>, never from the project itself.\n\n"
+                . "  1. Open %s\n"
+                . "  2. Click \"Create issue fork\" (under the issue summary)\n"
+                . "  3. Re-run: upkeep publish %s %d\n\n"
+                . 'upkeep does not create it: drupal.org mints the fork *and* links it to the issue, and one '
+                . 'made straight from the GitLab API would be a repository nothing points at.',
+                $nid,
+                IssueReference::issueUrl($nid),
+                $module,
+                $nid,
+            ));
+        }
+
+        if ($fork->sshUrl === '') {
+            throw new WorkflowException(sprintf(
+                'The issue fork %s reports no SSH URL, so upkeep does not know where to push. Report this — it '
+                . 'is a shape this tool has not seen.',
+                $fork->pathWithNamespace,
+            ));
+        }
+
+        return $fork;
     }
 
     /**

@@ -365,30 +365,32 @@ final class DdevContribAdapter implements EngineAdapterInterface
     }
 
     /**
-     * Points origin's *push* URL at SSH, leaving fetch on anonymous HTTPS.
+     * Makes `$remote` exist and point where it should, adding or re-pointing
+     * it as needed.
      *
-     * Done here rather than only at clone time so environments provisioned
-     * before this existed are fixed on first use, without re-provisioning —
-     * the same lazy repair ensureFixtureAddOn() does. A remote that is not a
-     * git.drupalcode.org HTTPS URL is left exactly as it is: see
-     * DrupalCodeRemote for why that refusal matters.
+     * The URL is GitLab's own `ssh_url_to_repo`, never assembled here:
+     * git.drupalcode.org serves HTTPS but advertises SSH on git.drupal.org,
+     * and a URL built from the host you cloned from does not answer. Origin is
+     * untouched — fetch stays anonymous over HTTPS, so checking a merge
+     * request or a patch still needs no key at all.
      */
-    private function ensureSshPushUrl(string $moduleDir): void
+    private function ensureRemote(string $moduleDir, GitRemote $remote): void
     {
         $current = self::trimmed($this->runner->tryRun(
-            ['git', '-C', $moduleDir, 'remote', 'get-url', '--push', 'origin'],
+            ['git', '-C', $moduleDir, 'remote', 'get-url', '--push', $remote->name],
         ));
+
         if ($current === null) {
+            ($this->log)(sprintf('Adding remote %s -> %s', $remote->name, $remote->url));
+            $this->runner->run(['git', '-C', $moduleDir, 'remote', 'add', $remote->name, $remote->url]);
+
             return;
         }
 
-        $ssh = DrupalCodeRemote::sshPushUrl($current);
-        if ($ssh === null) {
-            return;
+        if ($current !== $remote->url) {
+            ($this->log)(sprintf('Re-pointing remote %s -> %s', $remote->name, $remote->url));
+            $this->runner->run(['git', '-C', $moduleDir, 'remote', 'set-url', $remote->name, $remote->url]);
         }
-
-        ($this->log)(sprintf('Pushing over SSH (%s); fetch stays on anonymous HTTPS.', $ssh));
-        $this->runner->run(['git', '-C', $moduleDir, 'remote', 'set-url', '--push', 'origin', $ssh]);
     }
 
     /**
@@ -398,28 +400,31 @@ final class DdevContribAdapter implements EngineAdapterInterface
      * The unhelpful version of this message is git's own, which suggests a
      * password — the thing GitLab has just refused and will always refuse.
      */
-    private static function pushFailure(IssueBranch $branch, string $output): AdapterException
+    private static function pushFailure(IssueBranch $branch, GitRemote $remote, string $output): AdapterException
     {
         $looksLikeAuth = preg_match('/Access denied|Authentication failed|Permission denied|publickey/i', $output)
             === 1;
 
         if (!$looksLikeAuth) {
             return new AdapterException(sprintf(
-                "Pushing \"%s\" to origin failed:\n%s",
+                "Pushing \"%s\" to %s failed:\n%s",
                 $branch->name,
+                $remote->url,
                 trim($output),
             ));
         }
 
         return new AdapterException(sprintf(
-            "Pushing \"%s\" to origin was refused by git.drupalcode.org:\n%s\n\n"
+            "Pushing \"%s\" to %s was refused:\n%s\n\n"
             . "upkeep pushes over SSH and never hands git a password or a token, so this is your SSH key.\n"
             . "  - Add one at %s\n"
-            . "  - Check it works:  ssh -T git@git.drupalcode.org\n"
+            . "  - Check it works:  ssh -T %s\n"
             . '  - Make sure the agent has it:  ssh-add -l',
             $branch->name,
+            $remote->url,
             trim($output),
             DrupalCodeRemote::SSH_KEY_URL,
+            DrupalCodeRemote::sshHostOf($remote->url),
         ));
     }
 
@@ -472,7 +477,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         return $value === null ? null : trim($value);
     }
 
-    public function pushWork(Environment $environment, IssueBranch $branch): string
+    public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
     {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
@@ -496,16 +501,16 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ));
         }
 
-        $this->ensureSshPushUrl($moduleDir);
+        $this->ensureRemote($moduleDir, $remote);
 
         // No --force, and no lease: a rejected push means the remote moved,
         // which is a thing to look at rather than to overwrite.
-        ($this->log)(sprintf('Pushing %s to origin ...', $branch->name));
+        ($this->log)(sprintf('Pushing %s to %s ...', $branch->name, $remote->url));
         $push = $this->runner->capture(
-            ['git', '-C', $moduleDir, 'push', '--set-upstream', 'origin', $branch->name],
+            ['git', '-C', $moduleDir, 'push', '--set-upstream', $remote->name, $branch->name],
         );
         if ($push->exitCode !== 0) {
-            throw self::pushFailure($branch, $push->output);
+            throw self::pushFailure($branch, $remote, $push->output);
         }
 
         return trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));

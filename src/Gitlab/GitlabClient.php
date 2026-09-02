@@ -95,6 +95,36 @@ final class GitlabClient
     }
 
     /**
+     * The drupal.org issue fork for an issue, or null when there is none yet.
+     *
+     * This is how contributing to Drupal actually works, and the thing
+     * `publish` was built without: branches do not go on the canonical
+     * project. drupal.org's issue page mints a fork at
+     * `issue/<machine-name>-<nid>`, the branch is pushed there, and the merge
+     * request is opened *across* projects into the canonical one. Measured on
+     * pathauto: 100 of 100 open merge requests come from a fork and none from
+     * the project itself.
+     *
+     * A missing fork is **null, not a failure** — it is an ordinary state of
+     * an issue nobody has started, and the caller's job is to say how to make
+     * one rather than to report an error.
+     */
+    public function issueFork(Project $project, int $issueNid): Project|ApiFailure|null
+    {
+        $path = 'issue/' . $project->path . '-' . $issueNid;
+        $data = $this->get(
+            $this->apiBase . '/projects/' . rawurlencode($path),
+            $this->browserBase . '/' . $path,
+        );
+
+        if ($data instanceof NotFound) {
+            return null;
+        }
+
+        return $data instanceof ApiFailure ? $data : Project::fromApi($data);
+    }
+
+    /**
      * List open merge requests for a project.
      */
     public function openMergeRequests(Project $project): MergeRequestList|ApiFailure
@@ -279,26 +309,42 @@ final class GitlabClient
      * opening a merge request proposes work for review, which is the opposite
      * of the unattended-merge risk that policy exists to prevent.
      */
+    /**
+     * Opens a merge request from $project's branch.
+     *
+     * $into is the project the merge request targets when it differs from the
+     * one holding the branch — which on drupal.org is the normal case, not the
+     * exception: the branch lives on an issue fork and the merge request goes
+     * into the canonical project. GitLab wants such a request POSTed to the
+     * *source* project with target_project_id naming the destination, which
+     * reads backwards until you remember the branch is the subject.
+     */
     public function createMergeRequest(
         Project $project,
         string $sourceBranch,
         string $targetBranch,
         string $title,
         string $description = '',
+        ?Project $into = null,
     ): MergeRequest|ApiFailure {
+        $payload = [
+            'source_branch' => $sourceBranch,
+            'target_branch' => $targetBranch,
+            'title' => $title,
+            'description' => $description,
+            // Drupal.org convention: the branch is the contributor's and
+            // stays theirs. Nothing here deletes what it did not create.
+            'remove_source_branch' => false,
+        ];
+        if ($into !== null && $into->id !== $project->id) {
+            $payload['target_project_id'] = $into->id;
+        }
+
         $data = $this->request(
             'POST',
             $this->apiBase . '/projects/' . $project->id . '/merge_requests',
-            ['json' => [
-                'source_branch' => $sourceBranch,
-                'target_branch' => $targetBranch,
-                'title' => $title,
-                'description' => $description,
-                // Drupal.org convention: the branch is the contributor's and
-                // stays theirs. Nothing here deletes what it did not create.
-                'remove_source_branch' => false,
-            ]],
-            $project->webUrl . '/-/merge_requests/new',
+            ['json' => $payload],
+            ($into ?? $project)->webUrl . '/-/merge_requests/new',
         );
 
         return $data instanceof ApiFailure ? $data : MergeRequest::fromApi($data);
@@ -312,8 +358,19 @@ final class GitlabClient
      * request that already exists — and the useful outcome for an operator
      * re-running `publish` is a link to their own MR, not an error.
      */
-    public function mergeRequestForBranch(Project $project, string $sourceBranch): MergeRequest|ApiFailure|null
-    {
+    /**
+     * The open merge request for a branch, or null when there is none.
+     *
+     * $from narrows it to a branch on that project. Branch names on drupal.org
+     * are the issue node id and a slug, so the same name exists on every fork
+     * of an issue — without the narrowing, "is mine already open?" can answer
+     * yes about somebody else's.
+     */
+    public function mergeRequestForBranch(
+        Project $project,
+        string $sourceBranch,
+        ?Project $from = null,
+    ): MergeRequest|ApiFailure|null {
         $url = $this->apiBase . '/projects/' . $project->id . '/merge_requests?state=opened&per_page=100'
             . '&source_branch=' . rawurlencode($sourceBranch);
         $browserUrl = $project->webUrl . '/-/merge_requests';
@@ -327,7 +384,14 @@ final class GitlabClient
             return $rows;
         }
 
-        return $rows === [] ? null : MergeRequest::fromApi($rows[0]);
+        foreach ($rows as $row) {
+            $mr = MergeRequest::fromApi($row);
+            if ($from === null || $mr->sourceProjectId === null || $mr->sourceProjectId === $from->id) {
+                return $mr;
+            }
+        }
+
+        return null;
     }
 
     /**

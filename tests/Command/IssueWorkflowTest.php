@@ -311,30 +311,57 @@ final class IssueWorkflowTest extends TestCase
     // -------------------------------------------------------------- publish
 
     /**
-     * @param array<string, MockResponse> $routes substring => response
+     * The canonical project and, unless a test says otherwise, its issue fork
+     * — because on drupal.org a merge request always comes from one. The SSH
+     * URL is on git.drupal.org, which is the host GitLab really advertises
+     * and not the one serving the API.
+     *
+     * @param array<string, MockResponse>  $routes    substring => response
+     * @param ?array<string, mixed>         $forkData null for an issue nobody
+     *                                                has forked yet
      */
-    private function gitlab(array $routes): GitlabClient
+    private function gitlab(array $routes, ?array $forkData = self::FORK): GitlabClient
     {
         $project = [
             'id' => 42,
             'path' => 'widget',
             'path_with_namespace' => 'project/widget',
             'web_url' => 'https://git.drupalcode.org/project/widget',
+            'ssh_url_to_repo' => 'git@git.drupal.org:project/widget.git',
+            'default_branch' => '1.0.x',
         ];
 
         return new GitlabClient(
-            new MockHttpClient(static function (string $method, string $url) use ($routes, $project): MockResponse {
-                foreach ($routes as $needle => $response) {
-                    if (str_contains($url, $needle)) {
-                        return $response;
+            new MockHttpClient(
+                static function (string $method, string $url) use ($routes, $project, $forkData): MockResponse {
+                    foreach ($routes as $needle => $response) {
+                        if (str_contains($url, $needle)) {
+                            return $response;
+                        }
                     }
-                }
 
-                return self::json($project);
-            }),
+                    if (str_contains($url, 'issue%2F')) {
+                        return $forkData === null
+                            ? new MockResponse('', ['http_code' => 404])
+                            : self::json($forkData);
+                    }
+
+                    return self::json($project);
+                },
+            ),
             'test-token',
         );
     }
+
+    /** @var array<string, mixed> */
+    private const FORK = [
+        'id' => 218125,
+        'path' => 'widget-3223746',
+        'path_with_namespace' => 'issue/widget-3223746',
+        'web_url' => 'https://git.drupalcode.org/issue/widget-3223746',
+        'ssh_url_to_repo' => 'git@git.drupal.org:issue/widget-3223746.git',
+        'default_branch' => '1.0.x',
+    ];
 
     private static function mrPayload(int $iid, string $title): MockResponse
     {
@@ -345,6 +372,7 @@ final class IssueWorkflowTest extends TestCase
             'author' => ['username' => 'owen', 'id' => 1],
             'source_branch' => '3223746-fix-the-thing',
             'target_branch' => '1.0.x',
+            'source_project_id' => 218125,
             'sha' => str_repeat('a', 40),
             'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/' . $iid,
         ]);
@@ -393,10 +421,169 @@ final class IssueWorkflowTest extends TestCase
         self::assertStringContainsString('against 1.x', $cli->display());
     }
 
+    // ----------------------------------------------------------- issue forks
+
     /**
-     * With nothing recorded and nothing given, it says so and names the fix
-     * rather than guessing — a merge request opened against the wrong branch
-     * is a thing somebody else has to notice and close.
+     * The branch goes to the issue fork and the merge request is opened across
+     * projects into the canonical one.
+     *
+     * This is how contributing to Drupal works, and publish was built without
+     * it: it pushed to origin and opened a same-project merge request, which
+     * is not something anyone does. Measured on pathauto, 100 of 100 open
+     * merge requests come from a fork and none from the project itself.
+     */
+    public function testTheBranchGoesToTheIssueForkNotToOrigin(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::OK, $exit, $cli->display());
+        self::assertSame(
+            [['name' => 'issue-3223746', 'url' => 'git@git.drupal.org:issue/widget-3223746.git']],
+            $engine->pushedRemotes,
+        );
+        self::assertStringContainsString('issue/widget-3223746', $cli->display());
+    }
+
+    /**
+     * The remote is named after the issue. One environment serves every issue
+     * for a (module x core), so a single "fork" remote would be re-pointed
+     * silently and a push could land on whichever fork was published last.
+     */
+    public function testTheForkRemoteIsNamedAfterTheIssue(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]))->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame('issue-3223746', $engine->pushedRemotes[0]['name']);
+    }
+
+    /**
+     * No fork yet: refused *before* anything is pushed, with the three steps
+     * that make one.
+     *
+     * upkeep does not create it. drupal.org's issue page mints the fork and
+     * links it to the issue; one conjured from the GitLab API would be a
+     * repository nothing points at, which is harder to undo than the click was
+     * to make. Same browser handoff as the issue status and the credit.
+     */
+    public function testAnIssueWithNoForkIsRefusedBeforeAnythingIsPushed(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+        ], forkData: null));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('Create issue fork', $cli->display());
+        self::assertStringContainsString('drupal.org/node/3223746', $cli->display());
+        self::assertStringContainsString('upkeep publish widget 3223746', $cli->display());
+        // Nothing may have been pushed: a branch on a remote the operator
+        // never chose is worse than the refusal.
+        self::assertSame([], $engine->pushedBranches);
+        self::assertSame([], $engine->pushedRemotes);
+    }
+
+    /**
+     * An unreadable fork is not a missing fork: 503 means "ask again", and
+     * telling somebody to create a fork that already exists would send them
+     * to make a second one.
+     */
+    public function testAForkThatCannotBeReadIsReportedAsAFailureNotAsMissing(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'issue%2F' => new MockResponse('', ['http_code' => 503]),
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('could not be read', $cli->display());
+        self::assertStringNotContainsString('Create issue fork', $cli->display());
+        self::assertSame([], $engine->pushedBranches);
+    }
+
+    /**
+     * Branch names are the issue nid and a slug, so the same name exists on
+     * every fork of an issue. "Is mine already open?" must not answer yes
+     * about somebody else's merge request from their own fork.
+     */
+    public function testAnMrFromAnotherForkOnTheSameBranchNameIsNotMistakenForMine(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+
+        $somebodyElse = self::json([[
+            'iid' => 7,
+            'title' => 'Issue #3223746: Fix the thing',
+            'state' => 'opened',
+            'author' => ['username' => 'someone', 'id' => 2],
+            'source_branch' => '3223746-fix-the-thing',
+            'target_branch' => '1.0.x',
+            // A different fork entirely.
+            'source_project_id' => 999999,
+            'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
+        ]]);
+
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => $somebodyElse,
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::OK, $exit, $cli->display());
+        // A new one was opened rather than somebody else's being reported as
+        // "updated".
+        self::assertStringContainsString('Opened !19', $cli->display());
+        self::assertStringNotContainsString('!7', $cli->display());
+    }
+
+    /**
+     * Nothing recorded falls back to what the project itself calls default,
+     * which is the right answer far more often than not and saves a --target
+     * on the common case.
+     */
+    public function testAnUnrecordedBaseFallsBackToTheProjectsDefaultBranch(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = null;
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::OK, $exit, $cli->display());
+        self::assertStringContainsString('against 1.0.x', $cli->display());
+    }
+
+    /**
+     * With nothing recorded, no default, and nothing given, it says so and
+     * names the fix rather than guessing — a merge request opened against the
+     * wrong branch is a thing somebody else has to notice and close.
      */
     public function testAnUnknownBaseIsRefusedWithSomethingToType(): void
     {
@@ -404,6 +591,14 @@ final class IssueWorkflowTest extends TestCase
         $engine->baseBranch = null;
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            // A project payload that names no default branch at all.
+            '/projects/project%2Fwidget' => self::json([
+                'id' => 42,
+                'path' => 'widget',
+                'path_with_namespace' => 'project/widget',
+                'web_url' => 'https://git.drupalcode.org/project/widget',
+                'ssh_url_to_repo' => 'git@git.drupal.org:project/widget.git',
+            ]),
             'source_branch=' => self::json([]),
             'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
         ]));

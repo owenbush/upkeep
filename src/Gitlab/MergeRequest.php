@@ -31,6 +31,12 @@ final readonly class MergeRequest
         public ?string $updatedAt = null,
         public ?string $diffBaseSha = null,
         public ?string $diffHeadSha = null,
+        /**
+         * The project holding the source branch, which on drupal.org is
+         * almost never the project the merge request targets — it is the
+         * issue fork. Null when the payload does not carry it.
+         */
+        public ?int $sourceProjectId = null,
     ) {
     }
 
@@ -93,6 +99,7 @@ final readonly class MergeRequest
             updatedAt: $payload->stringOrNull('updated_at'),
             diffBaseSha: $diffRefs?->stringOrNull('base_sha'),
             diffHeadSha: $diffRefs?->stringOrNull('head_sha'),
+            sourceProjectId: $payload->intOrNull('source_project_id'),
         );
     }
 
@@ -113,6 +120,7 @@ final readonly class MergeRequest
             'description' => $this->description,
             'head_pipeline' => $this->headPipeline?->toApiArray(),
             'updated_at' => $this->updatedAt,
+            'source_project_id' => $this->sourceProjectId,
             // Round-tripped so a cached snapshot answers carriesChanges()
             // without refetching. Null when unknown, which reads back as
             // unknown rather than as "not empty".

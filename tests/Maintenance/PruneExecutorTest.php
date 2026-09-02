@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Maintenance;
 use PHPUnit\Framework\TestCase;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\EngineAdapterInterface;
@@ -84,7 +85,7 @@ final class PruneExecutorTest extends TestCase
                 return false;
             }
 
-            public function pushWork(Environment $environment, IssueBranch $branch): string
+            public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
             {
                 return 'abc1234';
             }
@@ -274,7 +275,7 @@ final class PruneExecutorTest extends TestCase
                 return false;
             }
 
-            public function pushWork(Environment $environment, IssueBranch $branch): string
+            public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
             {
                 return 'abc1234';
             }
