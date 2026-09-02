@@ -230,13 +230,14 @@ MODULE    MR     ISSUE     CORE  TITLE                    CI    LOCAL  STATUS   
 
 pathauto  !12    3262847   11    Only update child taxo…  –     –      needs a check   upkeep check pathauto 12 --version=11
 pathauto  !99    3608383   11    Remove forum integration pass  pass   ready to merge  upkeep merge --fast-lane
-pathauto  !40    3311669   11    Punctuation processed…   fail  –      CI failed       (manual fix needed)
+pathauto  !40    3311669   11    Punctuation processed…   fail  –      CI failed       upkeep check pathauto 40 --version=11
 pathauto  patch  3597857   11    Config schema for form   –     stale  4 patches       upkeep patch:check pathauto 3597857
 ```
 
-A command in NEXT is yours to run. A note in parentheses means upkeep has no
-command for that row — red CI needs the code to change, and no verb here
-changes code.
+A command in NEXT is yours to run. Red CI is no exception: it points at
+`check`, because a red pipeline is exactly when you want the branch locally to
+reproduce the failure. A note in parentheses appears only where proposing
+anything would be wrong — a draft, which its author has said is unfinished.
 
 `upkeep explain <term>` defines any of it; bare, it prints the whole
 vocabulary. `-v` swaps the plain-English status for the gate's own reason

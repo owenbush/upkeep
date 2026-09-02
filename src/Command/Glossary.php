@@ -49,8 +49,14 @@ final readonly class Glossary
                 'dashboard STATUS',
             ],
             'CI failed' => [
-                "drupal.org's own pipeline is red. Fixing it means changing the code, which no upkeep command "
-                    . 'does, so the row suggests nothing rather than guessing at whose job it is.',
+                "drupal.org's own pipeline is red. The row still points at `upkeep check`, because a red pipeline "
+                    . 'is exactly when you want the branch on your own machine to reproduce the failure.',
+                'dashboard STATUS',
+            ],
+            'CI failed, local green' => [
+                "drupal.org's pipeline is red but your own checks pass against the current head. The two disagree, "
+                    . 'which is itself the thing to go and look at — often a difference in core version or '
+                    . 'toolchain rather than in the change.',
                 'dashboard STATUS',
             ],
             'draft' => [

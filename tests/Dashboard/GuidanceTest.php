@@ -82,11 +82,14 @@ final class GuidanceTest extends TestCase
         // The gate sets Blocked from red CI and nothing else — it never
         // inspects mergeability — so this is "CI failed", not "conflicts".
         // Calling it conflicts would have asked for a rebase nobody needed.
-        yield 'blocked means red CI, which is the contributor to fix' => [
+        //
+        // And it still names a command: a red pipeline is precisely when a
+        // maintainer wants the branch locally to reproduce the failure.
+        yield 'blocked means red CI, and you can still pull it down' => [
             GateStatus::Blocked,
             ['ci-red', 'local-missing', 'not-bot-author'],
             'CI failed',
-            null,
+            'upkeep check widget 5 --version=11',
         ];
 
         yield 'ready to merge' => [
@@ -121,12 +124,22 @@ final class GuidanceTest extends TestCase
             'upkeep needs-work widget 5',
         ];
 
-        // Upstream's evidence, so there is nothing for a maintainer to run.
-        yield 'red CI is the contributor to fix' => [
+        // Red CI changes what the row *is*, not what to do about it — the
+        // command still comes from the evidence you hold.
+        yield 'red CI with nothing checked locally says check it' => [
             GateStatus::Review,
             ['not-bot-author', 'ci-red', 'local-missing'],
             'CI failed',
-            null,
+            'upkeep check widget 5 --version=11',
+        ];
+
+        // Your checks and drupal.org's disagree, which is itself worth
+        // looking at rather than re-running.
+        yield 'red CI but locally green is a disagreement to look at' => [
+            GateStatus::Review,
+            ['not-bot-author', 'ci-red'],
+            'CI failed, local green',
+            'upkeep review widget 5',
         ];
 
         yield 'a draft is not ready to be checked' => [

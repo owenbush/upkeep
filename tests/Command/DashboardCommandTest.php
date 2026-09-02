@@ -1026,12 +1026,11 @@ final class DashboardCommandTest extends TestCase
     }
 
     /**
-     * A row upkeep has no command for says so in parentheses instead. Red CI
-     * needs the code to change, and no verb here changes code — the note is
-     * careful not to say *whose* job that is, because on a maintainer's own
-     * module it is frequently theirs.
+     * A red pipeline is precisely when a maintainer wants the branch on their
+     * own machine to reproduce the failure, so the row names the command that
+     * puts it there rather than declining to suggest anything.
      */
-    public function testARowWaitingOnSomebodyElseSaysSoRatherThanNamingACommand(): void
+    public function testARedCiRowStillNamesTheWayToReproduceItLocally(): void
     {
         $client = $this->client([
             '/merge_requests?' => self::json([self::botMrPayload()]),
@@ -1044,7 +1043,31 @@ final class DashboardCommandTest extends TestCase
         $display = $this->runDashboard($client, ['--version' => '11'])->getDisplay();
 
         self::assertStringContainsString('CI failed', $display);
-        self::assertStringContainsString('(manual fix needed)', $display);
+        self::assertStringContainsString('upkeep check widget 5', $display);
+        self::assertStringNotContainsString('manual fix needed', $display);
+    }
+
+    /**
+     * A draft is the one row left with nothing to suggest. Unlike red CI it is
+     * a statement by its author about their own work, so the row describes the
+     * state rather than proposing that somebody check unfinished code.
+     */
+    public function testADraftIsTheOneRowThatProposesNothing(): void
+    {
+        $client = $this->client([
+            '/merge_requests?' => self::json([self::botMrPayload()]),
+            '/merge_requests/5' => self::json(self::botMrPayload([
+                'draft' => true,
+                'head_pipeline' => self::greenPipeline(),
+            ])),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $display = $this->runDashboard($client, ['--version' => '11'])->getDisplay();
+
+        self::assertStringContainsString('draft', $display);
+        self::assertStringContainsString('(not ready for review yet)', $display);
+        self::assertStringNotContainsString('upkeep check widget 5', $display);
     }
 
     /** A ready row names the merge command in its own NEXT cell. */

@@ -77,45 +77,49 @@ final readonly class Guidance
             );
         }
 
-        // Red CI is a failure upkeep has no command for: the code has to
-        // change, and no verb here changes code.
-        //
-        // The note says that and stops. It used to say "the contributor's
-        // move", which asserts whose job it is — and on a maintainer's own
-        // module that is often themselves, so it read as passing back work
-        // they had just been handed.
-        //
-        // This is also what GateStatus::Blocked means. The gate sets Blocked
-        // from red CI and from nothing else — it never inspects mergeability,
-        // whatever "cannot proceed (e.g. merge conflicts)" in the older docs
-        // suggested — so there is one condition here, not two, and calling it
-        // "conflicts" would have told maintainers to ask for a rebase that
-        // nothing had asked for.
-        if (\in_array('ci-red', $reasons, true) || $verdict?->status === GateStatus::Blocked) {
-            return new self('CI failed', null, 'manual fix needed');
-        }
-
-        // Explicitly not finished, so checking it is premature. Unlike red CI
-        // this genuinely is somebody else's state to change — a draft is a
-        // statement by its author — so the note says what it is, not what to
-        // do about it.
+        // Explicitly not finished, so checking it is premature. The one state
+        // here that genuinely belongs to somebody else: a draft is a statement
+        // by its author about their own work, so the note describes it rather
+        // than assigning a task.
         if (\in_array('draft', $reasons, true)) {
             return new self('draft', null, 'not ready for review yet');
         }
 
-        // The common case, and the one the old output buried under three
-        // tokens: nobody has run the checks.
+        // Red CI changes what the row *is*, not what to do about it.
+        //
+        // It first said "the contributor's move", then "manual fix needed" —
+        // both wrong in the same way. A red pipeline is precisely when a
+        // maintainer wants the branch on their own machine to reproduce the
+        // failure, and `check` is what puts it there. Refusing to name a
+        // command turned the most interesting rows into the only dead ones.
+        //
+        // GateStatus::Blocked is the same condition: the gate sets it from red
+        // CI and from nothing else, never inspecting mergeability, whatever
+        // "cannot proceed (e.g. merge conflicts)" in the older docs suggested.
+        $ciRed = \in_array('ci-red', $reasons, true) || $verdict?->status === GateStatus::Blocked;
+
+        // What to do is decided by the evidence *you* hold, independently of
+        // what CI says: nothing yet, or something about an older revision,
+        // means run the checks; anything else means the change itself is what
+        // is left to look at.
         if (self::needsChecking($reasons)) {
-            return new self(
-                \in_array('local-stale', $reasons, true) ? 'checks are stale' : 'needs a check',
-                self::checkCommand($row, $iid),
-                null,
-            );
+            $status = match (true) {
+                $ciRed => 'CI failed',
+                \in_array('local-stale', $reasons, true) => 'checks are stale',
+                default => 'needs a check',
+            };
+
+            return new self($status, self::checkCommand($row, $iid), null);
         }
 
-        // Checked, green, and not a bot compat MR — so the fast lane will
-        // never take it and a human has to look at the change itself.
-        return new self('needs your review', sprintf('upkeep review %s %d', $row->module, $iid), null);
+        // Checked and green. Either the fast lane will never take it because
+        // it is not a bot MR, or your checks disagree with drupal.org's — and
+        // a disagreement is exactly a thing to go and look at.
+        return new self(
+            $ciRed ? 'CI failed, local green' : 'needs your review',
+            sprintf('upkeep review %s %d', $row->module, $iid),
+            null,
+        );
     }
 
     /**
