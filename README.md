@@ -145,6 +145,20 @@ issue; one made straight from the GitLab API would be a repository nothing
 points at, which is harder to clean up than the click was to make. Same browser
 handoff as the issue status and the credit.
 
+**Push access to that fork.** Creating an issue fork does not grant you write
+access to it — that is a *second* button on the issue page ("Get push access",
+beside the fork it names). upkeep asks GitLab before pushing, so a missing
+grant arrives as a refusal naming the button rather than as a rejected push:
+
+```
+You do not have push access to issue/entity_type_access_conditions-3597857.
+Your SSH key worked — GitLab knows who you are and will not let you write here.
+```
+
+If GitLab does not say either way, upkeep pushes anyway and lets the server
+decide: an unknown is not a no, and refusing on one would block pushes that
+would have worked.
+
 **An SSH key on your drupal.org account.** Add one at
 <https://git.drupalcode.org/-/user_settings/ssh_keys>, then check it:
 

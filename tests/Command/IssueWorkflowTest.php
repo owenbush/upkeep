@@ -501,6 +501,81 @@ final class IssueWorkflowTest extends TestCase
     }
 
     /**
+     * Push access is a *second* grant on drupal.org: creating an issue fork
+     * does not give you write access to it. Asked before the push, so the
+     * answer arrives as a refusal with a button to click rather than as a
+     * rejection after the work of pushing.
+     */
+    public function testNoPushAccessToTheForkIsRefusedBeforePushing(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([], forkData: [
+            'id' => 218125,
+            'path' => 'widget-3223746',
+            'path_with_namespace' => 'issue/widget-3223746',
+            'web_url' => 'https://git.drupalcode.org/issue/widget-3223746',
+            'ssh_url_to_repo' => 'git@git.drupal.org:issue/widget-3223746.git',
+            'default_branch' => '1.0.x',
+            // Reporter: enough to read, not enough to push.
+            'permissions' => ['project_access' => ['access_level' => 20], 'group_access' => null],
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('do not have push access', $cli->display());
+        self::assertStringContainsString('drupal.org/node/3223746', $cli->display());
+        self::assertSame([], $engine->pushedBranches);
+    }
+
+    /**
+     * Developer is enough, and the push proceeds. The level is read from
+     * whichever grant is higher, because either is enough to write.
+     */
+    public function testDeveloperAccessOnTheForkPushes(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ], forkData: [
+            'id' => 218125,
+            'path' => 'widget-3223746',
+            'path_with_namespace' => 'issue/widget-3223746',
+            'web_url' => 'https://git.drupalcode.org/issue/widget-3223746',
+            'ssh_url_to_repo' => 'git@git.drupal.org:issue/widget-3223746.git',
+            'default_branch' => '1.0.x',
+            'permissions' => ['project_access' => null, 'group_access' => ['access_level' => 30]],
+        ]));
+
+        self::assertSame(ExitCode::OK, $cli->run('publish', 'widget', '3223746', '--version=11'), $cli->display());
+        self::assertSame(['3223746-fix-the-thing'], $engine->pushedBranches);
+    }
+
+    /**
+     * Unknown is not "no". A payload without `permissions` says nothing about
+     * access, and refusing on it would block pushes that would have worked —
+     * so the push goes ahead and the server decides.
+     */
+    public function testAnUnknownAccessLevelProceedsRatherThanRefusing(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        self::assertSame(ExitCode::OK, $cli->run('publish', 'widget', '3223746', '--version=11'), $cli->display());
+        self::assertSame(['3223746-fix-the-thing'], $engine->pushedBranches);
+    }
+
+    /**
      * An unreadable fork is not a missing fork: 503 means "ask again", and
      * telling somebody to create a fork that already exists would send them
      * to make a second one.
