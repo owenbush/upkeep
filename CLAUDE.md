@@ -74,6 +74,16 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `max_duration` as well as `timeout`, because Symfony's `timeout` is the
   *idle* timeout and bounds nothing on its own.
 - `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
+  **`BLOCKED` is set by red CI and by nothing else** — the gate never inspects
+  mergeability, so it does not mean merge conflicts whatever older docs said.
+- `Dashboard\Guidance` turns a row into a plain-English status and the command
+  to run for it, which is what the dashboard renders by default; the gate's own
+  reason tokens move behind `-v`. The *order* the reasons are considered is the
+  design: several apply at once and only one phrase can show, so they rank by
+  what blocks progress — nothing upkeep can fix, then your evidence the work is
+  wrong, then missing evidence, then nothing to do. `Command\Glossary` +
+  `upkeep explain` define every term the tool prints, which nothing did before:
+  `patch↑` existed only in a source comment.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
   happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —

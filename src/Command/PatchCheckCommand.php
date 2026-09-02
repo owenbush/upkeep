@@ -45,6 +45,18 @@ final class PatchCheckCommand extends AbstractPatchCommand
 {
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            The patch-side counterpart of <info>check</info>: downloads a patch from a drupal.org
+            issue, applies it onto a branch off the base, and runs the full suite.
+
+              <info>upkeep patch:check pathauto 3597857</info>
+              <info>upkeep patch:check pathauto 3597857 --latest</info>   take the newest patch without asking
+              <info>upkeep patch:check pathauto 3597857 --file=NAME</info>
+
+            With several patches on the issue and no terminal to ask at, the newest is
+            taken, and said so.
+            HELP);
+
         $this->configurePatchSurface();
         $this->addOption(
             'fixture',

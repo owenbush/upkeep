@@ -48,6 +48,20 @@ final class IssuesCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Every open issue on a module, whether or not anyone has contributed to it —
+            the difference from <info>dashboard</info> and <info>patches</info>, which both start from a
+            contribution.
+
+              <info>upkeep issues pathauto</info>              every open issue
+              <info>upkeep issues pathauto --unclaimed</info>  only what nobody has started
+              <info>upkeep issues pathauto --status=active</info>
+
+            The merge-request column is filled from the dashboard cache, so run
+            <info>upkeep dashboard --refresh=<module></info> if it is empty.
+            To begin work on one: <info>upkeep start <module> <issue></info>.
+            HELP);
+
         $this->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name');
         $this->addCockpitOption();
         $this->addOption(
@@ -140,13 +154,14 @@ final class IssuesCommand extends UpkeepCommand
                 $issue->status->shortLabel(),
                 $issue->priorityLabel() ?? '–',
                 self::contributionCell($contribution),
-                DashboardRow::truncate($issue->title, 52),
+                DashboardRow::truncate($issue->title, 44),
+                self::nextCommand($contribution),
             ];
         }
 
         ColumnTable::render(
             $output,
-            ['ISSUE', 'STATUS', 'PRIORITY', 'CONTRIBUTION', 'TITLE'],
+            ['ISSUE', 'STATUS', 'PRIORITY', 'CONTRIBUTION', 'TITLE', 'NEXT'],
             $rows,
             self::colorCells(...),
         );
@@ -174,7 +189,29 @@ final class IssuesCommand extends UpkeepCommand
     }
 
     /**
-     * @param list<string> $cells [ISSUE, STATUS, PRIORITY, CONTRIBUTION, TITLE]
+     * The command for that row.
+     *
+     * An unclaimed issue is the one this view exists to surface, so it gets
+     * the verb that starts work. Anything already carrying a contribution
+     * points at whichever command evaluates that contribution — the same
+     * commands the dashboard's NEXT column names, so the two views never
+     * suggest different things about the same issue.
+     */
+    private static function nextCommand(Contribution $contribution): string
+    {
+        $module = $contribution->module;
+        $nid = $contribution->issue->nid;
+        $substantive = $contribution->substantiveMergeRequests();
+
+        return match (true) {
+            $substantive !== [] => sprintf('upkeep check %s %d', $module, $substantive[0]->iid),
+            $contribution->issue->patchCount() > 0 => sprintf('upkeep patch:check %s %d', $module, $nid),
+            default => sprintf('upkeep start %s %d', $module, $nid),
+        };
+    }
+
+    /**
+     * @param list<string> $cells [ISSUE, STATUS, PRIORITY, CONTRIBUTION, TITLE, NEXT]
      * @return list<string>
      */
     private static function colorCells(array $cells): array
@@ -197,6 +234,8 @@ final class IssuesCommand extends UpkeepCommand
         // Highlighted rather than muted: unclaimed work is the point of the
         // command, not an absence.
         $fmt[3] = $cells[3] === 'unclaimed' ? '<fg=cyan>unclaimed</>' : $cells[3];
+
+        $fmt[5] = '<fg=cyan>' . $cells[5] . '</>';
 
         return array_values($fmt);
     }
@@ -225,7 +264,8 @@ final class IssuesCommand extends UpkeepCommand
             $segments[] = 'no cached MRs — run `upkeep dashboard --refresh=<module>` to fill the CONTRIBUTION column';
         }
 
-        return '<fg=gray>' . implode(' · ', $segments) . '</>';
+        return '<fg=gray>' . implode(' · ', $segments) . "</>\n"
+            . '<fg=gray>Run the command in NEXT for any row · upkeep explain <term> for what a column means</>';
     }
 
     /**

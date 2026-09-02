@@ -52,6 +52,19 @@ final class StartCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Begins work on an issue nobody has contributed to yet: provisions the
+            environment and opens a branch named to drupal.org's issue-fork convention,
+            so the merge request that follows is linked to the issue.
+
+              <info>cd $(upkeep start pathauto 3223746)</info>
+              <info>upkeep start pathauto 3223746 --version=11</info>
+
+            Resumes rather than restarts: an existing branch is checked out as it stands,
+            and nothing here ever resets or discards.
+            When the work is ready: <info>upkeep publish <module> <issue></info>.
+            HELP);
+
         $this->addModuleArgument()
             ->addTargetCoreOption()
             ->addCockpitOption()

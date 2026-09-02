@@ -46,8 +46,15 @@ final class DashboardRowCellsTest extends TestCase
     public function testTheStatusCellCarriesTheVerdictForAnMrRowAndTheFailureForAModuleRow(): void
     {
         $row = self::row(self::pipeline(PipelineStatus::Success));
+        // statusCell() is still the gate's own vocabulary — the merge command
+        // and -v both read it. The plain-English phrase is Guidance's.
         self::assertSame('REVIEW local-missing', $row->statusCell());
-        self::assertSame($row->statusCell(), $row->toTableCells()[6]);
+        // The rendered cell is a phrase, not the verdict: a maintainer reading
+        // a hundred rows needs what to do, not the gate's bookkeeping. The
+        // verdict is what -v restores, and what the merge command reads.
+        self::assertSame('needs a check', $row->toTableCells()[6]);
+        self::assertSame($row->statusCell(), $row->toTableCells(true)[6]);
+        self::assertStringContainsString('upkeep check widget 4', $row->toTableCells()[7]);
 
         $failure = DashboardRow::forModuleFailure(
             'widget',

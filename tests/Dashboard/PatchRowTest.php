@@ -154,7 +154,8 @@ final class PatchRowTest extends TestCase
         self::assertSame('11', $cells[2]);
         self::assertSame('–', $cells[4], 'no pipeline');
         self::assertSame('–', $cells[5], 'never checked');
-        self::assertSame('PATCH 2 patches', $cells[6]);
+        self::assertStringContainsString('upkeep patch:check', $cells[7], 'and what to run about it');
+        self::assertSame('2 patches', $cells[6]);
     }
 
     public function testThePatchRowStatusNamesAnEmptyMergeRequestBesideIt(): void

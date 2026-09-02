@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Command;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -185,7 +186,9 @@ final class DashboardCommandTest extends TestCase
         self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11/', $display);
         self::assertStringContainsString('cached just now', $display);
         // CI green, nothing cached locally: visible – and a review status.
-        self::assertSame(2, substr_count($display, 'REVIEW local-missing'));
+        self::assertSame(2, substr_count($display, 'needs a check'), 'one per tracked core');
+        // And each says what to run about it.
+        self::assertSame(2, substr_count($display, 'upkeep check widget 5'));
     }
 
     public function testVersionOptionFiltersToOneTargetCoreVersion(): void
@@ -207,8 +210,9 @@ final class DashboardCommandTest extends TestCase
         $tester = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11']);
 
         $display = $tester->getDisplay();
-        self::assertStringContainsString('READY-AUTO', $display);
-        self::assertMatchesRegularExpression('/pass\s+pass\s+READY-AUTO/', $display);
+        self::assertStringContainsString('ready to merge', $display);
+        self::assertMatchesRegularExpression('/pass\s+pass\s+ready to merge/', $display);
+        self::assertStringContainsString('upkeep merge --fast-lane', $display);
     }
 
     public function testFreshFailedLocalCheckRendersFailAndReviewNamingTheCheck(): void
@@ -219,8 +223,11 @@ final class DashboardCommandTest extends TestCase
 
         $display = $tester->getDisplay();
         self::assertMatchesRegularExpression('/\bfail\b/', $display);
-        self::assertStringContainsString('REVIEW local-failed:phpunit', $display);
-        self::assertStringNotContainsString('READY-AUTO', $display);
+        self::assertStringContainsString('phpunit failed', $display);
+        // A failing check is your evidence, so the row points at telling the
+        // contributor rather than at checking it again.
+        self::assertStringContainsString('upkeep needs-work widget 5', $display);
+        self::assertStringNotContainsString('ready to merge', $display);
     }
 
     public function testLocalResultForAnOlderShaRendersAsStaleAndDeniesReadyAuto(): void
@@ -234,8 +241,8 @@ final class DashboardCommandTest extends TestCase
 
         $display = $tester->getDisplay();
         self::assertStringContainsString('stale', $display);
-        self::assertStringContainsString('REVIEW local-stale', $display);
-        self::assertStringNotContainsString('READY-AUTO', $display);
+        self::assertStringContainsString('checks are stale', $display);
+        self::assertStringNotContainsString('ready to merge', $display);
     }
 
     public function testClosedMrListEndpointRendersAsExplicitCellStateNotACrash(): void
@@ -266,8 +273,21 @@ final class DashboardCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
-        self::assertStringContainsString('ci-missing', $display);
-        self::assertStringNotContainsString('READY-AUTO', $display);
+        // The detail fetch failed, so the row falls back to listed data, which
+        // carries no pipeline — an en-dash CI cell and no fast lane. The gate's
+        // own ci-missing reason is what -v restores, which is now the only
+        // place that vocabulary appears.
+        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11\s+.*–\s+–/', $display);
+        self::assertStringNotContainsString('ready to merge', $display);
+
+        // CommandTester carries verbosity as an option to execute(), not as an
+        // argv flag: a bare CommandTester has no application to define -v.
+        $verbose = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $verbose->execute(
+            ['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true],
+            ['verbosity' => OutputInterface::VERBOSITY_VERBOSE],
+        );
+        self::assertStringContainsString('ci-missing', $verbose->getDisplay());
     }
 
     public function testCachedSnapshotSkipsApiCallsOnSubsequentRun(): void
@@ -606,8 +626,9 @@ final class DashboardCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
-        self::assertStringContainsString('READY-AUTO', $display);
-        self::assertMatchesRegularExpression('/pass\s+pass\s+READY-AUTO/', $display);
+        self::assertStringContainsString('ready to merge', $display);
+        self::assertMatchesRegularExpression('/pass\s+pass\s+ready to merge/', $display);
+        self::assertStringContainsString('upkeep merge --fast-lane', $display);
     }
 
     /**
@@ -674,7 +695,8 @@ final class DashboardCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringContainsString('patch', $display);
         self::assertStringContainsString('3597808', $display);
-        self::assertStringContainsString('PATCH 1 patch', $display);
+        self::assertStringContainsString('1 patch', $display);
+        self::assertStringContainsString('upkeep patch:check widget 3597808', $display);
         self::assertStringContainsString('1 patch issue', $display);
     }
 
@@ -968,5 +990,65 @@ final class DashboardCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         self::assertStringContainsString('widget', $tester->getDisplay());
+    }
+
+    /**
+     * The drill-down had no guidance at all — the overview carried a hint and
+     * the view where work is actually chosen carried none, which is backwards.
+     */
+    public function testTheDrillDownTellsYouWhatToReadAndWhatToRun(): void
+    {
+        $tester = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11']);
+
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('NEXT', $display, 'the column exists');
+        self::assertStringContainsString('Run the command in NEXT for any row', $display);
+        self::assertStringContainsString('upkeep explain', $display);
+        self::assertStringContainsString('-v shows the gate', $display);
+    }
+
+    /** Under -v the hint about -v is pointless, so it is not printed. */
+    public function testTheVerbosityHintIsAbsentWhenAlreadyVerbose(): void
+    {
+        $tester = new CommandTester(
+            new DashboardCommand($this->client($this->healthyRoutes()), $this->noDrupalClient()),
+        );
+        $tester->execute(
+            ['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true],
+            ['verbosity' => OutputInterface::VERBOSITY_VERBOSE],
+        );
+
+        self::assertStringNotContainsString('-v shows the gate', $tester->getDisplay());
+    }
+
+    /**
+     * A row with nothing for you to do says so in parentheses instead of a
+     * command — red CI is the contributor's to fix.
+     */
+    public function testARowWaitingOnSomebodyElseSaysSoRatherThanNamingACommand(): void
+    {
+        $client = $this->client([
+            '/merge_requests?' => self::json([self::botMrPayload()]),
+            '/merge_requests/5' => self::json(
+                self::botMrPayload(['head_pipeline' => ['id' => 1, 'status' => 'failed']]),
+            ),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $display = $this->runDashboard($client, ['--version' => '11'])->getDisplay();
+
+        self::assertStringContainsString('CI failed', $display);
+        self::assertStringContainsString("(the contributor's move)", $display);
+    }
+
+    /** A ready row names the merge command in its own NEXT cell. */
+    public function testAReadyRowIsCountedAndNamedInTheHints(): void
+    {
+        $this->storeLocal([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.2)]);
+
+        $display = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11'])->getDisplay();
+
+        self::assertStringContainsString('1 row ready to merge', $display);
+        self::assertStringContainsString('upkeep merge --fast-lane', $display);
     }
 }

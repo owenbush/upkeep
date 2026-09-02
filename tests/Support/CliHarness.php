@@ -21,6 +21,7 @@ use Upkeep\Command\DashboardCommand;
 use Upkeep\Command\DevCommand;
 use Upkeep\Command\EnvPathCommand;
 use Upkeep\Command\ExecCommand;
+use Upkeep\Command\ExplainCommand;
 use Upkeep\Command\InitCommand;
 use Upkeep\Command\IssuesCommand;
 use Upkeep\Command\IssueCommand;
@@ -429,6 +430,7 @@ final class CliHarness
             new DevCommand($engines),
             new EnvPathCommand($engines),
             new ExecCommand($engines),
+            new ExplainCommand(),
             new InitCommand(),
             new IssueCommand($this->gitlab, $this->drupalOrg),
             new IssuesCommand($this->drupalOrg),

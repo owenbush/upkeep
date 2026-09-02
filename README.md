@@ -220,11 +220,35 @@ versions — merge requests *and* patch-only issues — with the linked drupal.o
 issue, upstream CI state, local check results (from your cached `check` and
 `patch:check` runs), and the fast-lane gate status:
 
+Every row carries a **STATUS** saying what it is in plain English and a
+**NEXT** column with the command to run for it:
+
+```
+MODULE    MR     ISSUE     CORE  TITLE                    CI    LOCAL  STATUS          NEXT
+
+pathauto  !12    3262847   11    Only update child taxo…  –     –      needs a check   upkeep check pathauto 12 --version=11
+pathauto  !99    3608383   11    Remove forum integration pass  pass   ready to merge  upkeep merge --fast-lane
+pathauto  !40    3311669   11    Punctuation processed…   fail  –      CI failed       (the contributor's move)
+pathauto  patch  3597857   11    Config schema for form   –     stale  4 patches       upkeep patch:check pathauto 3597857
+```
+
+A command in NEXT is yours to run. A note in parentheses means there is
+nothing for you to do — it is waiting on somebody else.
+
+`upkeep explain <term>` defines any of it; bare, it prints the whole
+vocabulary. `-v` swaps the plain-English status for the gate's own reason
+tokens (`REVIEW not-bot-author, ci-missing, local-missing`), which is what
+anything scripted against them should read.
+
+**On the gate's own verdicts**, visible under `-v`:
+
 - `READY-AUTO` — a Project Update Bot compat MR with green CI and green local
   checks; eligible for the fast-lane merge prompt.
-- `REVIEW` — needs a human look (draft, missing/failed CI, failed local
-  checks, or simply not a bot compat MR); listed with its reasons.
-- `BLOCKED` — cannot proceed (e.g. merge conflicts).
+- `REVIEW` — needs a human look, listed with its reasons. `not-bot-author`
+  appears on every human-authored MR and is not a problem: the fast lane is
+  bot-only by design.
+- `BLOCKED` — set by red CI, and by nothing else. It does **not** mean merge
+  conflicts; the gate never inspects mergeability.
 
 Rows whose MR column reads `patch` are contributions with no branch behind
 them. They carry no CI (drupal.org runs pipelines on branches, not on

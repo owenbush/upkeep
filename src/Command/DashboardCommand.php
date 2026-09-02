@@ -48,8 +48,7 @@ use Upkeep\Workflow\ExitCode;
  */
 #[AsCommand(
     name: 'dashboard',
-    description: 'Show every open MR across registered modules and core versions with CI, local check, and '
-    . 'fast-lane status.',
+    description: 'Per-module overview of everything open; name a module to see its rows and what to run next.',
 )]
 final class DashboardCommand extends UpkeepCommand
 {
@@ -66,6 +65,24 @@ final class DashboardCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Where to start. With no arguments it summarises every registered module —
+            how many merge requests and patch issues are open, how many are ready, and
+            how many have never been checked.
+
+            Name a module to see its individual rows. Each row carries a NEXT column
+            with the command to run for it.
+
+              <info>upkeep dashboard</info>                    every module, one line each
+              <info>upkeep dashboard pathauto</info>           that module's rows, with what to do about each
+              <info>upkeep dashboard pathauto --refresh</info> re-fetch first (goes to the network)
+              <info>upkeep dashboard --all</info>              every row of every module
+              <info>upkeep dashboard pathauto -v</info>        the gate's own reason tokens
+
+            Cached by default, so repeat runs are instant.
+            <info>upkeep explain <term></info> defines any column or status.
+            HELP);
+
         $this->addArgument(
             'module',
             InputArgument::OPTIONAL,
@@ -213,8 +230,9 @@ final class DashboardCommand extends UpkeepCommand
         }
 
         if ($detailed) {
-            $this->renderTable($output, $rows, $snapshots);
+            $this->renderTable($output, $rows, $snapshots, $output->isVerbose());
             self::renderFooter($output, $rows, $snapshots);
+            self::renderDetailHints($output, $rows, $output->isVerbose());
 
             return ExitCode::OK;
         }
@@ -285,6 +303,37 @@ final class DashboardCommand extends UpkeepCommand
     }
 
     /**
+     * What to read, under the table a maintainer has just been handed.
+     *
+     * The overview has always carried a hint and the drill-down carried none,
+     * which is backwards: the overview is a summary a person can act on by
+     * drilling in, while the drill-down is where the actual work is chosen.
+     *
+     * @param list<DashboardRow> $rows
+     */
+    private static function renderDetailHints(OutputInterface $output, array $rows, bool $verbose): void
+    {
+        $ready = \count(array_filter($rows, static fn (DashboardRow $r): bool => $r->isReadyAuto()));
+
+        $hints = [];
+        if ($ready > 0) {
+            $hints[] = sprintf(
+                '%d row%s ready to merge · upkeep merge --fast-lane',
+                $ready,
+                $ready === 1 ? '' : 's',
+            );
+        }
+        $hints[] = 'Run the command in NEXT for any row · upkeep explain <term> for what a column means';
+        if (!$verbose) {
+            $hints[] = '-v shows the gate\'s own reason tokens instead of the plain-English status';
+        }
+
+        foreach ($hints as $hint) {
+            $output->writeln('<fg=gray>' . $hint . '</>');
+        }
+    }
+
+    /**
      * A per-module progress bar for the fetching path only.
      *
      * A refresh is minutes of silence otherwise: each module costs a GitLab
@@ -320,12 +369,16 @@ final class DashboardCommand extends UpkeepCommand
      * @param list<DashboardRow>            $rows
      * @param array<string, ModuleSnapshot> $snapshots
      */
-    private function renderTable(OutputInterface $output, array $rows, array $snapshots): void
-    {
+    private function renderTable(
+        OutputInterface $output,
+        array $rows,
+        array $snapshots,
+        bool $verbose = false,
+    ): void {
         $cells = [];
         $groups = [];
         foreach ($rows as $row) {
-            $rowCells = $row->toTableCells();
+            $rowCells = $row->toTableCells($verbose);
             array_splice($rowCells, 2, 0, [$this->issueCell($row, $snapshots)]);
             $cells[] = $rowCells;
             $groups[] = $row->module;
@@ -333,7 +386,7 @@ final class DashboardCommand extends UpkeepCommand
 
         ColumnTable::render(
             $output,
-            ['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS'],
+            ['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS', 'NEXT'],
             $cells,
             self::colorCells(...),
             $groups,
@@ -482,7 +535,7 @@ final class DashboardCommand extends UpkeepCommand
     }
 
     /**
-     * @param list<string> $cells [MODULE, MR, ISSUE, CORE, TITLE, CI, LOCAL, STATUS]
+     * @param list<string> $cells [MODULE, MR, ISSUE, CORE, TITLE, CI, LOCAL, STATUS, NEXT]
      * @return list<string>
      */
     private static function colorCells(array $cells): array
@@ -512,13 +565,28 @@ final class DashboardCommand extends UpkeepCommand
             default => '<fg=gray>' . $cells[6] . '</>',
         };
 
-        // STATUS (index 7)
+        // STATUS (index 7). Matched on both vocabularies, because -v swaps
+        // the phrase for the gate's own tokens and both should read the same
+        // way: green means go, red means stopped, amber means your move.
         $fmt[7] = match (true) {
-            str_starts_with($cells[7], 'READY-AUTO') => '<fg=green>' . $cells[7] . '</>',
-            str_starts_with($cells[7], 'REVIEW') => '<fg=yellow>' . $cells[7] . '</>',
-            str_starts_with($cells[7], 'BLOCKED') => '<fg=red>' . $cells[7] . '</>',
+            str_starts_with($cells[7], 'READY-AUTO'),
+            str_starts_with($cells[7], 'ready to merge') => '<fg=green>' . $cells[7] . '</>',
+            str_starts_with($cells[7], 'BLOCKED'),
+            str_starts_with($cells[7], 'conflicts'),
+            str_contains($cells[7], 'failed') => '<fg=red>' . $cells[7] . '</>',
+            str_starts_with($cells[7], 'REVIEW'),
+            str_starts_with($cells[7], 'needs'),
+            str_starts_with($cells[7], 'checks are stale') => '<fg=yellow>' . $cells[7] . '</>',
             default => $cells[7],
         };
+
+        // NEXT (index 8) — a command to run, or a parenthesised note saying
+        // why there is none. The command is the point of the row, so it is the
+        // thing that stands out; the note is muted, because "nothing to do
+        // here" should not compete for attention.
+        $fmt[8] = str_starts_with($cells[8], '(')
+            ? '<fg=gray>' . $cells[8] . '</>'
+            : '<fg=cyan>' . $cells[8] . '</>';
 
         // Written back by index, so the result is repacked into a list:
         // ColumnTable's colouriser contract is list-in, list-out.

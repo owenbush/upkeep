@@ -34,6 +34,19 @@ final class CheckCommand extends AbstractMrCommand
 {
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Runs one merge request through the full isolated flow: provision the
+            (module x core) environment, apply the MR, run every check, and cache the
+            result where the dashboard and the fast-lane gate read it.
+
+              <info>upkeep check pathauto 12</info>
+              <info>upkeep check pathauto 12 --version=11</info>
+              <info>upkeep check pathauto 12 --fixture=sample-content</info>
+
+            Exits 0 all green, 1 a check failed, 2 it could not run at all. Needs base
+            artifacts for that core: <info>upkeep base-artifacts:build --version=11</info>.
+            HELP);
+
         $this->configureMrSurface();
         $this->addOption(
             'fixture',

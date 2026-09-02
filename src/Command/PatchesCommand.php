@@ -62,6 +62,19 @@ final class PatchesCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Issues carrying patch files, and how each relates to a merge request — the
+            contributions the MR-centric dashboard cannot see.
+
+              <info>upkeep patches</info>                  every registered module
+              <info>upkeep patches --module=pathauto</info>
+              <info>upkeep patches --without-mr</info>     only what no branch carries
+
+            To check one: <info>upkeep patch:check <module> <issue></info>. An MR shown as "empty"
+            carries no commits, so any patch beside it is the only work there is —
+            see <info>upkeep explain "empty MR"</info>.
+            HELP);
+
         $this->addCockpitOption();
         $this->addOption(
             'module',
