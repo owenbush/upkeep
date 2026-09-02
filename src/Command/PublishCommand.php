@@ -39,6 +39,11 @@ use Upkeep\Workflow\WorkflowException;
  * Re-running is safe: an MR already open for the branch is reported rather
  * than duplicated, because the useful answer to "publish this again" is a link
  * to the one that exists.
+ *
+ * The target defaults to the base the adapter recorded when the work started —
+ * never to a tracked core major. Those are versions of Drupal ("11"), not
+ * branches on a project ("2.0.x", "8.x-1.x"), and defaulting to one made every
+ * publish target a branch that does not exist.
  */
 #[AsCommand(
     name: 'publish',
@@ -155,7 +160,17 @@ final class PublishCommand extends UpkeepCommand
             ));
         }
 
-        $target = self::stringOption($input, 'target') ?? $module->coreVersions[0];
+        $target = self::stringOption($input, 'target') ?? $adapter->recordedBaseBranch($environment)
+            ?? throw new WorkflowException(sprintf(
+                "The branch was pushed, but upkeep does not know what to open the merge request against.\n"
+                . "It records the base when `start`, `patch:promote` or `check` puts work in an environment; "
+                . "this working copy has no record of one.\n"
+                . 'Name it: upkeep publish %s %d --target=<branch> (a branch on the project, like 2.0.x — not '
+                . 'a core version).',
+                $module->name,
+                $nid,
+            ));
+
         $created = $client->createMergeRequest(
             $project,
             $branch->name,

@@ -163,6 +163,14 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         return $this->resumeWork;
     }
 
+    /** What startWork/promotePatch would have recorded; null means nothing was. */
+    public ?string $baseBranch = null;
+
+    public function recordedBaseBranch(Environment $environment): ?string
+    {
+        return $this->baseBranch;
+    }
+
     /**
      * Records the branch and, above all, the message — the message is what a
      * promoted patch's attribution *is*, so a test that did not assert on it

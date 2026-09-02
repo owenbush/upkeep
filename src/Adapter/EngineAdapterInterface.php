@@ -120,6 +120,21 @@ interface EngineAdapterInterface
     public function pushWork(Environment $environment, IssueBranch $branch): string;
 
     /**
+     * The base branch the working copy's contribution was cut from, as
+     * `startWork()` / `applyMr()` / `applyPatch()` recorded it.
+     *
+     * Publishing needs it and cannot derive it: a merge request's target is a
+     * *branch name* on the project (`2.0.x`, `8.x-1.x`), and nothing outside
+     * the working copy knows which one this work belongs on. The tracked core
+     * major is not a substitute — it names a version of Drupal, not a branch,
+     * and no contrib project has a branch called "11".
+     *
+     * Null when nothing was recorded, which callers must treat as "ask the
+     * operator" rather than guessing.
+     */
+    public function recordedBaseBranch(Environment $environment): ?string;
+
+    /**
      * Restores the named fixture's database state into the environment,
      * replacing whatever state it currently holds.
      *

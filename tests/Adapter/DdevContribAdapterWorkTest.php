@@ -185,4 +185,33 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
         $this->expectExceptionMessageMatches('/detached HEAD/');
         $this->adapter($runner)->pushWork($this->environment(), $this->branch());
     }
+
+    // ------------------------------------------------------ the base branch
+
+    /**
+     * What `publish` opens the merge request against. It is read back rather
+     * than derived because a target is a *branch on the project* and nothing
+     * outside the working copy knows which one the work belongs on — publish
+     * used to default to the tracked core major, aiming every merge request at
+     * a branch named after a version of Drupal.
+     */
+    public function testTheRecordedBaseBranchIsReadBackAndTrimmed(): void
+    {
+        $runner = $this->engine(['config --get upkeep.base-branch' => "2.0.x\n"]);
+
+        self::assertSame('2.0.x', $this->adapter($runner)->recordedBaseBranch($this->environment()));
+    }
+
+    /** Nothing recorded is null, which callers must not turn into a guess. */
+    public function testAnAbsentOrEmptyRecordIsNull(): void
+    {
+        self::assertNull(
+            $this->adapter($this->engine(['config --get upkeep.base-branch' => null]))
+                ->recordedBaseBranch($this->environment()),
+        );
+        self::assertNull(
+            $this->adapter($this->engine(['config --get upkeep.base-branch' => "\n"]))
+                ->recordedBaseBranch($this->environment()),
+        );
+    }
 }
