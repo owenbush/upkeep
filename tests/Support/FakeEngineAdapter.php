@@ -7,6 +7,7 @@ namespace Upkeep\Tests\Support;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\ServeResult;
@@ -203,13 +204,17 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         return $this->promotedSha;
     }
 
-    public function pushWork(Environment $environment, IssueBranch $branch): string
+    /** @var list<array{name: string, url: string}> where each push was sent */
+    public array $pushedRemotes = [];
+
+    public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
     {
         if ($this->pushFailure !== null) {
             throw $this->pushFailure;
         }
 
         $this->pushedBranches[] = $branch->name;
+        $this->pushedRemotes[] = ['name' => $remote->name, 'url' => $remote->url];
 
         return $this->pushedSha;
     }

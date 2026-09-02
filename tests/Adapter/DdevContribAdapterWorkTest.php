@@ -6,6 +6,7 @@ namespace Upkeep\Tests\Adapter;
 
 use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\CapturedProcess;
+use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 
 /**
@@ -133,10 +134,10 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
             'rev-parse HEAD' => "ddddddddeeeeeeee\n",
         ]);
 
-        $sha = $this->adapter($runner)->pushWork($this->environment(), $this->branch());
+        $sha = $this->adapter($runner)->pushWork($this->environment(), $this->branch(), self::fork());
 
         self::assertSame('ddddddddeeeeeeee', $sha);
-        self::assertTrue($runner->issued('push --set-upstream origin 3223746-fix-the-thing'));
+        self::assertTrue($runner->issued('push --set-upstream issue-3597857 3223746-fix-the-thing'));
         // A rejected push means the remote moved — a thing to look at, never
         // to overwrite.
         self::assertFalse($runner->issued('--force'));
@@ -151,7 +152,7 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
         ]);
 
         try {
-            $this->adapter($runner)->pushWork($this->environment(), $this->branch());
+            $this->adapter($runner)->pushWork($this->environment(), $this->branch(), self::fork());
             self::fail('Expected the mismatch to be refused.');
         } catch (AdapterException $e) {
             self::assertStringContainsString('is on "1.0.x", not "3223746-fix-the-thing"', $e->getMessage());
@@ -167,7 +168,7 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
         ]);
 
         try {
-            $this->adapter($runner)->pushWork($this->environment(), $this->branch());
+            $this->adapter($runner)->pushWork($this->environment(), $this->branch(), self::fork());
             self::fail('Expected uncommitted work to be refused.');
         } catch (AdapterException $e) {
             self::assertStringContainsString('what is not committed cannot be pushed', $e->getMessage());
@@ -184,7 +185,160 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
 
         $this->expectException(AdapterException::class);
         $this->expectExceptionMessageMatches('/detached HEAD/');
-        $this->adapter($runner)->pushWork($this->environment(), $this->branch());
+        $this->adapter($runner)->pushWork($this->environment(), $this->branch(), self::fork());
+    }
+
+    // -------------------------------------------------------------- pushing
+
+    /** The issue fork, with the SSH URL GitLab itself would have supplied. */
+    private static function fork(): GitRemote
+    {
+        return GitRemote::issueFork(3597857, 'git@git.drupal.org:issue/widget-3597857.git');
+    }
+
+    /**
+     * The branch goes to the issue fork, not to origin.
+     *
+     * This is how contributing to Drupal works and what publish was built
+     * without: measured on pathauto, 100 of 100 open merge requests come from
+     * a fork and none from the project itself. Origin is left exactly as
+     * cloned, so fetch stays anonymous and checking work needs no key.
+     */
+    public function testTheBranchIsPushedToTheGivenRemoteAndOriginIsUntouched(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push issue-3597857' => null,
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $sha = $this->adapter($runner)->pushWork(
+            $this->environment(),
+            IssueBranch::named(3597857, '3597857-fix'),
+            self::fork(),
+        );
+
+        self::assertSame('ddddddd', $sha);
+        self::assertTrue($runner->issued(
+            'remote add issue-3597857 git@git.drupal.org:issue/widget-3597857.git',
+        ));
+        self::assertTrue($runner->issued('push --set-upstream issue-3597857 3597857-fix'));
+
+        foreach ($runner->commandLines() as $line) {
+            self::assertStringNotContainsString('remote set-url origin', $line, 'origin must not be altered');
+            self::assertStringNotContainsString('push --set-upstream origin', $line);
+        }
+    }
+
+    /**
+     * A remote left over from a previous run pointing somewhere else is
+     * re-pointed rather than trusted: an environment is reused across issues,
+     * and a stale URL would send the push to the wrong fork.
+     */
+    public function testAnExistingRemoteWithADifferentUrlIsRepointed(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push issue-3597857' => "git@git.drupal.org:issue/widget-9999999.git\n",
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $this->adapter($runner)->pushWork(
+            $this->environment(),
+            IssueBranch::named(3597857, '3597857-fix'),
+            self::fork(),
+        );
+
+        self::assertTrue($runner->issued(
+            'remote set-url issue-3597857 git@git.drupal.org:issue/widget-3597857.git',
+        ));
+    }
+
+    /** Already correct: nothing is added and nothing is re-pointed. */
+    public function testARemoteAlreadyPointingAtTheForkIsLeftAlone(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push issue-3597857' => "git@git.drupal.org:issue/widget-3597857.git\n",
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $this->adapter($runner)->pushWork(
+            $this->environment(),
+            IssueBranch::named(3597857, '3597857-fix'),
+            self::fork(),
+        );
+
+        foreach ($runner->commandLines() as $line) {
+            self::assertStringNotContainsString('remote add', $line);
+            self::assertStringNotContainsString('remote set-url', $line);
+        }
+    }
+
+    /**
+     * git's own message for a refused push suggests a password, which is the
+     * one thing GitLab will never accept. The recovery that works is named
+     * instead — against the host actually in the remote, since the SSH host
+     * (git.drupal.org) is not the one the API and the web are served from.
+     */
+    public function testAnAuthFailureNamesTheSshKeyRecoveryAndTheRightHost(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push issue-3597857' => "git@git.drupal.org:issue/widget-3597857.git\n",
+            'push --set-upstream' => new CapturedProcess(
+                exitCode: 128,
+                output: "remote: HTTP Basic: Access denied.\nfatal: Authentication failed\n",
+                timedOut: false,
+                durationSeconds: 0.1,
+            ),
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        try {
+            $this->adapter($runner)->pushWork(
+                $this->environment(),
+                IssueBranch::named(3597857, '3597857-fix'),
+                self::fork(),
+            );
+            self::fail('a refused push should raise');
+        } catch (AdapterException $e) {
+            // git's own output is kept — hiding what happened would be worse
+            // than the unhelpful suggestion inside it.
+            self::assertStringContainsString('Access denied', $e->getMessage());
+            self::assertStringContainsString('this is your SSH key', $e->getMessage());
+            self::assertStringContainsString('ssh -T git@git.drupal.org', $e->getMessage());
+            self::assertStringContainsString('ssh_keys', $e->getMessage());
+        }
+    }
+
+    /** A push refused for any other reason reports what git said, plainly. */
+    public function testANonAuthPushFailureIsReportedAsItself(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push issue-3597857' => "git@git.drupal.org:issue/widget-3597857.git\n",
+            'push --set-upstream' => new CapturedProcess(
+                exitCode: 1,
+                output: "! [rejected] 3597857-fix -> 3597857-fix (fetch first)\n",
+                timedOut: false,
+                durationSeconds: 0.1,
+            ),
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $this->expectException(AdapterException::class);
+        $this->expectExceptionMessage('fetch first');
+        $this->adapter($runner)->pushWork(
+            $this->environment(),
+            IssueBranch::named(3597857, '3597857-fix'),
+            self::fork(),
+        );
     }
 
     // ------------------------------------------------------ the base branch
@@ -214,141 +368,5 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
             $this->adapter($this->engine(['config --get upkeep.base-branch' => "\n"]))
                 ->recordedBaseBranch($this->environment()),
         );
-    }
-
-    // -------------------------------------------------------------- pushing
-
-    /**
-     * Push goes to SSH, fetch stays on anonymous HTTPS.
-     *
-     * Cloning over HTTPS is right — anonymous read needs no credential — but
-     * pushing over it makes git prompt for a password that GitLab then refuses
-     * outright, because it requires a token. Moving only the push URL fixes
-     * that without upkeep ever handling a secret.
-     */
-    public function testPushingMovesOriginsPushUrlToSshAndLeavesFetchAlone(): void
-    {
-        $runner = $this->engine([
-            'status --porcelain' => '',
-            'symbolic-ref --short HEAD' => "3597857-fix\n",
-            'remote get-url --push origin' => "https://git.drupalcode.org/project/widget.git\n",
-            'rev-parse HEAD' => "ddddddd\n",
-        ]);
-
-        $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
-
-        self::assertTrue($runner->issued(
-            'remote set-url --push origin git@git.drupalcode.org:project/widget.git',
-        ));
-        self::assertTrue($runner->issued('push --set-upstream origin 3597857-fix'));
-        // Only the push URL: `set-url` without --push would move fetch too,
-        // and then a maintainer with no key could not even check an MR.
-        foreach ($runner->commandLines() as $line) {
-            self::assertStringNotContainsString('remote set-url origin', $line);
-        }
-    }
-
-    /** A remote somebody chose deliberately is never rewritten. */
-    public function testAnAlreadySshOrForeignRemoteIsNotTouched(): void
-    {
-        $remotes = [
-            "git@git.drupalcode.org:project/widget.git\n",
-            "https://github.com/owenbush/widget.git\n",
-        ];
-
-        foreach ($remotes as $remote) {
-            $runner = $this->engine([
-                'status --porcelain' => '',
-                'symbolic-ref --short HEAD' => "3597857-fix\n",
-                'remote get-url --push origin' => $remote,
-                'rev-parse HEAD' => "ddddddd\n",
-            ]);
-
-            $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
-
-            foreach ($runner->commandLines() as $line) {
-                self::assertStringNotContainsString('set-url', $line, $remote);
-            }
-        }
-    }
-
-    /**
-     * A working copy with no origin at all: nothing to rewrite, so nothing is
-     * rewritten, and the push proceeds to fail on its own terms. Reading the
-     * remote must not become a second way for publishing to die.
-     */
-    public function testAWorkingCopyWithNoOriginIsLeftToGitToComplainAbout(): void
-    {
-        $runner = $this->engine([
-            'status --porcelain' => '',
-            'symbolic-ref --short HEAD' => "3597857-fix\n",
-            'remote get-url --push origin' => null,
-            'rev-parse HEAD' => "ddddddd\n",
-        ]);
-
-        $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
-
-        foreach ($runner->commandLines() as $line) {
-            self::assertStringNotContainsString('set-url', $line);
-        }
-        self::assertTrue($runner->issued('push --set-upstream origin 3597857-fix'));
-    }
-
-    /**
-     * git's own message for this suggests a password, which is the one thing
-     * GitLab will never accept. The recovery that actually works is named
-     * instead.
-     */
-    public function testAnAuthFailureNamesTheSshKeyRecoveryRatherThanAPassword(): void
-    {
-        $runner = $this->engine([
-            'status --porcelain' => '',
-            'symbolic-ref --short HEAD' => "3597857-fix\n",
-            'remote get-url --push origin' => "git@git.drupalcode.org:project/widget.git\n",
-            'push --set-upstream' => new CapturedProcess(
-                exitCode: 128,
-                output: "remote: HTTP Basic: Access denied. If a password was provided for Git authentication, "
-                    . "the password was incorrect or you're required to use a token instead of a password.\n"
-                    . "fatal: Authentication failed for 'https://git.drupalcode.org/project/widget.git/'\n",
-                timedOut: false,
-                durationSeconds: 0.1,
-            ),
-            'rev-parse HEAD' => "ddddddd\n",
-        ]);
-
-        try {
-            $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
-            self::fail('a refused push should raise');
-        } catch (AdapterException $e) {
-            // git's own output is kept — hiding what actually happened would
-            // be worse than the unhelpful suggestion in it.
-            self::assertStringContainsString('HTTP Basic: Access denied', $e->getMessage());
-            // ...and is followed by the recovery that works, since the one git
-            // suggests (a password) is the one GitLab will never accept.
-            self::assertStringContainsString('this is your SSH key', $e->getMessage());
-            self::assertStringContainsString('ssh -T git@git.drupalcode.org', $e->getMessage());
-            self::assertStringContainsString('ssh_keys', $e->getMessage());
-        }
-    }
-
-    /** A push refused for any other reason reports what git said, plainly. */
-    public function testANonAuthPushFailureIsReportedAsItself(): void
-    {
-        $runner = $this->engine([
-            'status --porcelain' => '',
-            'symbolic-ref --short HEAD' => "3597857-fix\n",
-            'remote get-url --push origin' => "git@git.drupalcode.org:project/widget.git\n",
-            'push --set-upstream' => new CapturedProcess(
-                exitCode: 1,
-                output: "! [rejected] 3597857-fix -> 3597857-fix (fetch first)\n",
-                timedOut: false,
-                durationSeconds: 0.1,
-            ),
-            'rev-parse HEAD' => "ddddddd\n",
-        ]);
-
-        $this->expectExceptionMessage('fetch first');
-        $this->expectException(AdapterException::class);
-        $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
     }
 }

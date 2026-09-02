@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\EngineAdapterInterface;
@@ -126,7 +127,7 @@ final class PruneCommandTest extends TestCase
                 return false;
             }
 
-            public function pushWork(Environment $environment, IssueBranch $branch): string
+            public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
             {
                 return 'abc1234';
             }

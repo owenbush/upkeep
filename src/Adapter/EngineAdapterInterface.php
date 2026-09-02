@@ -106,7 +106,14 @@ interface EngineAdapterInterface
     ): string;
 
     /**
-     * Pushes a work branch to origin.
+     * Pushes a work branch to $remote, adding or re-pointing it as needed.
+     *
+     * The destination is a parameter because contributing to Drupal does not
+     * put branches on the canonical project: the branch goes to the issue
+     * fork, and the merge request is opened across projects. The command that
+     * knows about issues and forks decides; the adapter puts the branch where
+     * it is told. Origin is never pushed to and never altered, so fetch stays
+     * anonymous and read-only work needs no key.
      *
      * Push only — never force, never delete. The remote copy may be the only
      * one, and a branch this tool did not create is not a branch it may
@@ -117,7 +124,7 @@ interface EngineAdapterInterface
      * @throws AdapterException when the working copy is dirty, is not on that
      *                          branch, or the push is rejected
      */
-    public function pushWork(Environment $environment, IssueBranch $branch): string;
+    public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string;
 
     /**
      * The base branch the working copy's contribution was cut from, as

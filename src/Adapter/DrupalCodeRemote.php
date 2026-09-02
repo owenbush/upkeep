@@ -8,36 +8,32 @@ namespace Upkeep\Adapter;
  * The git.drupalcode.org remote, in its two forms.
  *
  * Cloning happens over HTTPS because anonymous read needs no credentials and
- * every public contrib project answers it. Pushing over the same URL does not
- * work: git falls back to HTTP basic auth, prompts for a username and
- * password at a terminal that may not be attended, and GitLab then refuses the
- * password outright because it requires a token.
+ * every public contrib project answers it — checking a merge request, applying
+ * a patch and running the suite all work with no key and no account, and that
+ * must stay true.
  *
- * So the push URL alone is moved to SSH, leaving fetch anonymous. That split
- * is the point:
+ * Pushing is SSH, to a URL **GitLab itself supplies** (`ssh_url_to_repo`) and
+ * never one assembled here. That is not fussiness: git.drupalcode.org serves
+ * the web and the API, and the SSH remote it advertises is on git.drupal.org.
+ * A URL built by swapping the scheme on the host you fetched from points
+ * somewhere that does not answer.
  *
- *   - **upkeep never handles a credential for git.** The alternative — feeding
- *     the PAT to git — has no implementation that does not write the token to
- *     disk (`.git/config`, a credential store) or expose it in process argv
- *     where `ps` can read it. Every one of those would be a second exception
- *     to the rule that `UPKEEP_GITLAB_TOKEN` never reaches a child process.
- *     SSH means the operator's agent answers, and upkeep never sees a secret.
- *   - **Fetch keeps working with no key at all.** Checking a merge request,
- *     applying a patch, and running the suite are read-only, and a maintainer
- *     without an SSH key can still do all of it.
- *
- * The SSH form is derived from whatever origin already is, never assembled
- * from a project name, so a remote somebody set deliberately — a fork, a
- * mirror, an already-SSH clone — is recognised as not-ours and left alone.
+ * SSH rather than the PAT because **upkeep never handles a credential for
+ * git**. Every way of feeding git a token writes it to disk (`.git/config`, a
+ * credential store) or exposes it in process argv where `ps` can read it, and
+ * each would be a second exception to the rule that `UPKEEP_GITLAB_TOKEN`
+ * never reaches a child process. The operator's agent answers instead.
  */
 final readonly class DrupalCodeRemote
 {
     public const HTTPS_BASE = 'https://git.drupalcode.org/';
 
-    private const SSH_BASE = 'git@git.drupalcode.org:';
+    /** Only a fallback for messages; real URLs come from the API. */
+    private const DEFAULT_SSH_HOST = 'git@git.drupal.org';
 
     /** Where drupal.org takes SSH keys, named in the failure that needs it. */
     public const SSH_KEY_URL = 'https://git.drupalcode.org/-/user_settings/ssh_keys';
+
 
     public static function httpsUrl(string $project): string
     {
@@ -45,25 +41,20 @@ final readonly class DrupalCodeRemote
     }
 
     /**
-     * The SSH push URL for a git.drupalcode.org HTTPS remote, or null when the
-     * URL is not one — already SSH, a different host, or empty.
+     * The host part of an SSH remote, for telling somebody what to try
+     * `ssh -T` against.
      *
-     * Null means "leave this remote alone", which is why it is null rather
-     * than a best-effort rewrite: guessing at a remote somebody chose is how a
-     * push ends up somewhere they did not intend.
+     * Worth extracting rather than hardcoding: git.drupalcode.org serves the
+     * web and the API, but the SSH remote GitLab advertises is on
+     * git.drupal.org. Naming the wrong one in a recovery instruction sends
+     * people to test a host that was never the problem.
      */
-    public static function sshPushUrl(string $remoteUrl): ?string
+    public static function sshHostOf(string $sshUrl): string
     {
-        $url = trim($remoteUrl);
-        if (!str_starts_with($url, self::HTTPS_BASE)) {
-            return null;
+        if (preg_match('/^([^@\s]+@[^:\s]+):/', trim($sshUrl), $m) === 1) {
+            return $m[1];
         }
 
-        $path = substr($url, \strlen(self::HTTPS_BASE));
-        if ($path === '' || $path === '.git') {
-            return null;
-        }
-
-        return self::SSH_BASE . $path;
+        return self::DEFAULT_SSH_HOST;
     }
 }

@@ -40,16 +40,32 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
-- `Adapter\DrupalCodeRemote` splits the remote: clone and fetch over anonymous
-  HTTPS, push over SSH (`pushWork` moves origin's *push* URL alone, lazily, so
-  environments provisioned earlier are repaired on first use). This is why
-  **upkeep never hands git a credential** — every way of giving git the PAT
-  writes it to `.git/config`, to a credential store, or to argv `ps` can read,
-  and each would be a second exception to the no-token-in-children rule. The
-  SSH form is derived from whatever origin already is, never assembled from a
-  project name, so a fork or a deliberate remote is left alone. A refused push
-  names the SSH-key recovery, because git's own message suggests a password and
-  GitLab will never accept one.
+- **Publishing goes to an issue fork, never to origin.** On drupal.org a merge
+  request always comes from `issue/<machine-name>-<nid>` and is opened *across*
+  projects into the canonical one — measured on pathauto, 100 of 100 open MRs
+  come from a fork and none from the project. So `GitlabClient::issueFork()`
+  resolves it (**null when absent, not a failure** — an unstarted issue is a
+  state, not an error), `pushWork()` takes an `Adapter\GitRemote` naming where
+  to push, and `createMergeRequest(..., into: $project)` sets
+  `target_project_id`. The remote is `issue-<nid>`, named per issue because one
+  environment serves every issue for a (module x core) and a generic `fork`
+  remote would be silently re-pointed. `mergeRequestForBranch(..., from: $fork)`
+  narrows by source project: branch names are `<nid>-<slug>` and so collide
+  across every fork of an issue. **upkeep does not create the fork** —
+  drupal.org mints it *and* links it to the issue, so it is a browser handoff
+  like the issue status and the credit; publish refuses before pushing
+  anything. Origin is never pushed to or altered, so fetch stays anonymous and
+  read-only work needs no key.
+- `Adapter\DrupalCodeRemote` holds the clone URL and the SSH host. Push URLs
+  are **never assembled** — they are GitLab's own `ssh_url_to_repo`, because
+  git.drupalcode.org serves the web and the API while the SSH remote it
+  advertises is git.drupal.org; a URL built by swapping the scheme points at a
+  host that does not answer. SSH rather than the PAT because **upkeep never
+  hands git a credential**: every way of doing that writes the token to
+  `.git/config`, to a credential store, or to argv `ps` can read, and each
+  would be a second exception to the no-token-in-children rule. A refused push
+  names the SSH-key recovery, against the host actually in the remote, because
+  git's own message suggests a password and GitLab will never accept one.
 - `src/Command/` — one class per CLI command; thin, delegating to the
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
@@ -278,7 +294,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6375/6375), methods (738/738) and classes (149/149), 1313 tests.
+lines (6429/6429), methods (742/742) and classes (150/150), 1316 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

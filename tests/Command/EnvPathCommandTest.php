@@ -9,6 +9,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Adapter\Environment;
+use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 use Upkeep\Adapter\ServeResult;
@@ -64,7 +65,7 @@ final class EnvPathCommandTest extends TestCase
                 return false;
             }
 
-            public function pushWork(Environment $environment, IssueBranch $branch): string
+            public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
             {
                 return 'abc1234';
             }
@@ -148,7 +149,7 @@ final class EnvPathCommandTest extends TestCase
                 return false;
             }
 
-            public function pushWork(Environment $environment, IssueBranch $branch): string
+            public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
             {
                 return 'abc1234';
             }
@@ -230,7 +231,7 @@ final class EnvPathCommandTest extends TestCase
                 return false;
             }
 
-            public function pushWork(Environment $environment, IssueBranch $branch): string
+            public function pushWork(Environment $environment, IssueBranch $branch, GitRemote $remote): string
             {
                 return 'abc1234';
             }
