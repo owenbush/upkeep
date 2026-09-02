@@ -49,7 +49,8 @@ final readonly class Glossary
                 'dashboard STATUS',
             ],
             'CI failed' => [
-                "drupal.org's own pipeline is red. That is the contributor's to fix, so upkeep suggests nothing.",
+                "drupal.org's own pipeline is red. Fixing it means changing the code, which no upkeep command "
+                    . 'does, so the row suggests nothing rather than guessing at whose job it is.',
                 'dashboard STATUS',
             ],
             'draft' => [

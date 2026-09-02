@@ -77,8 +77,13 @@ final readonly class Guidance
             );
         }
 
-        // Evidence the work is wrong, but it is upstream's — a maintainer
-        // reporting their own CI back to them adds nothing.
+        // Red CI is a failure upkeep has no command for: the code has to
+        // change, and no verb here changes code.
+        //
+        // The note says that and stops. It used to say "the contributor's
+        // move", which asserts whose job it is — and on a maintainer's own
+        // module that is often themselves, so it read as passing back work
+        // they had just been handed.
         //
         // This is also what GateStatus::Blocked means. The gate sets Blocked
         // from red CI and from nothing else — it never inspects mergeability,
@@ -87,10 +92,13 @@ final readonly class Guidance
         // "conflicts" would have told maintainers to ask for a rebase that
         // nothing had asked for.
         if (\in_array('ci-red', $reasons, true) || $verdict?->status === GateStatus::Blocked) {
-            return new self('CI failed', null, 'the contributor\'s move');
+            return new self('CI failed', null, 'manual fix needed');
         }
 
-        // Explicitly not finished, so checking it is premature.
+        // Explicitly not finished, so checking it is premature. Unlike red CI
+        // this genuinely is somebody else's state to change — a draft is a
+        // statement by its author — so the note says what it is, not what to
+        // do about it.
         if (\in_array('draft', $reasons, true)) {
             return new self('draft', null, 'not ready for review yet');
         }

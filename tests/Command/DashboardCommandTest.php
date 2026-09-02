@@ -1026,8 +1026,10 @@ final class DashboardCommandTest extends TestCase
     }
 
     /**
-     * A row with nothing for you to do says so in parentheses instead of a
-     * command — red CI is the contributor's to fix.
+     * A row upkeep has no command for says so in parentheses instead. Red CI
+     * needs the code to change, and no verb here changes code — the note is
+     * careful not to say *whose* job that is, because on a maintainer's own
+     * module it is frequently theirs.
      */
     public function testARowWaitingOnSomebodyElseSaysSoRatherThanNamingACommand(): void
     {
@@ -1042,7 +1044,7 @@ final class DashboardCommandTest extends TestCase
         $display = $this->runDashboard($client, ['--version' => '11'])->getDisplay();
 
         self::assertStringContainsString('CI failed', $display);
-        self::assertStringContainsString("(the contributor's move)", $display);
+        self::assertStringContainsString('(manual fix needed)', $display);
     }
 
     /** A ready row names the merge command in its own NEXT cell. */
