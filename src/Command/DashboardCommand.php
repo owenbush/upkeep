@@ -274,30 +274,31 @@ final class DashboardCommand extends UpkeepCommand
 
         ColumnTable::render(
             $output,
-            ['MODULE', 'CORES', 'MRS', 'READY', 'REVIEW', 'BLOCKED', 'PATCHES', 'UNCHECKED', 'CACHED'],
+            ['MODULE', 'CORES', 'MRS', 'PATCH ISSUES', 'READY', 'CI FAILED', 'UNCHECKED', 'CACHED'],
             $cells,
             self::colorOverviewCells(...),
         );
     }
 
     /**
-     * @param list<string> $cells [MODULE, CORES, MRS, READY, REVIEW, BLOCKED, PATCHES, UNCHECKED, CACHED]
+     * @param list<string> $cells [MODULE, CORES, MRS, PATCH ISSUES, READY, CI FAILED, UNCHECKED, CACHED]
      * @return list<string>
      */
     private static function colorOverviewCells(array $cells): array
     {
         $fmt = $cells;
 
-        // READY is the only cell that means "you can act right now"; BLOCKED
-        // is the only one that means "nobody can". Those two earn colour, and
-        // the muted dashes keep the zeros from competing with them.
-        $fmt[3] = $cells[3] === '–' ? '<fg=gray>–</>' : '<fg=green>' . $cells[3] . '</>';
+        // Three cells carry a verdict, and they are the three worth colour:
+        // READY means you can act right now, CI FAILED means nobody here can,
+        // and UNCHECKED is the queue of work that would turn one into the
+        // other. Counts and dashes stay muted so those three stand out.
+        $fmt[4] = $cells[4] === '–' ? '<fg=gray>–</>' : '<fg=green>' . $cells[4] . '</>';
         $fmt[5] = $cells[5] === '–' ? '<fg=gray>–</>' : '<fg=red>' . $cells[5] . '</>';
-        $fmt[7] = $cells[7] === '–' ? '<fg=gray>–</>' : '<fg=yellow>' . $cells[7] . '</>';
-        foreach ([1, 2, 4, 6] as $i) {
+        $fmt[6] = $cells[6] === '–' ? '<fg=gray>–</>' : '<fg=yellow>' . $cells[6] . '</>';
+        foreach ([1, 2, 3] as $i) {
             $fmt[$i] = $cells[$i] === '–' ? '<fg=gray>–</>' : $cells[$i];
         }
-        $fmt[8] = '<fg=gray>' . $cells[8] . '</>';
+        $fmt[7] = '<fg=gray>' . $cells[7] . '</>';
 
         return array_values($fmt);
     }

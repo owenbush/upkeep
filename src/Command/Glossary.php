@@ -95,6 +95,16 @@ final readonly class Glossary
                     . 'to do — it is waiting on somebody else.',
                 'dashboard column',
             ],
+            'PATCH ISSUES' => [
+                'How many *issues* on that module carry patch files. A row\'s own patch count is a number of '
+                    . 'files, which is why this column does not say "patches".',
+                'dashboard overview column',
+            ],
+            'CI FAILED' => [
+                "How many rows drupal.org's pipeline has failed. It is the gate's BLOCKED verdict under its real "
+                    . 'name — that verdict is set by red CI and by nothing else.',
+                'dashboard overview column',
+            ],
             'UNCHECKED' => [
                 'Rows with no local verdict, plus rows whose verdict is stale. The actionable number on the '
                     . 'overview.',

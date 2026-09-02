@@ -195,18 +195,20 @@ upkeep dashboard --all        # every row of every module
 The overview answers "where should I look?":
 
 ```
-MODULE      CORES    MRS    READY    REVIEW    BLOCKED    PATCHES    UNCHECKED    CACHED
+MODULE      CORES    MRS    PATCH ISSUES    READY    CI FAILED    UNCHECKED    CACHED
 
-pathauto    10,11    100    –        200       –          22         244          17h ago
-paragraphs  11        12    2         10       1          61          73          2m ago
+pathauto    10,11    100              22        –            2          244    17h ago
+paragraphs  11        12              61        2            1           73    2m ago
 ```
 
-`MRS` and `PATCHES` count *subjects* — one merge request tracked across two
-cores is one merge request. `READY`/`REVIEW`/`BLOCKED` and `UNCHECKED` count
-per (subject × core), because the same branch can be green on 10 and red on
-11, which is the whole reason both are tracked. `UNCHECKED` is the actionable
-number: rows with no local verdict, plus rows whose verdict is about a
-revision that is no longer current.
+`MRS` and `PATCH ISSUES` count *subjects* — one merge request tracked across
+two cores is one merge request, and the column says "issues" because a row's
+own patch count is a number of *files*. `READY`, `CI FAILED` and `UNCHECKED`
+count per (subject × core), because the same branch can be green on 10 and red
+on 11, which is the whole reason both are tracked.
+
+`UNCHECKED` is the actionable number: rows with no local verdict, plus rows
+whose verdict is about a revision that is no longer current.
 
 The counts are aggregated from exactly the rows the drill-down prints, never
 recounted — a module whose overview says two READY-AUTO shows two when you

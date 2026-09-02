@@ -83,7 +83,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   what blocks progress — nothing upkeep can fix, then your evidence the work is
   wrong, then missing evidence, then nothing to do. `Command\Glossary` +
   `upkeep explain` define every term the tool prints, which nothing did before:
-  `patch↑` existed only in a source comment.
+  `patch↑` existed only in a source comment. The overview's columns use the same
+  words as the rows they summarise — `PATCH ISSUES` (not `PATCHES`, which would
+  collide with a row's file count) and `CI FAILED` (not `BLOCKED`, which is what
+  that verdict is actually set by). There is no `REVIEW` column: it counted
+  everything neither ready nor CI-failed, i.e. every row.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
   happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —

@@ -867,6 +867,10 @@ final class DashboardCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringContainsString('MODULE', $display);
         self::assertStringContainsString('UNCHECKED', $display);
+        // The overview speaks the same vocabulary as the rows it summarises.
+        self::assertStringContainsString('PATCH ISSUES', $display, 'issues, not files');
+        self::assertStringContainsString('CI FAILED', $display, 'what BLOCKED actually meant');
+        self::assertStringNotContainsString('BLOCKED', $display);
         // Two MRs across two cores plus a patch issue is five detailed rows;
         // the overview is one line, and never names an individual MR.
         self::assertStringNotContainsString('!5', $display);
