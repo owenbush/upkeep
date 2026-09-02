@@ -131,6 +131,11 @@ final class PruneCommandTest extends TestCase
                 return 'abc1234';
             }
 
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
+            }
+
             public function promotePatch(
                 Environment $environment,
                 PatchApplication $patch,

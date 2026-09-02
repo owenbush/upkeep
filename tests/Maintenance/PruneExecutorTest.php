@@ -89,6 +89,11 @@ final class PruneExecutorTest extends TestCase
                 return 'abc1234';
             }
 
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
+            }
+
             public function promotePatch(
                 Environment $environment,
                 PatchApplication $patch,
@@ -272,6 +277,11 @@ final class PruneExecutorTest extends TestCase
             public function pushWork(Environment $environment, IssueBranch $branch): string
             {
                 return 'abc1234';
+            }
+
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
             }
 
             public function promotePatch(

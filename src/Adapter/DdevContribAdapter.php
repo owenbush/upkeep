@@ -365,6 +365,16 @@ final class DdevContribAdapter implements EngineAdapterInterface
         return false;
     }
 
+    public function recordedBaseBranch(Environment $environment): ?string
+    {
+        $recorded = self::trimmed($this->runner->tryRun([
+            'git', '-C', $environment->projectPath . '/' . self::MODULE_DIR,
+            'config', '--get', 'upkeep.base-branch',
+        ]));
+
+        return $recorded === '' ? null : $recorded;
+    }
+
     public function promotePatch(
         Environment $environment,
         PatchApplication $patch,

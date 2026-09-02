@@ -216,6 +216,7 @@ final class IssueWorkflowTest extends TestCase
     public function testStartingWorkProvisionsAndOpensAnIssueForkBranch(): void
     {
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Add an option to disable auto-updating');
         $cli = $this->cli()->withEngine($engine);
 
@@ -245,6 +246,7 @@ final class IssueWorkflowTest extends TestCase
     public function testTheBranchAndBaseCanBeNamedExplicitly(): void
     {
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine);
 
@@ -342,10 +344,77 @@ final class IssueWorkflowTest extends TestCase
             'state' => 'opened',
             'author' => ['username' => 'owen', 'id' => 1],
             'source_branch' => '3223746-fix-the-thing',
-            'target_branch' => '11',
+            'target_branch' => '1.0.x',
             'sha' => str_repeat('a', 40),
             'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/' . $iid,
         ]);
+    }
+
+    /**
+     * The target is a *branch on the project*, taken from what the adapter
+     * recorded when the work started.
+     *
+     * It used to default to the module's first tracked core major, which is a
+     * version of Drupal and not a branch: no contrib project has a branch
+     * called "11", so every publish that did not pass --target aimed at one
+     * that does not exist. The old fixtures had the wrong value baked in and
+     * so agreed with the bug.
+     */
+    public function testTheMergeRequestTargetsTheRecordedBaseBranchNotACoreVersion(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '2.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::OK, $exit, $cli->display());
+        self::assertStringContainsString('against 2.0.x', $cli->display());
+        self::assertStringNotContainsString('against 11', $cli->display());
+    }
+
+    /** An explicit --target still wins over the recording. */
+    public function testAnExplicitTargetOverridesTheRecordedBase(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '2.0.x';
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        $cli->run('publish', 'widget', '3223746', '--version=11', '--target=1.x');
+
+        self::assertStringContainsString('against 1.x', $cli->display());
+    }
+
+    /**
+     * With nothing recorded and nothing given, it says so and names the fix
+     * rather than guessing — a merge request opened against the wrong branch
+     * is a thing somebody else has to notice and close.
+     */
+    public function testAnUnknownBaseIsRefusedWithSomethingToType(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = null;
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
+            'source_branch=' => self::json([]),
+            'merge_requests' => self::mrPayload(19, 'Issue #3223746: Fix the thing'),
+        ]));
+
+        $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('--target=', $cli->display());
+        self::assertStringContainsString('not a core version', $cli->display());
+        // The push already happened, and the message must not imply otherwise.
+        self::assertSame(['3223746-fix-the-thing'], $engine->pushedBranches);
     }
 
     /**
@@ -355,6 +424,7 @@ final class IssueWorkflowTest extends TestCase
     public function testPublishingPushesTheBranchAndOpensAMergeRequest(): void
     {
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
             // No MR open for the branch yet, then the created one.
@@ -378,6 +448,7 @@ final class IssueWorkflowTest extends TestCase
     public function testRepublishingReportsTheExistingMergeRequestRatherThanDuplicatingIt(): void
     {
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
             'source_branch=' => self::json([[
@@ -406,6 +477,7 @@ final class IssueWorkflowTest extends TestCase
     public function testAFailureToOpenTheMergeRequestStillReportsThatThePushSucceeded(): void
     {
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
             'source_branch=' => self::json([]),
@@ -444,6 +516,7 @@ final class IssueWorkflowTest extends TestCase
     {
         $methods = [];
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine)->withGitlab(new GitlabClient(
             new MockHttpClient(static function (string $method, string $url) use (&$methods): MockResponse {
@@ -598,6 +671,7 @@ final class IssueWorkflowTest extends TestCase
     public function testTheBranchAndTitleCanBeNamedAndDraftedExplicitly(): void
     {
         $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->baseBranch = '1.0.x';
         $this->withIssues([], 3223746, 'Fix the thing');
         $cli = $this->cli()->withEngine($engine)->withGitlab($this->gitlab([
             'source_branch=' => self::json([]),

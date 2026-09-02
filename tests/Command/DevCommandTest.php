@@ -198,6 +198,11 @@ final class DevCommandTest extends TestCase
                 return 'abc1234';
             }
 
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
+            }
+
             public function promotePatch(
                 Environment $environment,
                 PatchApplication $patch,
@@ -266,6 +271,11 @@ final class DevCommandTest extends TestCase
             public function pushWork(Environment $environment, IssueBranch $branch): string
             {
                 return 'abc1234';
+            }
+
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
             }
 
             public function promotePatch(
@@ -338,6 +348,11 @@ final class DevCommandTest extends TestCase
                 return 'abc1234';
             }
 
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
+            }
+
             public function promotePatch(
                 Environment $environment,
                 PatchApplication $patch,
@@ -401,6 +416,11 @@ final class DevCommandTest extends TestCase
             public function pushWork(Environment $environment, IssueBranch $branch): string
             {
                 return 'abc1234';
+            }
+
+            public function recordedBaseBranch(Environment $environment): ?string
+            {
+                return null;
             }
 
             public function promotePatch(
