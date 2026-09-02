@@ -49,7 +49,11 @@ final class DevCommand extends UpkeepCommand
             $cockpit,
             self::stringOption($input, 'projects-root'),
             static fn (string $line) => $io->text($line),
-            static fn (string $line) => $io->text($line),
+            // The engine's raw process output, which is a wall of it — behind
+            // -v like everywhere else. `dev`'s payload is four lines telling
+            // you where the site is; burying them under the provisioning
+            // transcript defeats the command.
+            static fn (string $line) => $io->writeln($line, OutputInterface::VERBOSITY_VERBOSE),
         );
 
         $environment = $adapter->ensureEnv($module, $coreMajor);

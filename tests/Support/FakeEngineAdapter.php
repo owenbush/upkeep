@@ -134,8 +134,12 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         return $this->environment ?? throw new \BadMethodCallException('ensureEnv() not configured');
     }
 
+    /** @var list<MergeRequest> merge requests applied, in order */
+    public array $appliedMrs = [];
+
     public function applyMr(Environment $environment, MergeRequest $mergeRequest): void
     {
+        $this->appliedMrs[] = $mergeRequest;
     }
 
     public function applyPatch(Environment $environment, PatchApplication $patch): void
@@ -230,9 +234,12 @@ final class FakeEngineAdapter implements EngineAdapterInterface
     {
     }
 
+    /** Null is "no provisioned environment", which is a case commands handle. */
+    public ?WorkingCopyStatus $workingCopy = null;
+
     public function inspectWorkingCopy(string $moduleName, string $coreMajor): ?WorkingCopyStatus
     {
-        return null;
+        return $this->workingCopy;
     }
 
     public function checkoutBranch(Environment $environment, string $branch): void

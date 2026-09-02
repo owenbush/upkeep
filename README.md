@@ -87,6 +87,33 @@ module's open MRs and head pipeline):
 upkeep api:probe conditions_helper
 ```
 
+## Shell completion
+
+```bash
+upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep   # bash
+upkeep completion zsh  > ~/.zsh/completions/_upkeep               # zsh
+upkeep completion fish > ~/.config/fish/completions/upkeep.fish   # fish
+```
+
+Open a new shell and TAB completes command names, options, **your registered
+module machine names**, and the core versions each module actually tracks:
+
+```
+upkeep patch:pro<TAB>              -> upkeep patch:promote
+upkeep patch:promote fi<TAB>       -> upkeep patch:promote field_inheritance
+upkeep check pathauto 12 --version=<TAB>   -> 11
+```
+
+The module names come from your registry, so they are exactly the modules you
+can act on, and `--version=` offers only the cores that module tracks rather
+than every core any module uses. Completion reads the cockpit from
+`UPKEEP_COCKPIT` or the current directory — set the env var if you drive upkeep
+from outside the cockpit.
+
+Values nothing local can enumerate — an MR IID, an issue node id — are not
+completed, because guessing them would mean a network round trip on every press
+of TAB.
+
 ## Cockpit setup
 
 The cockpit is a plain directory holding your module registry, the per-core
@@ -325,6 +352,26 @@ api-d7 publishes no quota at all, which is why the cap is a conservative 8
 rather than something tuned to a published limit. A 429 from either is honoured:
 the batch waits for `Retry-After` and retries once, and anything asking for more
 than 10 seconds is reported rather than slept through.
+
+### Check what you are working on
+
+```bash
+upkeep check widget --working-copy --version=11
+```
+
+Runs the full suite against whatever the module working copy is currently on —
+after `start`, after `patch:promote`, or after your own edits. It needs no
+merge request and no GitLab token, names the branch it checked, and warns if
+the tree has uncommitted changes (they are included in the run).
+
+**It caches nothing.** Every other check result is keyed by a subject and a
+revision — an MR and its head SHA, a patch and its source URL — so the
+dashboard can tell a fresh pass from one about work that has since moved. A
+working copy has neither, and an entry keyed on a guess would put
+permanently-fresh-looking evidence in front of the fast-lane gate. So this mode
+reports and exits, which is all "did I break it?" needs.
+
+Pair it with `upkeep dev widget` when you want to click through the site.
 
 ### Check an MR
 
@@ -1000,6 +1047,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
 | `upkeep dashboard [<module>] [--version=N] [--refresh[=MODULE]] [--no-patches] [--all]` | Per-module overview; name a module (or `--all`) for individual MR and patch rows |
 | `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR |
+| `upkeep check <module> --working-copy [--version=N] [--fixture=NAME]` | Run the suite against the current working copy; caches nothing |
 | `upkeep review <module> <mr> [--version=N]` | Apply an MR to a running site and print its browsable URL |
 | `upkeep dev <module> [--version=N] [--branch=B]` | Prepare an environment for active development: provision if needed, optionally check out a branch, print the path |
 | `upkeep exec <module> [--version=N] -- <command...>` | Run a command in the module's environment directory |

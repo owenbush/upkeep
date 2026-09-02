@@ -139,6 +139,13 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   resource's `owner` reference is already in the payload the client
   dereferences for the filename (`IssueFile::$ownerUid`), so only
   `DrupalOrgClient::user()` is new work, once per promotion.
+  `check --working-copy` runs the same suite against whatever the working copy
+  holds, needing no MR and no token, and **caches nothing**: every other
+  verdict is keyed by a subject and a revision so staleness is detectable, and
+  a working copy has neither — an entry keyed on a guess would put
+  permanently-fresh evidence in front of the fast-lane gate. It closes a
+  dangling instruction: `start` had been telling people to run
+  `upkeep check <module> --branch`, a flag that was never built.
   `patch:promote` stops at the commit — `publish` is the outward-facing half,
   and it routes through `EngineAdapterInterface::promotePatch()`, which
   delegates to `startWork()` rather than reimplementing it: a work branch may
@@ -217,6 +224,16 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   credential-scrubbing invariant (see
   `tests/Security/ProcessEnvironmentInvariantTest`), because its children are
   upkeep itself; served job output is redacted again on the way out regardless.
+- **Shell completion** — `upkeep completion <shell>` is Symfony Console's own,
+  and command names complete for free. What does not is *values*, so
+  `UpkeepCommand::complete()` suggests the registry's module machine names for
+  the `module` argument and the named module's tracked cores for `--version`.
+  It **may never throw**: completion runs on every press of TAB, and an
+  exception would spill a stack trace across the prompt — so an unresolvable
+  cockpit or an unparseable registry suggests nothing and the ordinary run a
+  moment later reports it properly. Values nothing local can enumerate (MR
+  IIDs, issue nids) are deliberately not completed: that would be a network
+  round trip per keystroke.
 - `tests/` — PHPUnit, mirroring `src/`.
 
 ## Quality gates
@@ -251,7 +268,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6226/6226), methods (728/728) and classes (148/148), 1272 tests.
+lines (6320/6320), methods (733/733) and classes (148/148), 1291 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
