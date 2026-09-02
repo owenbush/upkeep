@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Adapter;
 
 use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\CapturedProcess;
 use Upkeep\Adapter\IssueBranch;
 
 /**
@@ -213,5 +214,141 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
             $this->adapter($this->engine(['config --get upkeep.base-branch' => "\n"]))
                 ->recordedBaseBranch($this->environment()),
         );
+    }
+
+    // -------------------------------------------------------------- pushing
+
+    /**
+     * Push goes to SSH, fetch stays on anonymous HTTPS.
+     *
+     * Cloning over HTTPS is right — anonymous read needs no credential — but
+     * pushing over it makes git prompt for a password that GitLab then refuses
+     * outright, because it requires a token. Moving only the push URL fixes
+     * that without upkeep ever handling a secret.
+     */
+    public function testPushingMovesOriginsPushUrlToSshAndLeavesFetchAlone(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push origin' => "https://git.drupalcode.org/project/widget.git\n",
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
+
+        self::assertTrue($runner->issued(
+            'remote set-url --push origin git@git.drupalcode.org:project/widget.git',
+        ));
+        self::assertTrue($runner->issued('push --set-upstream origin 3597857-fix'));
+        // Only the push URL: `set-url` without --push would move fetch too,
+        // and then a maintainer with no key could not even check an MR.
+        foreach ($runner->commandLines() as $line) {
+            self::assertStringNotContainsString('remote set-url origin', $line);
+        }
+    }
+
+    /** A remote somebody chose deliberately is never rewritten. */
+    public function testAnAlreadySshOrForeignRemoteIsNotTouched(): void
+    {
+        $remotes = [
+            "git@git.drupalcode.org:project/widget.git\n",
+            "https://github.com/owenbush/widget.git\n",
+        ];
+
+        foreach ($remotes as $remote) {
+            $runner = $this->engine([
+                'status --porcelain' => '',
+                'symbolic-ref --short HEAD' => "3597857-fix\n",
+                'remote get-url --push origin' => $remote,
+                'rev-parse HEAD' => "ddddddd\n",
+            ]);
+
+            $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
+
+            foreach ($runner->commandLines() as $line) {
+                self::assertStringNotContainsString('set-url', $line, $remote);
+            }
+        }
+    }
+
+    /**
+     * A working copy with no origin at all: nothing to rewrite, so nothing is
+     * rewritten, and the push proceeds to fail on its own terms. Reading the
+     * remote must not become a second way for publishing to die.
+     */
+    public function testAWorkingCopyWithNoOriginIsLeftToGitToComplainAbout(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push origin' => null,
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
+
+        foreach ($runner->commandLines() as $line) {
+            self::assertStringNotContainsString('set-url', $line);
+        }
+        self::assertTrue($runner->issued('push --set-upstream origin 3597857-fix'));
+    }
+
+    /**
+     * git's own message for this suggests a password, which is the one thing
+     * GitLab will never accept. The recovery that actually works is named
+     * instead.
+     */
+    public function testAnAuthFailureNamesTheSshKeyRecoveryRatherThanAPassword(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push origin' => "git@git.drupalcode.org:project/widget.git\n",
+            'push --set-upstream' => new CapturedProcess(
+                exitCode: 128,
+                output: "remote: HTTP Basic: Access denied. If a password was provided for Git authentication, "
+                    . "the password was incorrect or you're required to use a token instead of a password.\n"
+                    . "fatal: Authentication failed for 'https://git.drupalcode.org/project/widget.git/'\n",
+                timedOut: false,
+                durationSeconds: 0.1,
+            ),
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        try {
+            $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
+            self::fail('a refused push should raise');
+        } catch (AdapterException $e) {
+            // git's own output is kept — hiding what actually happened would
+            // be worse than the unhelpful suggestion in it.
+            self::assertStringContainsString('HTTP Basic: Access denied', $e->getMessage());
+            // ...and is followed by the recovery that works, since the one git
+            // suggests (a password) is the one GitLab will never accept.
+            self::assertStringContainsString('this is your SSH key', $e->getMessage());
+            self::assertStringContainsString('ssh -T git@git.drupalcode.org', $e->getMessage());
+            self::assertStringContainsString('ssh_keys', $e->getMessage());
+        }
+    }
+
+    /** A push refused for any other reason reports what git said, plainly. */
+    public function testANonAuthPushFailureIsReportedAsItself(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597857-fix\n",
+            'remote get-url --push origin' => "git@git.drupalcode.org:project/widget.git\n",
+            'push --set-upstream' => new CapturedProcess(
+                exitCode: 1,
+                output: "! [rejected] 3597857-fix -> 3597857-fix (fetch first)\n",
+                timedOut: false,
+                durationSeconds: 0.1,
+            ),
+            'rev-parse HEAD' => "ddddddd\n",
+        ]);
+
+        $this->expectExceptionMessage('fetch first');
+        $this->expectException(AdapterException::class);
+        $this->adapter($runner)->pushWork($this->environment(), IssueBranch::named(3597857, '3597857-fix'));
     }
 }
