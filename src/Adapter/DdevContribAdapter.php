@@ -29,7 +29,6 @@ use Upkeep\Gitlab\MergeRequest;
  */
 final class DdevContribAdapter implements EngineAdapterInterface
 {
-    private const GIT_BASE_URL = 'https://git.drupalcode.org/';
     private const MODULE_DIR = 'module';
 
     /** Generous per-check timebox; a timeout is a failure with reason. */
@@ -365,6 +364,65 @@ final class DdevContribAdapter implements EngineAdapterInterface
         return false;
     }
 
+    /**
+     * Points origin's *push* URL at SSH, leaving fetch on anonymous HTTPS.
+     *
+     * Done here rather than only at clone time so environments provisioned
+     * before this existed are fixed on first use, without re-provisioning —
+     * the same lazy repair ensureFixtureAddOn() does. A remote that is not a
+     * git.drupalcode.org HTTPS URL is left exactly as it is: see
+     * DrupalCodeRemote for why that refusal matters.
+     */
+    private function ensureSshPushUrl(string $moduleDir): void
+    {
+        $current = self::trimmed($this->runner->tryRun(
+            ['git', '-C', $moduleDir, 'remote', 'get-url', '--push', 'origin'],
+        ));
+        if ($current === null) {
+            return;
+        }
+
+        $ssh = DrupalCodeRemote::sshPushUrl($current);
+        if ($ssh === null) {
+            return;
+        }
+
+        ($this->log)(sprintf('Pushing over SSH (%s); fetch stays on anonymous HTTPS.', $ssh));
+        $this->runner->run(['git', '-C', $moduleDir, 'remote', 'set-url', '--push', 'origin', $ssh]);
+    }
+
+    /**
+     * A push that failed, with the one recovery that is almost always the
+     * answer attached when it looks like authentication.
+     *
+     * The unhelpful version of this message is git's own, which suggests a
+     * password — the thing GitLab has just refused and will always refuse.
+     */
+    private static function pushFailure(IssueBranch $branch, string $output): AdapterException
+    {
+        $looksLikeAuth = preg_match('/Access denied|Authentication failed|Permission denied|publickey/i', $output)
+            === 1;
+
+        if (!$looksLikeAuth) {
+            return new AdapterException(sprintf(
+                "Pushing \"%s\" to origin failed:\n%s",
+                $branch->name,
+                trim($output),
+            ));
+        }
+
+        return new AdapterException(sprintf(
+            "Pushing \"%s\" to origin was refused by git.drupalcode.org:\n%s\n\n"
+            . "upkeep pushes over SSH and never hands git a password or a token, so this is your SSH key.\n"
+            . "  - Add one at %s\n"
+            . "  - Check it works:  ssh -T git@git.drupalcode.org\n"
+            . '  - Make sure the agent has it:  ssh-add -l',
+            $branch->name,
+            trim($output),
+            DrupalCodeRemote::SSH_KEY_URL,
+        ));
+    }
+
     public function recordedBaseBranch(Environment $environment): ?string
     {
         $recorded = self::trimmed($this->runner->tryRun([
@@ -438,10 +496,17 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ));
         }
 
+        $this->ensureSshPushUrl($moduleDir);
+
         // No --force, and no lease: a rejected push means the remote moved,
         // which is a thing to look at rather than to overwrite.
         ($this->log)(sprintf('Pushing %s to origin ...', $branch->name));
-        $this->runner->run(['git', '-C', $moduleDir, 'push', '--set-upstream', 'origin', $branch->name]);
+        $push = $this->runner->capture(
+            ['git', '-C', $moduleDir, 'push', '--set-upstream', 'origin', $branch->name],
+        );
+        if ($push->exitCode !== 0) {
+            throw self::pushFailure($branch, $push->output);
+        }
 
         return trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
     }
@@ -680,7 +745,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
             ($this->log)('Cloning the module working copy ...');
             $this->runner->run([
-                'git', 'clone', self::GIT_BASE_URL . $module->project . '.git', $projectPath . '/' . self::MODULE_DIR,
+                'git', 'clone', DrupalCodeRemote::httpsUrl($module->project), $projectPath . '/' . self::MODULE_DIR,
             ]);
 
             ($this->log)('Configuring the engine project ...');

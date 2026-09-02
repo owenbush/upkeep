@@ -40,6 +40,16 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- `Adapter\DrupalCodeRemote` splits the remote: clone and fetch over anonymous
+  HTTPS, push over SSH (`pushWork` moves origin's *push* URL alone, lazily, so
+  environments provisioned earlier are repaired on first use). This is why
+  **upkeep never hands git a credential** — every way of giving git the PAT
+  writes it to `.git/config`, to a credential store, or to argv `ps` can read,
+  and each would be a second exception to the no-token-in-children rule. The
+  SSH form is derived from whatever origin already is, never assembled from a
+  project name, so a fork or a deliberate remote is left alone. A refused push
+  names the SSH-key recovery, because git's own message suggests a password and
+  GitLab will never accept one.
 - `src/Command/` — one class per CLI command; thin, delegating to the
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
@@ -268,7 +278,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6334/6334), methods (734/734) and classes (148/148), 1296 tests.
+lines (6375/6375), methods (738/738) and classes (149/149), 1313 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

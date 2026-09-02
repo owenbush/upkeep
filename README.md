@@ -114,6 +114,39 @@ Values nothing local can enumerate — an MR IID, an issue node id — are not
 completed, because guessing them would mean a network round trip on every press
 of TAB.
 
+## Pushing: SSH key
+
+Reading needs nothing — cloning, checking a merge request, applying a patch and
+running the suite all work over anonymous HTTPS with no credentials at all.
+
+**Pushing needs an SSH key on your drupal.org account.** `upkeep publish` is
+the only command that writes to git.drupalcode.org, and upkeep points origin's
+*push* URL at SSH the first time it pushes, leaving fetch on HTTPS:
+
+```
+https://git.drupalcode.org/project/foo.git   fetch  (anonymous, unchanged)
+git@git.drupalcode.org:project/foo.git       push   (your SSH agent)
+```
+
+Add a key at <https://git.drupalcode.org/-/user_settings/ssh_keys>, then check
+it:
+
+```bash
+ssh -T git@git.drupalcode.org
+ssh-add -l                       # the agent actually holds it
+```
+
+**upkeep never hands git a credential**, and that is why it is SSH rather than
+your PAT. Every way of giving git a token writes it into `.git/config`, into a
+credential store on disk, or into process argv where `ps` can read it — each of
+which would be a second exception to the rule that `UPKEEP_GITLAB_TOKEN` never
+reaches a child process. Your SSH agent answers instead, and upkeep sees
+nothing. The PAT stays what it is: an API credential for reading merge
+requests, pipelines and issues.
+
+A remote you set deliberately — a fork, a mirror, an already-SSH clone, another
+host — is recognised as not upkeep's and left alone.
+
 ## Cockpit setup
 
 The cockpit is a plain directory holding your module registry, the per-core
