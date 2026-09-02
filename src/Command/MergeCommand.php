@@ -57,6 +57,17 @@ final class MergeCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Walks the current READY-AUTO rows one at a time, asking for an explicit
+            approval per merge request.
+
+              <info>upkeep merge --fast-lane</info>
+
+            Only bot compatibility MRs with green CI and green local checks are ever
+            offered. There is no batch mode and no unattended flag, by Drupal Association
+            policy — see the README's policy stance.
+            HELP);
+
         $this->addOption(
             'fast-lane',
             null,

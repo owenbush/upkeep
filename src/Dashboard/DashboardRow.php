@@ -134,16 +134,26 @@ final readonly class DashboardRow
 
     /**
      * The row exactly as the dashboard table renders it:
-     * MODULE, MR, CORE, TITLE, CI, LOCAL, STATUS.
+     * MODULE, MR, CORE, TITLE, CI, LOCAL, STATUS, NEXT.
+     *
+     * STATUS is a phrase and NEXT is a command, because a row that says only
+     * what it *is* leaves a maintainer with a hundred of them and no idea
+     * which to touch. The gate's own reason tokens are still available —
+     * `describe()` renders them, and the dashboard prints them under `-v`.
+     *
+     * @param bool $verbose swap the phrase for the gate's reason tokens
      *
      * @return list<string>
      */
-    public function toTableCells(): array
+    public function toTableCells(bool $verbose = false): array
     {
+        $guidance = Guidance::forRow($this);
+        $next = $guidance->command;
+
         if ($this->moduleFailure !== null) {
             $cell = self::failureCell($this->moduleFailure);
 
-            return [$this->module, '–', '–', '(merge requests unavailable)', $cell, '–', $cell];
+            return [$this->module, '–', '–', '(merge requests unavailable)', $cell, '–', $cell, $next];
         }
 
         if ($this->contribution !== null) {
@@ -157,7 +167,8 @@ final readonly class DashboardRow
                 // unreviewed in the first place.
                 '–',
                 $this->localCell(),
-                $this->statusCell(),
+                $verbose ? $this->statusCell() : $guidance->status,
+                $next,
             ];
         }
 
@@ -170,7 +181,8 @@ final readonly class DashboardRow
             self::truncate($mergeRequest->title),
             $this->ciCell(),
             $this->localCell(),
-            $this->requireVerdict()->describe(),
+            $verbose ? $this->requireVerdict()->describe() : $guidance->status,
+            $next,
         ];
     }
 

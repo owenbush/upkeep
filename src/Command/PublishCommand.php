@@ -56,6 +56,17 @@ final class PublishCommand extends UpkeepCommand
 
     protected function configure(): void
     {
+        $this->setHelp(<<<'HELP'
+            Pushes the work branch for an issue and opens its merge request — after which
+            it is an ordinary MR that <info>dashboard</info>, <info>check</info> and <info>merge</info> already handle.
+
+              <info>upkeep publish pathauto 3223746</info>
+              <info>upkeep publish pathauto 3223746 --draft</info>
+
+            Opens merge requests; never merges one. Re-running after more commits updates
+            the existing MR rather than opening a second.
+            HELP);
+
         $this->addModuleArgument()
             ->addTargetCoreOption()
             ->addCockpitOption()

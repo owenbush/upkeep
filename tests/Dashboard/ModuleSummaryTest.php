@@ -167,7 +167,7 @@ final class ModuleSummaryTest extends TestCase
 
         self::assertTrue($summary->failed);
         self::assertSame(
-            ['widget', '–', '–', '–', '–', '–', '–', '–', 'never'],
+            ['widget', '–', '–', '–', '–', '–', '–', 'never'],
             $summary->toTableCells('never'),
             'a module that could not be read reports nothing rather than zero',
         );
@@ -185,10 +185,15 @@ final class ModuleSummaryTest extends TestCase
         ]);
 
         self::assertFalse($summary->failed);
+        // MODULE, CORES, MRS, PATCH ISSUES, READY, CI FAILED, UNCHECKED, CACHED.
+        // The REVIEW column is gone: it counted everything neither ready nor
+        // CI-failed, which is every row, and a number that is always the total
+        // says nothing. The count itself survives on the object.
         self::assertSame(
-            ['widget', '11', '1', '–', '1', '–', '0', '–', '2m ago'],
+            ['widget', '11', '1', '0', '–', '–', '–', '2m ago'],
             $summary->toTableCells('2m ago'),
         );
+        self::assertSame(1, $summary->review, 'still counted, just not a column');
     }
 
     public function testAModuleWithNothingAtAllSummarisesToZeroes(): void
@@ -198,6 +203,6 @@ final class ModuleSummaryTest extends TestCase
         self::assertSame(0, $summary->mergeRequests);
         self::assertSame(0, $summary->patchIssues);
         self::assertSame([], $summary->cores);
-        self::assertSame(['widget', '–', '0', '–', '–', '–', '0', '–', 'never'], $summary->toTableCells('never'));
+        self::assertSame(['widget', '–', '0', '0', '–', '–', '–', 'never'], $summary->toTableCells('never'));
     }
 }

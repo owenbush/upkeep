@@ -74,6 +74,23 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `max_duration` as well as `timeout`, because Symfony's `timeout` is the
   *idle* timeout and bounds nothing on its own.
 - `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
+  **`BLOCKED` is set by red CI and by nothing else** — the gate never inspects
+  mergeability, so it does not mean merge conflicts whatever older docs said.
+- `Dashboard\Guidance` turns a row into a plain-English status and the command
+  to run for it, which is what the dashboard renders by default; the gate's own
+  reason tokens move behind `-v`. The *order* the reasons are considered is the
+  design: several apply at once and only one phrase can show, so they rank by
+  what blocks progress — nothing upkeep can fix, then your evidence the work is
+  wrong, then missing evidence. **Every row yields a command** — red CI and
+  draft are *modifiers* on the status, not reasons to suggest nothing, since
+  both are exactly when a maintainer wants the branch locally; a property test
+  over every subset of gate reasons holds that. `Command\Glossary` +
+  `upkeep explain` define every term the tool prints, which nothing did before:
+  `patch↑` existed only in a source comment. The overview's columns use the same
+  words as the rows they summarise — `PATCH ISSUES` (not `PATCHES`, which would
+  collide with a row's file count) and `CI FAILED` (not `BLOCKED`, which is what
+  that verdict is actually set by). There is no `REVIEW` column: it counted
+  everything neither ready nor CI-failed, i.e. every row.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
   happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —
@@ -214,7 +231,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5836/5836), methods (696/696) and classes (142/142), 1208 tests.
+lines (6118/6118), methods (712/712) and classes (145/145), 1243 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

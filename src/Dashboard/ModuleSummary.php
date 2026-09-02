@@ -102,26 +102,39 @@ final readonly class ModuleSummary
     }
 
     /**
-     * The overview row's cells: MODULE, CORES, MRS, READY, REVIEW, BLOCKED,
-     * PATCHES, UNCHECKED, CACHED. The cache age is the caller's — it comes
+     * The overview row's cells: MODULE, CORES, MRS, PATCH ISSUES, READY,
+     * CI FAILED, UNCHECKED, CACHED. The cache age is the caller's — it comes
      * from the snapshot, not from the rows.
+     *
+     * Three deliberate departures from the gate's own vocabulary, so the
+     * overview reads the same way as the rows it summarises:
+     *
+     *   - "PATCH ISSUES", not "PATCHES", because it counts *issues* carrying
+     *     patches while a row's own patch count is *files*. One word for two
+     *     things is how a summary comes to disagree with its detail.
+     *   - "CI FAILED", not "BLOCKED", because that is what the gate's Blocked
+     *     verdict is set by and the only thing it is set by.
+     *   - No REVIEW column. It counted everything neither ready nor CI-failed,
+     *     which on a real module is every row — a number that is always the
+     *     total tells a maintainer nothing. What is actionable is UNCHECKED,
+     *     which is beside it. The count is still on the object for the browser
+     *     UI and anything else that wants it.
      *
      * @return list<string>
      */
     public function toTableCells(string $cacheAge): array
     {
         if ($this->failed) {
-            return [$this->module, '–', '–', '–', '–', '–', '–', '–', $cacheAge];
+            return [$this->module, '–', '–', '–', '–', '–', '–', $cacheAge];
         }
 
         return [
             $this->module,
             $this->cores === [] ? '–' : implode(',', $this->cores),
             (string) $this->mergeRequests,
-            self::count($this->readyAuto),
-            self::count($this->review),
-            self::count($this->blocked),
             (string) $this->patchIssues,
+            self::count($this->readyAuto),
+            self::count($this->blocked),
             self::count($this->unchecked),
             $cacheAge,
         ];
