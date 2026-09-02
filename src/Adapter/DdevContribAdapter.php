@@ -365,6 +365,40 @@ final class DdevContribAdapter implements EngineAdapterInterface
         return false;
     }
 
+    public function promotePatch(
+        Environment $environment,
+        PatchApplication $patch,
+        IssueBranch $branch,
+        string $commitMessage,
+    ): string {
+        $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
+
+        // startWork owns the dirty-tree refusal and the resume-never-reset
+        // rule. Promoting must not hold a second, subtly different copy of
+        // either: the branch this lands on can be the only place the work
+        // exists.
+        $this->startWork($environment, $branch);
+
+        ($this->log)(sprintf('Applying patch "%s" onto %s ...', $patch->name, $branch->name));
+
+        // The work branch is what the patch is applied onto, so it is also
+        // what a failure names and returns to — an unappliable patch leaves
+        // the branch exactly as it was found.
+        $this->applyPatchFile($moduleDir, $patch, $branch->name);
+
+        $this->runner->run([
+            'git', '-C', $moduleDir,
+            '-c', 'user.name=upkeep',
+            '-c', 'user.email=upkeep@localhost',
+            'commit', '--no-verify', '-m', $commitMessage,
+        ]);
+
+        $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
+        ($this->log)(sprintf('Committed onto %s at %s.', $branch->name, substr($sha, 0, 8)));
+
+        return $sha;
+    }
+
     private static function trimmed(?string $value): ?string
     {
         return $value === null ? null : trim($value);

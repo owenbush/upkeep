@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Adapter;
 
 use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 
 /**
@@ -252,5 +253,96 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
         $this->expectException(AdapterException::class);
         $this->expectExceptionMessageMatches('/upkeep-managed branch "patch-3597808"/');
         $this->adapter($runner)->applyPatch($this->environment(), $this->patch());
+    }
+
+    // ------------------------------------------------------------- promoting
+
+    /**
+     * Promoting routes through startWork(), and that is the whole point of it
+     * being a separate operation: the branch a promoted patch lands on may be
+     * the only place that work exists, so it must be *resumed* — never the
+     * `checkout -B` the disposable patch branch gets.
+     */
+    public function testPromotingResumesTheWorkBranchAndNeverResetsIt(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'rev-parse --verify 3597808-fix-it' => "aaaaaaa\n",
+            'rev-parse HEAD' => "ccccccc\n",
+        ]);
+
+        $sha = $this->adapter($runner)->promotePatch(
+            $this->environment(),
+            $this->patch(),
+            IssueBranch::named(3597808, '3597808-fix-it'),
+            "Issue #3597808 by someone: Fix it\n",
+        );
+
+        self::assertSame('ccccccc', $sha);
+        self::assertTrue($runner->issued('checkout 3597808-fix-it'));
+        self::assertTrue($runner->issued('apply --index -p1 ' . $this->patchFile));
+
+        foreach ($runner->commandLines() as $line) {
+            self::assertStringNotContainsString('checkout -B', $line, 'a work branch must never be reset');
+        }
+    }
+
+    /**
+     * The attribution reaches git verbatim. Everything else about promoting is
+     * plumbing; this is the feature.
+     */
+    public function testTheGivenCommitMessageIsWhatIsCommitted(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'rev-parse --verify 3597808-fix-it' => "aaaaaaa\n",
+            'rev-parse HEAD' => "ccccccc\n",
+        ]);
+
+        $message = "Issue #3597808 by hebatelhayah: Fix it\n\nPatch-author: hebatelhayah\n";
+        $this->adapter($runner)->promotePatch(
+            $this->environment(),
+            $this->patch(),
+            IssueBranch::named(3597808, '3597808-fix-it'),
+            $message,
+        );
+
+        self::assertTrue($runner->issued('commit --no-verify -m ' . $message));
+    }
+
+    /**
+     * A patch that will not apply leaves the work branch as it was found —
+     * the recovery returns to the branch, not to the base, because on this
+     * path the branch is the thing that must survive.
+     */
+    public function testAnUnappliablePatchLeavesTheWorkBranchIntact(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'rev-parse --verify 3597808-fix-it' => "aaaaaaa\n",
+            'apply --stat' => " a.php | 2 +-\n 1 file changed, 2 insertions(+)\n",
+            'apply --check' => "error: a.php: patch does not apply\n",
+            'apply --index' => null,
+        ]);
+
+        try {
+            $this->adapter($runner)->promotePatch(
+                $this->environment(),
+                $this->patch(),
+                IssueBranch::named(3597808, '3597808-fix-it'),
+                "Issue #3597808: Fix it\n",
+            );
+            self::fail('an unappliable patch should raise');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('3597808-fix-it', $e->getMessage());
+        }
+
+        self::assertFalse($runner->issued('commit --no-verify'));
     }
 }

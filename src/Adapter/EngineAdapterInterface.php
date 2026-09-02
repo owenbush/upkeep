@@ -79,6 +79,33 @@ interface EngineAdapterInterface
     public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool;
 
     /**
+     * Applies a patch onto the maintainer's own work branch for the issue and
+     * commits it under the given message — the local half of turning a patch
+     * contribution into a merge request.
+     *
+     * Deliberately not applyPatch() with a different branch argument. That one
+     * resets its branch from the base on every call, which is right for a
+     * disposable branch tested alone and catastrophic for a work branch that
+     * may hold commits kept nowhere else. This routes through startWork(),
+     * which resumes rather than resets, so the two behaviours cannot drift.
+     *
+     * The commit message is the caller's, because it is the whole point: it
+     * carries the patch author's name into the history (see
+     * Patches\PatchAttribution).
+     *
+     * @return string the head SHA of the commit that now carries the patch
+     *
+     * @throws AdapterException when the working copy is dirty or the patch
+     *                          does not apply
+     */
+    public function promotePatch(
+        Environment $environment,
+        PatchApplication $patch,
+        IssueBranch $branch,
+        string $commitMessage,
+    ): string;
+
+    /**
      * Pushes a work branch to origin.
      *
      * Push only — never force, never delete. The remote copy may be the only

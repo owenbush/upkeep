@@ -89,6 +89,15 @@ final class PruneExecutorTest extends TestCase
                 return 'abc1234';
             }
 
+            public function promotePatch(
+                Environment $environment,
+                PatchApplication $patch,
+                IssueBranch $branch,
+                string $commitMessage,
+            ): string {
+                throw new \BadMethodCallException();
+            }
+
 
 
             public function loadFixture(Environment $environment, string $fixtureName): void
@@ -263,6 +272,15 @@ final class PruneExecutorTest extends TestCase
             public function pushWork(Environment $environment, IssueBranch $branch): string
             {
                 return 'abc1234';
+            }
+
+            public function promotePatch(
+                Environment $environment,
+                PatchApplication $patch,
+                IssueBranch $branch,
+                string $commitMessage,
+            ): string {
+                throw new \BadMethodCallException();
             }
 
             public function loadFixture(Environment $environment, string $fixtureName): void

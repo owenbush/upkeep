@@ -26,6 +26,7 @@ use Upkeep\Command\NeedsWorkCommand;
 use Upkeep\Command\NotesCommand;
 use Upkeep\Command\PatchApplyCommand;
 use Upkeep\Command\PatchCheckCommand;
+use Upkeep\Command\PatchPromoteCommand;
 use Upkeep\Command\PatchesCommand;
 use Upkeep\Command\PruneCommand;
 use Upkeep\Command\PublishCommand;
@@ -78,6 +79,7 @@ $application->addCommands([
     new NotesCommand(),
     new PatchApplyCommand($engines),
     new PatchCheckCommand($engines),
+    new PatchPromoteCommand($engines),
     new PatchesCommand(),
     new PruneCommand($engines, $volumeProbe),
     new PublishCommand($engines),

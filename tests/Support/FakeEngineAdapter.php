@@ -159,6 +159,38 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         return $this->resumeWork;
     }
 
+    /**
+     * Records the branch and, above all, the message — the message is what a
+     * promoted patch's attribution *is*, so a test that did not assert on it
+     * would not be testing the feature.
+     *
+     * @var list<array{branch: string, patch: string, message: string}>
+     */
+    public array $promotions = [];
+
+    public ?\Throwable $promoteFailure = null;
+
+    public string $promotedSha = 'prom0ted00000000000000000000000000000000';
+
+    public function promotePatch(
+        Environment $environment,
+        PatchApplication $patch,
+        IssueBranch $branch,
+        string $commitMessage,
+    ): string {
+        if ($this->promoteFailure !== null) {
+            throw $this->promoteFailure;
+        }
+
+        $this->promotions[] = [
+            'branch' => $branch->name,
+            'patch' => $patch->name,
+            'message' => $commitMessage,
+        ];
+
+        return $this->promotedSha;
+    }
+
     public function pushWork(Environment $environment, IssueBranch $branch): string
     {
         if ($this->pushFailure !== null) {

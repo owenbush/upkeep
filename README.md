@@ -700,11 +700,68 @@ from merge-request results (`results/<module>/<iid>/…`). That separation is
 deliberate and structural: the fast-lane gate reads merge-request entries only,
 so a patch verdict can never become grounds for merging a branch. A patch is
 not something upkeep can merge — if it is good, the way to move it into the
-pipeline is to push it as a branch and open an MR.
+pipeline is `patch:promote`, below.
 
 Known limitation: the key is the patch's URL, not its bytes. drupal.org mints a
 distinct URL per upload, so a re-roll is always detected; a `--url` pointing at
 something edited in place (a gist) is not.
+
+### Turn a patch into a merge request
+
+A patch and a merge request carry the same work, but only one of them gets CI,
+review threads, or a fast lane. `patch:promote` closes that gap:
+
+```bash
+upkeep patch:promote widget 3597808 --version=11
+upkeep publish widget 3597808
+```
+
+The first command applies the patch onto the issue's work branch
+(`<nid>-<slug>`, drupal.org's own convention) and commits it. The second pushes
+and opens the MR — the same `publish` the issue loop uses, so the result is an
+ordinary merge request that `dashboard`, `check` and `merge` already handle.
+
+It takes the same selection options as `patch:check` (`--file`, `--url`,
+`--latest`), plus `--branch` to override the branch name.
+
+**The commit credits the patch's author, by name.** Promoting moves somebody
+else's work into history under whoever pushes it, and the commit message is the
+only durable record of whose work it was. So upkeep resolves the account that
+posted the file and writes drupal.org's own commit convention:
+
+```
+Issue #3597808 by hebatelhayah: Fix the widget on PHP 8.4
+
+Applied from the patch "3597808-9-fix.patch", posted to the issue by
+hebatelhayah, and promoted to a merge request with `upkeep patch:promote`. The
+change is hebatelhayah's work; whoever opens the merge request is carrying it
+over, not authoring it.
+
+Patch-author: hebatelhayah <https://www.drupal.org/u/hebatelhayah>
+Patch-file: 3597808-9-fix.patch
+Patch-source: https://www.drupal.org/files/issues/3597808-9-fix.patch
+Issue: https://www.drupal.org/node/3597808
+```
+
+Set `UPKEEP_PROMOTER` to add a `Promoted-by:` trailer naming yourself.
+
+There is deliberately **no `--author` and no `Co-authored-by:`**. Both want an
+email address; drupal.org publishes a username and a profile URL and no address
+at all, and synthesising one would put a guess about somebody's identity into
+permanent history. If the file records no readable account, upkeep says so
+loudly and still promotes — the commit states the work is not the promoter's
+and points at the issue. Credit on drupal.org is allocated through the
+issue-credit system anyway, which is a browser action and stays yours to do.
+
+**Nothing is pushed.** `patch:promote` stops at the commit; publishing somebody
+else's work under your account is a step a human types. It is also worth
+running `patch:check` first — a patch that only applies with reduced context is
+a weaker guarantee than a merge request implies.
+
+**It assumes you can push to the project.** `publish` pushes to `origin` and
+opens the MR on the canonical project, which is the maintainer's flow.
+Contributors without push access need a drupal.org issue fork, which
+drupal.org's own UI creates.
 
 ### Browser UI
 
@@ -955,6 +1012,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep patches [--module=NAME] [--without-mr]` | drupal.org issues in Needs Review / RTBC carrying patch files, and the state of any MR beside them |
 | `upkeep patch:check <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--fixture=NAME]` | Run one drupal.org patch through the full isolated check flow |
 | `upkeep patch:apply <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest]` | Download and apply a patch, then print the environment path |
+| `upkeep patch:promote <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--branch=NAME]` | Apply a patch onto the issue work branch, credited to its author, ready to `publish` |
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |

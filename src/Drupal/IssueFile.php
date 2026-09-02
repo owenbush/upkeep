@@ -11,6 +11,13 @@ final readonly class IssueFile
         public string $url,
         public int $size,
         public int $timestamp,
+        /**
+         * The drupal.org uid that posted the file, when the payload carries
+         * one. It is who a promoted patch is attributed to, and it is free:
+         * the file resource already returns an `owner` reference, and the
+         * client already dereferences that resource to learn the filename.
+         */
+        public ?int $ownerUid = null,
     ) {
     }
 
@@ -59,6 +66,9 @@ final readonly class IssueFile
             url: $url,
             size: $file->int('filesize'),
             timestamp: $file->int('timestamp'),
+            // `owner` is the file resource's shape; `uid` is accepted because
+            // a stored snapshot may have flattened it.
+            ownerUid: $file->child('owner')?->intOrNull('id') ?? $file->intOrNull('uid'),
         );
     }
 
@@ -71,6 +81,7 @@ final readonly class IssueFile
                 'url' => $this->url,
                 'filesize' => (string) $this->size,
                 'timestamp' => (string) $this->timestamp,
+                'uid' => $this->ownerUid,
             ],
         ];
     }

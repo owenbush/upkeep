@@ -245,6 +245,27 @@ final class DrupalOrgClient
     }
 
     /**
+     * The account behind a uid — the one extra request a promoted patch costs,
+     * made once for the patch being promoted rather than per attachment on a
+     * listing. An unreadable account is null and warned about: a commit that
+     * silently dropped its attribution would be exactly the misappropriation
+     * the attribution exists to prevent.
+     */
+    public function user(int $uid): ?DrupalUser
+    {
+        if ($uid < 1) {
+            return null;
+        }
+
+        $data = $this->getJson(
+            sprintf('%s/user/%d.json', $this->apiBase, $uid),
+            sprintf('drupal.org account %d', $uid),
+        );
+
+        return $data === [] ? null : DrupalUser::fromApi($data);
+    }
+
+    /**
      * Resolve every not-yet-known attachment across a batch of issue payloads,
      * a bounded number of requests at a time.
      *
