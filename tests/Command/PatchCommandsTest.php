@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Upkeep\Tests\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -14,6 +15,7 @@ use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Adapter\Environment;
 use Upkeep\Drupal\DrupalOrgClient;
+use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Patches\PatchRevision;
 use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
@@ -85,7 +87,7 @@ final class PatchCommandsTest extends TestCase
      *
      * @return array<string, mixed>
      */
-    private static function issuePayload(array $patches, int $nid = 3597808): array
+    private static function issuePayload(array $patches, int $nid = 3597808, ?string $version = null): array
     {
         $files = [];
         foreach ($patches as $index => [$name, $timestamp]) {
@@ -99,6 +101,7 @@ final class PatchCommandsTest extends TestCase
 
         return [
             'nid' => $nid,
+            'field_issue_version' => $version,
             'title' => 'Automated Drupal 12 compatibility fixes',
             'url' => 'https://www.drupal.org/node/' . $nid,
             'field_issue_status' => '8',
@@ -110,9 +113,9 @@ final class PatchCommandsTest extends TestCase
     /**
      * @param list<array{string, int}> $patches
      */
-    private function withIssue(array $patches, int $nid = 3597808): CliHarness
+    private function withIssue(array $patches, int $nid = 3597808, ?string $version = null): CliHarness
     {
-        $payload = self::issuePayload($patches, $nid);
+        $payload = self::issuePayload($patches, $nid, $version);
 
         return $this->cli()->withDrupalOrg(new DrupalOrgClient(new MockHttpClient(
             static fn (): MockResponse => new MockResponse(
@@ -127,6 +130,178 @@ final class PatchCommandsTest extends TestCase
         return $this->cli()->withPatchDownloader(new MockHttpClient(
             static fn (): MockResponse => new MockResponse($body),
         ));
+    }
+
+    // ------------------------------------------------- the issue's version
+
+    /**
+     * A GitLab client answering with the project and its branches.
+     *
+     * @param list<string> $branches
+     */
+    private function withBranches(array $branches): CliHarness
+    {
+        $project = [
+            'id' => 42,
+            'path' => 'widget',
+            'path_with_namespace' => 'project/widget',
+            'web_url' => 'https://git.drupalcode.org/project/widget',
+            'default_branch' => '1.0.x',
+        ];
+        $rows = array_map(static fn (string $b): array => ['name' => $b], $branches);
+
+        return $this->cli()->withGitlab(new GitlabClient(
+            new MockHttpClient(
+                static function (string $method, string $url) use ($project, $rows): MockResponse {
+                    $body = str_contains($url, '/repository/branches') ? $rows : $project;
+
+                    return new MockResponse(
+                        json_encode($body, \JSON_THROW_ON_ERROR),
+                        ['response_headers' => ['content-type' => 'application/json']],
+                    );
+                },
+            ),
+            'test-token',
+        ));
+    }
+
+    /**
+     * The bug this closes: an issue filed against 2.0.0 carries patches cut
+     * from 2.0.x, and upkeep applied them to whatever the clone had checked
+     * out — 1.0.x — then reported "does not apply to 1.0.x". True, and
+     * useless: the patch was never meant for 1.0.x.
+     */
+    public function testThePatchIsAppliedOntoTheBranchTheIssueIsFiledAgainst(): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]], version: '2.0.0');
+        $this->withDownload();
+        $this->withBranches(['1.0.x', '2.0.x']);
+        $cli = $this->cli()->withEngine($engine);
+
+        $exit = $cli->run('patch:check', 'widget', '3597808', '--version=11');
+
+        self::assertSame(ExitCode::OK, $exit, $cli->display());
+        self::assertSame('2.0.x', $engine->appliedPatches[0]->baseBranch);
+        self::assertStringContainsString('Base branch: 2.0.x', $cli->display());
+    }
+
+    /**
+     * A version naming no real branch is said out loud and falls back. It is
+     * not an error — plenty of issues carry a version nobody maintained, and
+     * `x.y.z` appears in the wild by the dozen.
+     */
+    public function testAVersionMatchingNoBranchSaysSoAndFallsBack(): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]], version: 'x.y.z');
+        $this->withDownload();
+        $this->withBranches(['1.0.x', '2.0.x']);
+        $cli = $this->cli()->withEngine($engine);
+
+        self::assertSame(ExitCode::OK, $cli->run('patch:check', 'widget', '3597808', '--version=11'));
+        self::assertNull($engine->appliedPatches[0]->baseBranch, 'the adapter resolves it from the working copy');
+        self::assertStringContainsString('matches no branch', $cli->display());
+    }
+
+    /**
+     * No version on the issue asks GitLab nothing at all — the patch surface
+     * stays usable without a token, and a lookup that cannot change the answer
+     * is not worth a request.
+     */
+    public function testAnIssueWithNoVersionResolvesNothingAndAsksNobody(): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]]);
+        $this->withDownload();
+        $asked = false;
+        $this->cli()->withGitlab(new GitlabClient(
+            new MockHttpClient(static function () use (&$asked): MockResponse {
+                $asked = true;
+
+                return new MockResponse('{}', ['response_headers' => ['content-type' => 'application/json']]);
+            }),
+            'test-token',
+        ));
+        $cli = $this->cli()->withEngine($engine);
+
+        self::assertSame(ExitCode::OK, $cli->run('patch:check', 'widget', '3597808', '--version=11'));
+        self::assertNull($engine->appliedPatches[0]->baseBranch);
+        self::assertFalse($asked, 'no version means no lookup');
+    }
+
+    /**
+     * Every way the lookup can fail falls back to the working copy's base,
+     * because none of them is a reason to refuse to check a patch. The point
+     * of resolving the branch is to be right more often, not to add a way to
+     * be stopped.
+     *
+     * @param callable(string): MockResponse $handler how GitLab answers
+     */
+    #[DataProvider('brokenGitlabAnswers')]
+    public function testEveryGitlabFailureFallsBackToTheWorkingCopyBase(callable $handler): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]], version: '2.0.0');
+        $this->withDownload();
+        $this->cli()->withGitlab(new GitlabClient(
+            new MockHttpClient(static fn (string $method, string $url): MockResponse => $handler($url)),
+            'test-token',
+        ));
+        $cli = $this->cli()->withEngine($engine);
+
+        self::assertSame(ExitCode::OK, $cli->run('patch:check', 'widget', '3597808', '--version=11'));
+        self::assertNull($engine->appliedPatches[0]->baseBranch);
+    }
+
+    /**
+     * @return iterable<string, array{callable(string): MockResponse}>
+     */
+    public static function brokenGitlabAnswers(): iterable
+    {
+        $project = static fn (): MockResponse => new MockResponse(
+            json_encode([
+                'id' => 42,
+                'path' => 'widget',
+                'path_with_namespace' => 'project/widget',
+                'web_url' => 'https://git.drupalcode.org/project/widget',
+            ], \JSON_THROW_ON_ERROR),
+            ['response_headers' => ['content-type' => 'application/json']],
+        );
+
+        yield 'the project cannot be resolved' => [
+            static fn (string $url): MockResponse => new MockResponse('', ['http_code' => 503]),
+        ];
+
+        yield 'the project resolves but its branches do not' => [
+            static fn (string $url): MockResponse => str_contains($url, '/repository/branches')
+                ? new MockResponse('', ['http_code' => 503])
+                : $project(),
+        ];
+
+        yield 'the branch list comes back in a shape nobody expects' => [
+            static fn (string $url): MockResponse => str_contains($url, '/repository/branches')
+                ? new MockResponse(
+                    '{"not":"a list"}',
+                    ['response_headers' => ['content-type' => 'application/json']],
+                )
+                : $project(),
+        ];
+    }
+
+    /**
+     * No token, so no client: the patch surface stays usable without GitLab
+     * credentials, which is most of why patches are worth supporting at all.
+     */
+    public function testWithoutAGitlabTokenTheLookupIsSkippedEntirely(): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]], version: '2.0.0');
+        $this->withDownload();
+        $cli = $this->cli()->withEngine($engine);
+
+        self::assertSame(ExitCode::OK, $cli->run('patch:check', 'widget', '3597808', '--version=11'));
+        self::assertNull($engine->appliedPatches[0]->baseBranch);
     }
 
     // ----------------------------------------------------------- happy path

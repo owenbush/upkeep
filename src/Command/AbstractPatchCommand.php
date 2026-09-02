@@ -14,9 +14,14 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Cockpit\Cockpit;
+use Upkeep\Cockpit\Module;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\Issue;
 use Upkeep\Drupal\IssueFile;
+use Upkeep\Drupal\IssueVersion;
+use Upkeep\Gitlab\ApiFailure;
+use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Patches\PatchFetcher;
 use Upkeep\Patches\PatchSelector;
 use Upkeep\Workflow\MrContextResolver;
@@ -41,6 +46,13 @@ abstract class AbstractPatchCommand extends UpkeepCommand
         private readonly EngineAdapterFactory $engines,
         private readonly ?DrupalOrgClient $drupalClient = null,
         private readonly ?HttpClientInterface $downloader = null,
+        /**
+         * Only for reading the project's branches, so an issue's version can
+         * be turned into a base branch. The patch surface is otherwise
+         * GitLab-free, and stays usable without a token: everything about
+         * this resolution degrades to null.
+         */
+        private readonly ?GitlabClient $gitlabClient = null,
     ) {
         parent::__construct();
     }
@@ -125,7 +137,71 @@ abstract class AbstractPatchCommand extends UpkeepCommand
         $io->writeln(sprintf('Patch: %s', PatchSelector::describe($patch)));
         $localPath = $this->fetcher($cockpit)->fetch($nid, $patch->name, $url);
 
-        return new PatchContext($module, $coreMajor, $issue, $patch, $localPath);
+        return new PatchContext(
+            $module,
+            $coreMajor,
+            $issue,
+            $patch,
+            $localPath,
+            $this->resolveBaseBranch($io, $module, $issue),
+        );
+    }
+
+    /**
+     * The branch the issue is filed against, confirmed to exist.
+     *
+     * An issue carries a "Version" and its patches are cut from that branch.
+     * Resolving it turns "does not apply to 1.0.x" — which was true, and
+     * useless, because the patch was never meant for 1.0.x — into applying it
+     * where it belongs.
+     *
+     * Everything here degrades to null, and null means the adapter resolves
+     * the base from the working copy exactly as before. A version field
+     * nobody set, a project whose branches cannot be listed, and a version
+     * naming no real branch are all ordinary; none is worth refusing over.
+     */
+    private function resolveBaseBranch(SymfonyStyle $io, Module $module, Issue $issue): ?string
+    {
+        if (IssueVersion::branchCandidates($issue->version) === []) {
+            return null;
+        }
+
+        $client = $this->gitlabClient ?? GitlabClientFactory::authenticated(
+            GitlabClientFactory::resolver($io),
+            static function (): void {
+            },
+        );
+        if ($client === null) {
+            return null;
+        }
+
+        $project = $client->project($module->project);
+        if ($project instanceof ApiFailure) {
+            return null;
+        }
+
+        $branches = $client->branchNames($project);
+        if ($branches instanceof ApiFailure) {
+            return null;
+        }
+
+        $branch = IssueVersion::resolveBranch($issue->version, $branches);
+        if ($branch === null) {
+            // Said out loud: the issue names a version, the project has no
+            // such branch, and the apply is about to use a different one.
+            $io->writeln(sprintf(
+                '<comment>Issue version "%s" matches no branch on %s (%s); using the working copy\'s base.</>',
+                (string) $issue->version,
+                $module->project,
+                implode(', ', $branches),
+            ));
+
+            return null;
+        }
+
+        $io->writeln(sprintf('Base branch: %s (from the issue version "%s")', $branch, (string) $issue->version));
+
+        return $branch;
     }
 
     /**

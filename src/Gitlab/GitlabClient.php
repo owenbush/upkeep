@@ -125,6 +125,41 @@ final class GitlabClient
     }
 
     /**
+     * The project's branch names.
+     *
+     * Read so that an issue's "Version" field can be turned into a branch by
+     * *checking* rather than by parsing: the field holds whatever anyone has
+     * typed, and only the project can say which of the readings is real.
+     *
+     * @return list<string>|ApiFailure
+     */
+    public function branchNames(Project $project): array|ApiFailure
+    {
+        $url = $this->apiBase . '/projects/' . $project->id . '/repository/branches?per_page=100';
+        $browserUrl = $project->webUrl . '/-/branches';
+
+        $data = $this->get($url, $browserUrl);
+        if ($data instanceof ApiFailure) {
+            return $data;
+        }
+
+        $rows = self::objectRows($data, 'branches', $url, $browserUrl);
+        if ($rows instanceof ApiFailure) {
+            return $rows;
+        }
+
+        $names = [];
+        foreach ($rows as $row) {
+            $name = (new ApiPayload($row))->string('name');
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
      * List open merge requests for a project.
      */
     public function openMergeRequests(Project $project): MergeRequestList|ApiFailure
