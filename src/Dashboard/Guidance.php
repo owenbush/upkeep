@@ -19,7 +19,9 @@ use Upkeep\Patches\Contribution;
  *
  * So the tokens move behind `-v` (anything scripted against them still has
  * them) and every row carries two human things instead: a status phrase, and
- * the literal command.
+ * the literal command. **Every row has one** — there is no row this tool has
+ * nothing to say about, and the two that briefly did (red CI, drafts) were the
+ * ones a maintainer most wanted a way into.
  *
  * **The order the reasons are considered is the design.** A row usually has
  * several, and only one can be shown, so they are ranked by what actually
@@ -32,20 +34,20 @@ final readonly class Guidance
 {
     private function __construct(
         public string $status,
-        public ?string $command,
-        /** Why there is no command — shown in its place, in parentheses. */
-        public ?string $note,
+        /**
+         * Never null. Every row has something worth running, including the
+         * ones that briefly did not: a red pipeline is when you most want the
+         * branch locally, and a draft is often work somebody started and could
+         * not finish, which is a thing to pick up rather than to wait on.
+         */
+        public string $command,
     ) {
     }
 
     public static function forRow(DashboardRow $row): self
     {
         if ($row->moduleFailure !== null) {
-            return new self(
-                'unavailable',
-                sprintf('upkeep dashboard --refresh=%s', $row->module),
-                null,
-            );
+            return new self('unavailable', sprintf('upkeep dashboard --refresh=%s', $row->module));
         }
 
         return $row->contribution !== null
@@ -63,7 +65,7 @@ final readonly class Guidance
         $iid = $row->mergeRequest === null ? 0 : $row->mergeRequest->iid;
 
         if ($verdict?->status === GateStatus::ReadyAuto) {
-            return new self('ready to merge', 'upkeep merge --fast-lane', null);
+            return new self('ready to merge', 'upkeep merge --fast-lane');
         }
 
         // Evidence the work is wrong, and it is *your* evidence — worth
@@ -73,35 +75,27 @@ final readonly class Guidance
             return new self(
                 \count($failed) === 1 ? $failed[0] . ' failed' : \count($failed) . ' checks failed',
                 sprintf('upkeep needs-work %s %d', $row->module, $iid),
-                null,
             );
         }
 
-        // Explicitly not finished, so checking it is premature. The one state
-        // here that genuinely belongs to somebody else: a draft is a statement
-        // by its author about their own work, so the note describes it rather
-        // than assigning a task.
-        if (\in_array('draft', $reasons, true)) {
-            return new self('draft', null, 'not ready for review yet');
-        }
-
-        // Red CI changes what the row *is*, not what to do about it.
+        // Red CI and draft are *modifiers*: they change what the row is, not
+        // what to do about it. Both spent a while suggesting nothing, and both
+        // were wrong to. A red pipeline is when you most want the branch on
+        // your own machine to reproduce the failure; a draft is frequently
+        // something a contributor started and could not finish, which is a
+        // thing to pick up rather than to wait on.
         //
-        // It first said "the contributor's move", then "manual fix needed" —
-        // both wrong in the same way. A red pipeline is precisely when a
-        // maintainer wants the branch on their own machine to reproduce the
-        // failure, and `check` is what puts it there. Refusing to name a
-        // command turned the most interesting rows into the only dead ones.
-        //
-        // GateStatus::Blocked is the same condition: the gate sets it from red
-        // CI and from nothing else, never inspecting mergeability, whatever
-        // "cannot proceed (e.g. merge conflicts)" in the older docs suggested.
+        // GateStatus::Blocked is the same condition as ci-red: the gate sets it
+        // from red CI and from nothing else, never inspecting mergeability,
+        // whatever "cannot proceed (e.g. merge conflicts)" in the older docs
+        // suggested.
         $ciRed = \in_array('ci-red', $reasons, true) || $verdict?->status === GateStatus::Blocked;
+        $prefix = \in_array('draft', $reasons, true) ? 'draft, ' : '';
 
-        // What to do is decided by the evidence *you* hold, independently of
-        // what CI says: nothing yet, or something about an older revision,
-        // means run the checks; anything else means the change itself is what
-        // is left to look at.
+        // What to *do* is decided by the evidence you hold, independently of
+        // either: nothing yet, or something about an older revision, means run
+        // the checks; anything else means the change itself is what is left to
+        // look at.
         if (self::needsChecking($reasons)) {
             $status = match (true) {
                 $ciRed => 'CI failed',
@@ -109,16 +103,15 @@ final readonly class Guidance
                 default => 'needs a check',
             };
 
-            return new self($status, self::checkCommand($row, $iid), null);
+            return new self($prefix . $status, self::checkCommand($row, $iid));
         }
 
         // Checked and green. Either the fast lane will never take it because
         // it is not a bot MR, or your checks disagree with drupal.org's — and
         // a disagreement is exactly a thing to go and look at.
         return new self(
-            $ciRed ? 'CI failed, local green' : 'needs your review',
+            $prefix . ($ciRed ? 'CI failed, local green' : 'needs your review'),
             sprintf('upkeep review %s %d', $row->module, $iid),
-            null,
         );
     }
 
@@ -133,7 +126,7 @@ final readonly class Guidance
         $local = $row->localCell();
 
         if ($patches === 0) {
-            return new self('no patch attached', sprintf('upkeep issue %s %d', $row->module, $nid), null);
+            return new self('no patch attached', sprintf('upkeep issue %s %d', $row->module, $nid));
         }
 
         $status = $patches === 1 ? '1 patch' : $patches . ' patches';
@@ -144,20 +137,15 @@ final readonly class Guidance
         }
 
         if ($local === 'pass') {
-            return new self(
-                $status . ', checked',
-                sprintf('upkeep patch:apply %s %d', $row->module, $nid),
-                null,
-            );
+            return new self($status . ', checked', sprintf('upkeep patch:apply %s %d', $row->module, $nid));
         }
         if ($local === 'fail') {
-            return new self($status . ', failed', sprintf('upkeep issue %s %d', $row->module, $nid), null);
+            return new self($status . ', failed', sprintf('upkeep issue %s %d', $row->module, $nid));
         }
 
         return new self(
             $local === 'stale' ? $status . ', stale check' : $status,
             self::patchCheckCommand($row, $nid),
-            null,
         );
     }
 

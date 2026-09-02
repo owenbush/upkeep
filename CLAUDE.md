@@ -81,7 +81,10 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   reason tokens move behind `-v`. The *order* the reasons are considered is the
   design: several apply at once and only one phrase can show, so they rank by
   what blocks progress — nothing upkeep can fix, then your evidence the work is
-  wrong, then missing evidence, then nothing to do. `Command\Glossary` +
+  wrong, then missing evidence. **Every row yields a command** — red CI and
+  draft are *modifiers* on the status, not reasons to suggest nothing, since
+  both are exactly when a maintainer wants the branch locally; a property test
+  over every subset of gate reasons holds that. `Command\Glossary` +
   `upkeep explain` define every term the tool prints, which nothing did before:
   `patch↑` existed only in a source comment. The overview's columns use the same
   words as the rows they summarise — `PATCH ISSUES` (not `PATCHES`, which would
@@ -228,7 +231,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (5836/5836), methods (696/696) and classes (142/142), 1208 tests.
+lines (6118/6118), methods (712/712) and classes (145/145), 1243 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

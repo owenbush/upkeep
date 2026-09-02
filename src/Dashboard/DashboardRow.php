@@ -148,7 +148,7 @@ final readonly class DashboardRow
     public function toTableCells(bool $verbose = false): array
     {
         $guidance = Guidance::forRow($this);
-        $next = $guidance->command ?? '(' . ($guidance->note ?? '') . ')';
+        $next = $guidance->command;
 
         if ($this->moduleFailure !== null) {
             $cell = self::failureCell($this->moduleFailure);

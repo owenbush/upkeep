@@ -75,7 +75,7 @@ final class GuidanceTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{GateStatus, list<string>, string, ?string}>
+     * @return iterable<string, array{GateStatus, list<string>, string, string}>
      */
     public static function mergeRequestCases(): iterable
     {
@@ -142,11 +142,30 @@ final class GuidanceTest extends TestCase
             'upkeep review widget 5',
         ];
 
-        yield 'a draft is not ready to be checked' => [
+        // A draft used to suggest nothing, on the grounds that its author had
+        // said it was unfinished. But unfinished is frequently *abandoned* —
+        // somebody started and could not carry on — and that is a thing for a
+        // maintainer to pick up, not to wait on. So "draft" prefixes the
+        // status and the command is the ordinary one.
+        yield 'a draft is checkable, and says it is a draft' => [
             GateStatus::Review,
             ['draft', 'ci-missing', 'local-missing'],
-            'draft',
-            null,
+            'draft, needs a check',
+            'upkeep check widget 5 --version=11',
+        ];
+
+        yield 'a draft with red CI carries both facts' => [
+            GateStatus::Review,
+            ['draft', 'ci-red', 'local-missing'],
+            'draft, CI failed',
+            'upkeep check widget 5 --version=11',
+        ];
+
+        yield 'a draft already checked green is a change to look at' => [
+            GateStatus::Review,
+            ['draft', 'not-bot-author'],
+            'draft, needs your review',
+            'upkeep review widget 5',
         ];
 
         // The common case, and the one the old output buried under three
@@ -183,15 +202,38 @@ final class GuidanceTest extends TestCase
         GateStatus $status,
         array $reasons,
         string $expectedStatus,
-        ?string $expectedCommand,
+        string $expectedCommand,
     ): void {
         $guidance = Guidance::forRow(self::mrRow($status, $reasons));
 
         self::assertSame($expectedStatus, $guidance->status);
         self::assertSame($expectedCommand, $guidance->command);
-        // Exactly one of the two is always present: a row either has something
-        // to run or a reason it does not.
-        self::assertTrue(($guidance->command === null) !== ($guidance->note === null));
+    }
+
+    /**
+     * The promise the NEXT column makes: there is no row this tool has nothing
+     * to say about. Asserted over every combination of reasons the gate can
+     * produce, so a future one cannot quietly reintroduce a dead row.
+     */
+    public function testEveryReasonCombinationYieldsSomethingToRun(): void
+    {
+        $reasons = ['not-bot-author', 'draft', 'ci-missing', 'ci-red', 'local-missing', 'local-stale'];
+
+        // Every subset, which is what "any combination" means.
+        for ($mask = 0; $mask < 2 ** \count($reasons); ++$mask) {
+            $subset = [];
+            foreach ($reasons as $bit => $reason) {
+                if (($mask & (2 ** $bit)) !== 0) {
+                    $subset[] = $reason;
+                }
+            }
+
+            foreach ([GateStatus::Review, GateStatus::Blocked] as $status) {
+                $guidance = Guidance::forRow(self::mrRow($status, $subset));
+                self::assertNotSame('', $guidance->command, implode(',', $subset));
+                self::assertNotSame('', $guidance->status, implode(',', $subset));
+            }
+        }
     }
 
     /**

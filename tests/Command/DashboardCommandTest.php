@@ -1048,11 +1048,11 @@ final class DashboardCommandTest extends TestCase
     }
 
     /**
-     * A draft is the one row left with nothing to suggest. Unlike red CI it is
-     * a statement by its author about their own work, so the row describes the
-     * state rather than proposing that somebody check unfinished code.
+     * A draft says it is one and is still checkable. Unfinished is frequently
+     * abandoned — somebody started and could not carry on — and that is a
+     * thing for a maintainer to pick up rather than to wait on.
      */
-    public function testADraftIsTheOneRowThatProposesNothing(): void
+    public function testADraftIsFlaggedButStillCheckable(): void
     {
         $client = $this->client([
             '/merge_requests?' => self::json([self::botMrPayload()]),
@@ -1065,9 +1065,9 @@ final class DashboardCommandTest extends TestCase
 
         $display = $this->runDashboard($client, ['--version' => '11'])->getDisplay();
 
-        self::assertStringContainsString('draft', $display);
-        self::assertStringContainsString('(not ready for review yet)', $display);
-        self::assertStringNotContainsString('upkeep check widget 5', $display);
+        self::assertStringContainsString('draft, needs a check', $display);
+        self::assertStringContainsString('upkeep check widget 5', $display);
+        self::assertStringNotContainsString('not ready for review yet', $display);
     }
 
     /** A ready row names the merge command in its own NEXT cell. */

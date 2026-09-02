@@ -60,7 +60,9 @@ final readonly class Glossary
                 'dashboard STATUS',
             ],
             'draft' => [
-                'Marked as a draft on GitLab, so it is not being offered for review yet.',
+                'Marked as a draft on GitLab. It prefixes the rest of the status rather than replacing it, and '
+                    . 'the row is still checkable: unfinished is frequently abandoned, and work somebody could '
+                    . 'not carry on is a thing to pick up rather than to wait on.',
                 'dashboard STATUS',
             ],
             'empty MR' => [
@@ -98,8 +100,8 @@ final readonly class Glossary
                 'dashboard LOCAL',
             ],
             'NEXT' => [
-                'The command to run for that row. A note in parentheses instead means there is nothing for you '
-                    . 'to do — it is waiting on somebody else.',
+                'The command to run for that row. Every row has one — red CI and draft describe the row without '
+                    . 'changing what to do about it, since both are exactly when you want the branch locally.',
                 'dashboard column',
             ],
             'PATCH ISSUES' => [

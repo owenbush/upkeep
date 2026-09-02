@@ -581,13 +581,9 @@ final class DashboardCommand extends UpkeepCommand
             default => $cells[7],
         };
 
-        // NEXT (index 8) — a command to run, or a parenthesised note saying
-        // why there is none. The command is the point of the row, so it is the
-        // thing that stands out; the note is muted, because "nothing to do
-        // here" should not compete for attention.
-        $fmt[8] = str_starts_with($cells[8], '(')
-            ? '<fg=gray>' . $cells[8] . '</>'
-            : '<fg=cyan>' . $cells[8] . '</>';
+        // NEXT (index 8) — always a command, and the point of the row, so it
+        // is the thing that stands out.
+        $fmt[8] = '<fg=cyan>' . $cells[8] . '</>';
 
         // Written back by index, so the result is repacked into a list:
         // ColumnTable's colouriser contract is list-in, list-out.

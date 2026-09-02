@@ -234,10 +234,12 @@ pathauto  !40    3311669   11    Punctuation processed…   fail  –      CI fa
 pathauto  patch  3597857   11    Config schema for form   –     stale  4 patches       upkeep patch:check pathauto 3597857
 ```
 
-A command in NEXT is yours to run. Red CI is no exception: it points at
-`check`, because a red pipeline is exactly when you want the branch locally to
-reproduce the failure. A note in parentheses appears only where proposing
-anything would be wrong — a draft, which its author has said is unfinished.
+**Every row has a command.** Red CI points at `check`, because a red pipeline
+is exactly when you want the branch locally to reproduce the failure; a draft
+is checkable too, because unfinished is frequently abandoned and picking that
+up is the job. `draft,` and `CI failed` describe the row without changing what
+to do about it — the command comes from the evidence *you* hold, so an
+unchecked row says check it and a checked one says look at the change.
 
 `upkeep explain <term>` defines any of it; bare, it prints the whole
 vocabulary. `-v` swaps the plain-English status for the gate's own reason
