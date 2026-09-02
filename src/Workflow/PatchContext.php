@@ -27,12 +27,23 @@ final readonly class PatchContext
         public Issue $issue,
         public IssueFile $patch,
         public string $localPath,
+        /**
+         * The branch the issue is filed against, resolved against the
+         * project's real branches. Null when it could not be told, which the
+         * adapter reads as "work it out from the working copy".
+         */
+        public ?string $baseBranch = null,
     ) {
     }
 
     public function application(): PatchApplication
     {
-        return new PatchApplication($this->issue->nid, $this->patch->name, $this->localPath);
+        return new PatchApplication(
+            $this->issue->nid,
+            $this->patch->name,
+            $this->localPath,
+            $this->baseBranch,
+        );
     }
 
     /**

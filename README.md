@@ -820,6 +820,36 @@ Known limitation: the key is the patch's URL, not its bytes. drupal.org mints a
 distinct URL per upload, so a re-roll is always detected; a `--url` pointing at
 something edited in place (a gist) is not.
 
+### Which branch a patch is applied to
+
+A drupal.org issue is filed against a **version**, and its patches are cut from
+that branch. upkeep reads the issue's version, checks it against the branches
+the project actually has, and applies the patch there:
+
+```
+Base branch: 2.0.x (from the issue version "2.0.0")
+```
+
+Without this, a patch from a 2.0.0 issue was applied to whatever the clone had
+checked out — usually the default branch — and reported `does not apply to
+1.0.x`. True, and useless: it was never meant for 1.0.x.
+
+The version field is never *parsed* into a branch, only proposed and checked.
+Real issues carry `2.0.0`, `8.x-1.x-dev`, `4.6.x-dev`, `5.1`, `6.14` and — in
+one sample, 56 times — the literal string `x.y.z`. So upkeep generates
+candidates (`2.0.0` → `2.0.x` → `2.x`), takes the first that names a real
+branch, and falls back to the working copy's base if none does, saying so:
+
+```
+Issue version "x.y.z" matches no branch on project/widget (1.0.x, 2.0.x);
+using the working copy's base.
+```
+
+Everything about this degrades quietly. No version, no GitLab token, an
+unreadable branch list — all of them fall back rather than refuse, because
+resolving the branch exists to be right more often, not to add a way to be
+stopped.
+
 ### Turn a patch into a merge request
 
 A patch and a merge request carry the same work, but only one of them gets CI,

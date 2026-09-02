@@ -128,6 +128,18 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   collide with a row's file count) and `CI FAILED` (not `BLOCKED`, which is what
   that verdict is actually set by). There is no `REVIEW` column: it counted
   everything neither ready nor CI-failed, i.e. every row.
+- **A patch belongs to the branch its issue is filed against.**
+  `Drupal\IssueVersion` turns the issue's version into a base branch and
+  `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
+  over whatever the working copy sits on — without it a 2.0.0 issue's patch was
+  applied to the default 1.0.x and read as needing a re-roll. **It never
+  parses authoritatively**: it proposes candidates most-specific-first
+  (`2.0.0` → `2.0.x` → `2.x`) and the caller intersects them with
+  `GitlabClient::branchNames()`, because the field holds whatever anyone typed
+  — sampled live: `2.0.0`, `8.0.x-dev`, `4.6.x-dev`, `5.1`, `6.14`, and `x.y.z`
+  56 times. Every failure (no version, no token, unreadable branches, no match)
+  falls back to the old behaviour and says so; none refuses, because this
+  exists to be right more often, not to add a way to be stopped.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
   happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —
@@ -305,7 +317,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6457/6457), methods (746/746) and classes (151/151), 1326 tests.
+lines (6525/6525), methods (750/750) and classes (152/152), 1350 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

@@ -195,11 +195,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ));
         }
 
-        $currentBranch = $this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD']);
-        $recordedBase = $this->runner->tryRun(['git', '-C', $moduleDir, 'config', '--get', 'upkeep.base-branch']);
-        $baseBranch = MrCheckout::resolveBaseBranch(
-            $currentBranch !== null ? trim($currentBranch) : null,
-            $recordedBase !== null ? trim($recordedBase) : null,
+        // The branch the patch was cut from wins over whatever the working
+        // copy happens to sit on: an issue filed against 2.0.x carries patches
+        // for 2.0.x, and applying them to the default branch is how a good
+        // patch comes to read as stale.
+        $baseBranch = $patch->baseBranch ?? MrCheckout::resolveBaseBranch(
+            self::trimmed($this->runner->tryRun(['git', '-C', $moduleDir, 'symbolic-ref', '--short', 'HEAD'])),
+            self::trimmed($this->runner->tryRun(['git', '-C', $moduleDir, 'config', '--get', 'upkeep.base-branch'])),
         );
 
         $branch = $patch->branchName();
