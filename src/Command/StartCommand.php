@@ -138,7 +138,7 @@ final class StartCommand extends UpkeepCommand
         $resumed = $adapter->startWork($environment, $branch, self::stringOption($input, 'base'));
 
         $io->success(sprintf(
-            '%s %s. Write your fix, then: upkeep check %s --branch, and upkeep publish %s %d',
+            '%s %s. Write your fix, then: upkeep check %s --working-copy, and upkeep publish %s %d',
             $resumed ? 'Resumed' : 'Started',
             $branch->name,
             $module->name,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Command;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\CheckRunResult;
@@ -128,6 +129,45 @@ final class DevCommandTest extends TestCase
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('uncommitted changes', $tester->getDisplay());
+    }
+
+    /**
+     * `dev` printed the engine's entire process transcript at normal
+     * verbosity — every provisioning command's raw output — burying the four
+     * lines that are the command's actual payload. The raw channel belongs
+     * behind -v, as it is in every other command.
+     */
+    public function testTheEngineTranscriptIsBehindVerboseAndTheSummaryIsNot(): void
+    {
+        $env = new Environment(
+            'token',
+            '11',
+            'upkeep-token-d11',
+            '/home/.upkeep/projects/upkeep-token-d11',
+            'https://upkeep-token-d11.ddev.site',
+            false,
+        );
+        $factory = new StubEngineAdapterFactory(
+            $this->adapter($env),
+            stageLine: 'Reusing environment upkeep-token-d11',
+            processLine: 'Container ddev-upkeep-token-d11-web  Started',
+        );
+
+        $tester = new CommandTester(new DevCommand($factory));
+        $tester->execute(['module' => 'token', '--cockpit' => $this->cockpit]);
+        $quiet = $tester->getDisplay();
+
+        self::assertStringNotContainsString('Container ddev-', $quiet);
+        self::assertStringContainsString('Reusing environment', $quiet, 'the narrative still shows');
+        self::assertStringContainsString('https://upkeep-token-d11.ddev.site', $quiet, 'and so does the payload');
+
+        $verbose = new CommandTester(new DevCommand($factory));
+        $verbose->execute(
+            ['module' => 'token', '--cockpit' => $this->cockpit],
+            ['verbosity' => OutputInterface::VERBOSITY_VERBOSE],
+        );
+
+        self::assertStringContainsString('Container ddev-', $verbose->getDisplay(), '-v still shows everything');
     }
 
     private function adapter(?Environment $env): EngineAdapterInterface

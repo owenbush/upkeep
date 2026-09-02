@@ -139,6 +139,13 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   resource's `owner` reference is already in the payload the client
   dereferences for the filename (`IssueFile::$ownerUid`), so only
   `DrupalOrgClient::user()` is new work, once per promotion.
+  `check --working-copy` runs the same suite against whatever the working copy
+  holds, needing no MR and no token, and **caches nothing**: every other
+  verdict is keyed by a subject and a revision so staleness is detectable, and
+  a working copy has neither — an entry keyed on a guess would put
+  permanently-fresh evidence in front of the fast-lane gate. It closes a
+  dangling instruction: `start` had been telling people to run
+  `upkeep check <module> --branch`, a flag that was never built.
   `patch:promote` stops at the commit — `publish` is the outward-facing half,
   and it routes through `EngineAdapterInterface::promotePatch()`, which
   delegates to `startWork()` rather than reimplementing it: a work branch may
@@ -251,7 +258,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6226/6226), methods (728/728) and classes (148/148), 1272 tests.
+lines (6301/6301), methods (730/730) and classes (148/148), 1282 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

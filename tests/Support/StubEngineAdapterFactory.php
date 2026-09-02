@@ -12,10 +12,20 @@ use Upkeep\Cockpit\Cockpit;
  * Hands the commands a pre-built adapter, bypassing every engine and
  * filesystem decision the real factory makes.
  */
-final readonly class StubEngineAdapterFactory implements EngineAdapterFactory
+final class StubEngineAdapterFactory implements EngineAdapterFactory
 {
-    public function __construct(private EngineAdapterInterface $adapter)
-    {
+    /**
+     * Lines to emit down each channel when a command builds its adapter, so a
+     * test can assert *where* engine chatter lands rather than only that the
+     * command ran. The distinction is the whole contract of the two closures:
+     * the narrative belongs on screen, the engine's raw process output belongs
+     * behind -v.
+     */
+    public function __construct(
+        private readonly EngineAdapterInterface $adapter,
+        private readonly ?string $stageLine = null,
+        private readonly ?string $processLine = null,
+    ) {
     }
 
     public function create(
@@ -24,6 +34,13 @@ final readonly class StubEngineAdapterFactory implements EngineAdapterFactory
         \Closure $stageLog,
         \Closure $processLog,
     ): EngineAdapterInterface {
+        if ($this->stageLine !== null) {
+            $stageLog($this->stageLine);
+        }
+        if ($this->processLine !== null) {
+            $processLog($this->processLine);
+        }
+
         return $this->adapter;
     }
 }

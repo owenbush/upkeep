@@ -53,10 +53,10 @@ abstract class AbstractMrCommand extends UpkeepCommand
      *       static fn ($option) => $option->getName() !== 'version',
      *   )));
      */
-    protected function configureMrSurface(): void
+    protected function configureMrSurface(bool $mrRequired = true): void
     {
         $this->addModuleArgument()
-            ->addMrArgument()
+            ->addMrArgument($mrRequired)
             ->addTargetCoreOption()
             ->addCockpitOption()
             ->addProjectsRootOption();

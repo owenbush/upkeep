@@ -61,8 +61,10 @@ final class PatchPromoteCommand extends AbstractPatchCommand
             whose it is. Nothing is pushed: run <info>upkeep publish</info> afterwards, which is
             the step that puts it on drupal.org.
 
-            Check it first if you have not — <info>upkeep patch:check</info> — since a patch that only
-            applies with reduced context is a weaker guarantee than a merge request implies.
+            Afterwards, <info>upkeep check <module> --working-copy</info> runs the suite against the branch
+            it made, and <info>upkeep dev <module></info> prints the site URL. A patch that only applied
+            with reduced context is a weaker guarantee than a merge request implies, so
+            checking before you publish is worth the minutes.
             HELP);
 
         $this->configurePatchSurface();
@@ -99,7 +101,9 @@ final class PatchPromoteCommand extends AbstractPatchCommand
         $io->success(sprintf('%s now carries the patch at %s.', $branch->name, substr($sha, 0, 8)));
         $io->writeln($attribution->message());
 
-        $io->writeln('<fg=gray>Nothing has been pushed. When you are happy with it:</>');
+        $io->writeln('<fg=gray>Nothing has been pushed. Run the checks against it, look at the site, then publish:</>');
+        $io->writeln(sprintf('  <info>upkeep check %s --working-copy</info>', $context->module->name));
+        $io->writeln(sprintf('  <info>upkeep dev %s</info>', $context->module->name));
         $io->writeln(sprintf(
             '  <info>upkeep publish %s %d</info>',
             $context->module->name,

@@ -326,6 +326,26 @@ rather than something tuned to a published limit. A 429 from either is honoured:
 the batch waits for `Retry-After` and retries once, and anything asking for more
 than 10 seconds is reported rather than slept through.
 
+### Check what you are working on
+
+```bash
+upkeep check widget --working-copy --version=11
+```
+
+Runs the full suite against whatever the module working copy is currently on —
+after `start`, after `patch:promote`, or after your own edits. It needs no
+merge request and no GitLab token, names the branch it checked, and warns if
+the tree has uncommitted changes (they are included in the run).
+
+**It caches nothing.** Every other check result is keyed by a subject and a
+revision — an MR and its head SHA, a patch and its source URL — so the
+dashboard can tell a fresh pass from one about work that has since moved. A
+working copy has neither, and an entry keyed on a guess would put
+permanently-fresh-looking evidence in front of the fast-lane gate. So this mode
+reports and exits, which is all "did I break it?" needs.
+
+Pair it with `upkeep dev widget` when you want to click through the site.
+
 ### Check an MR
 
 ```bash
@@ -1000,6 +1020,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
 | `upkeep dashboard [<module>] [--version=N] [--refresh[=MODULE]] [--no-patches] [--all]` | Per-module overview; name a module (or `--all`) for individual MR and patch rows |
 | `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR |
+| `upkeep check <module> --working-copy [--version=N] [--fixture=NAME]` | Run the suite against the current working copy; caches nothing |
 | `upkeep review <module> <mr> [--version=N]` | Apply an MR to a running site and print its browsable URL |
 | `upkeep dev <module> [--version=N] [--branch=B]` | Prepare an environment for active development: provision if needed, optionally check out a branch, print the path |
 | `upkeep exec <module> [--version=N] -- <command...>` | Run a command in the module's environment directory |

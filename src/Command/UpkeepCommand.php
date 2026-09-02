@@ -124,11 +124,17 @@ abstract class UpkeepCommand extends Command
         return $this;
     }
 
-    protected function addMrArgument(): static
+    /**
+     * @param bool $required false where the command has a second, MR-less mode
+     *                       to offer (check --working-copy), in which case the
+     *                       command is responsible for refusing the empty case
+     *                       itself — Console cannot express "one of these two"
+     */
+    protected function addMrArgument(bool $required = true): static
     {
         $this->addArgument(
             'mr',
-            InputArgument::REQUIRED,
+            $required ? InputArgument::REQUIRED : InputArgument::OPTIONAL,
             'Merge request IID on the module\'s drupalcode project',
         );
 
