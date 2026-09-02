@@ -224,6 +224,16 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   credential-scrubbing invariant (see
   `tests/Security/ProcessEnvironmentInvariantTest`), because its children are
   upkeep itself; served job output is redacted again on the way out regardless.
+- **Shell completion** — `upkeep completion <shell>` is Symfony Console's own,
+  and command names complete for free. What does not is *values*, so
+  `UpkeepCommand::complete()` suggests the registry's module machine names for
+  the `module` argument and the named module's tracked cores for `--version`.
+  It **may never throw**: completion runs on every press of TAB, and an
+  exception would spill a stack trace across the prompt — so an unresolvable
+  cockpit or an unparseable registry suggests nothing and the ordinary run a
+  moment later reports it properly. Values nothing local can enumerate (MR
+  IIDs, issue nids) are deliberately not completed: that would be a network
+  round trip per keystroke.
 - `tests/` — PHPUnit, mirroring `src/`.
 
 ## Quality gates
@@ -258,7 +268,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6301/6301), methods (730/730) and classes (148/148), 1282 tests.
+lines (6320/6320), methods (733/733) and classes (148/148), 1291 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

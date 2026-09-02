@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Upkeep\Command;
 
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Completion\CompletionInput;
+use Symfony\Component\Console\Completion\CompletionSuggestions;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -194,6 +196,78 @@ abstract class UpkeepCommand extends Command
      *
      * @throws FilesystemException when the path is empty or unresolvable
      */
+    /**
+     * Shell completion for the two values every command shares: the module
+     * machine name, and the core version behind `--version`.
+     *
+     * Command *names* complete already — Symfony Console registers that for
+     * free. Argument values do not, and they are the tedious half: a machine
+     * name is long, easy to mistype, and the thing every invocation starts
+     * with. The suggestions come from the operator's own registry, so they are
+     * exactly the modules they can act on.
+     *
+     * **Nothing here may throw.** This runs on every press of TAB, and an
+     * exception would spill a stack trace across the prompt of somebody who
+     * only wanted a module name. So a cockpit that cannot be resolved, or a
+     * registry that will not parse, silently suggests nothing — the ordinary
+     * command run a moment later reports it properly.
+     */
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        parent::complete($input, $suggestions);
+
+        $modules = $this->completableModules($input);
+
+        if ($input->mustSuggestArgumentValuesFor('module')) {
+            $suggestions->suggestValues(array_keys($modules));
+
+            return;
+        }
+
+        if ($input->mustSuggestOptionValuesFor('version')) {
+            $suggestions->suggestValues(self::completableCores($input, $modules));
+        }
+    }
+
+    /**
+     * @return array<string, Module> empty whenever anything at all is wrong
+     */
+    private function completableModules(CompletionInput $input): array
+    {
+        try {
+            return $this->modules($this->cockpit($input));
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * The cores the module already on the command line tracks, so `--version=`
+     * offers 10 and 11 rather than every version any module uses. With no
+     * module named yet, every tracked core is fair game.
+     *
+     * @param array<string, Module> $modules
+     *
+     * @return list<string>
+     */
+    private static function completableCores(CompletionInput $input, array $modules): array
+    {
+        $named = $input->getArgument('module');
+        if (\is_string($named) && isset($modules[$named])) {
+            return $modules[$named]->coreVersions;
+        }
+
+        $cores = [];
+        foreach ($modules as $module) {
+            foreach ($module->coreVersions as $core) {
+                $cores[$core] = $core;
+            }
+        }
+        sort($cores);
+
+        return $cores;
+    }
+
     protected function cockpit(InputInterface $input): Cockpit
     {
         // Deliberately NOT collapsing '' to null: `--cockpit=` is a mistake

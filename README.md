@@ -87,6 +87,33 @@ module's open MRs and head pipeline):
 upkeep api:probe conditions_helper
 ```
 
+## Shell completion
+
+```bash
+upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep   # bash
+upkeep completion zsh  > ~/.zsh/completions/_upkeep               # zsh
+upkeep completion fish > ~/.config/fish/completions/upkeep.fish   # fish
+```
+
+Open a new shell and TAB completes command names, options, **your registered
+module machine names**, and the core versions each module actually tracks:
+
+```
+upkeep patch:pro<TAB>              -> upkeep patch:promote
+upkeep patch:promote fi<TAB>       -> upkeep patch:promote field_inheritance
+upkeep check pathauto 12 --version=<TAB>   -> 11
+```
+
+The module names come from your registry, so they are exactly the modules you
+can act on, and `--version=` offers only the cores that module tracks rather
+than every core any module uses. Completion reads the cockpit from
+`UPKEEP_COCKPIT` or the current directory — set the env var if you drive upkeep
+from outside the cockpit.
+
+Values nothing local can enumerate — an MR IID, an issue node id — are not
+completed, because guessing them would mean a network round trip on every press
+of TAB.
+
 ## Cockpit setup
 
 The cockpit is a plain directory holding your module registry, the per-core
