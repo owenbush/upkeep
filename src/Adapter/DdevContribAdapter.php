@@ -393,41 +393,6 @@ final class DdevContribAdapter implements EngineAdapterInterface
         }
     }
 
-    /**
-     * A push that failed, with the one recovery that is almost always the
-     * answer attached when it looks like authentication.
-     *
-     * The unhelpful version of this message is git's own, which suggests a
-     * password — the thing GitLab has just refused and will always refuse.
-     */
-    private static function pushFailure(IssueBranch $branch, GitRemote $remote, string $output): AdapterException
-    {
-        $looksLikeAuth = preg_match('/Access denied|Authentication failed|Permission denied|publickey/i', $output)
-            === 1;
-
-        if (!$looksLikeAuth) {
-            return new AdapterException(sprintf(
-                "Pushing \"%s\" to %s failed:\n%s",
-                $branch->name,
-                $remote->url,
-                trim($output),
-            ));
-        }
-
-        return new AdapterException(sprintf(
-            "Pushing \"%s\" to %s was refused:\n%s\n\n"
-            . "upkeep pushes over SSH and never hands git a password or a token, so this is your SSH key.\n"
-            . "  - Add one at %s\n"
-            . "  - Check it works:  ssh -T %s\n"
-            . '  - Make sure the agent has it:  ssh-add -l',
-            $branch->name,
-            $remote->url,
-            trim($output),
-            DrupalCodeRemote::SSH_KEY_URL,
-            DrupalCodeRemote::sshHostOf($remote->url),
-        ));
-    }
-
     public function recordedBaseBranch(Environment $environment): ?string
     {
         $recorded = self::trimmed($this->runner->tryRun([
@@ -510,7 +475,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ['git', '-C', $moduleDir, 'push', '--set-upstream', $remote->name, $branch->name],
         );
         if ($push->exitCode !== 0) {
-            throw self::pushFailure($branch, $remote, $push->output);
+            throw new AdapterException(PushRefusal::explain($branch, $remote, $push->output));
         }
 
         return trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));

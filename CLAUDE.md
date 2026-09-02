@@ -56,6 +56,17 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   like the issue status and the credit; publish refuses before pushing
   anything. Origin is never pushed to or altered, so fetch stays anonymous and
   read-only work needs no key.
+- **Two refusals, opposite answers.** `Adapter\PushRefusal` tells
+  *authentication* (GitLab does not know you — SSH key) from *authorization*
+  (it knows you and says no). On drupal.org the second is the ordinary state of
+  a fresh issue fork: creating one does not grant push access, which is a
+  separate button on the issue. Authorization is matched first because its
+  output can carry "denied" too, and it is the more specific diagnosis. An
+  unrecognised refusal gets no guessed diagnosis, and git's own output is
+  always kept above whatever is added. `Project::canPush()` asks the same
+  question *before* pushing — **null is unknown, never "no"**, since an
+  unauthenticated read omits `permissions` entirely and refusing on that would
+  block pushes that would work.
 - `Adapter\DrupalCodeRemote` holds the clone URL and the SSH host. Push URLs
   are **never assembled** — they are GitLab's own `ssh_url_to_repo`, because
   git.drupalcode.org serves the web and the API while the SSH remote it
@@ -294,7 +305,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6429/6429), methods (742/742) and classes (150/150), 1316 tests.
+lines (6457/6457), methods (746/746) and classes (151/151), 1326 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

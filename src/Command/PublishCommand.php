@@ -14,6 +14,7 @@ use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Adapter\EngineAdapterFactory;
 use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
+use Upkeep\Adapter\PushRefusal;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\ApiFailure;
@@ -256,6 +257,17 @@ final class PublishCommand extends UpkeepCommand
                 IssueReference::issueUrl($nid),
                 $module,
                 $nid,
+            ));
+        }
+
+        // Asked before the push, not diagnosed after it. Null is unknown —
+        // an unauthenticated read omits `permissions` — and unknown proceeds,
+        // because refusing on an absent field would block pushes that work.
+        if ($fork->canPush() === false) {
+            throw new WorkflowException(sprintf(
+                "You do not have push access to %s, so the branch cannot go there yet.\n\n%s",
+                $fork->pathWithNamespace,
+                PushRefusal::authorizationHelp($nid),
             ));
         }
 
