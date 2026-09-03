@@ -158,6 +158,17 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   merged MR never reports itself, which would say nothing. `ModuleSnapshot`
   carries `mergedMrData` and `forkNids`; a snapshot written before they
   existed reads as "nothing known to have merged", i.e. the old behaviour.
+- **A branch supports several cores at once.** `Drupal\CoreCompatibility`
+  reads `core_version_requirement` from a branch's info.yml (fetched with
+  `GitlabClient::fileContents()`) and answers which tracked cores apply.
+  Measured live: pathauto's *single* 8.x-1.x declares `^10.2 || ^11 || ^12`,
+  so treating core as part of a row's identity multiplied every row by a test
+  matrix while saying nothing new — see `docs/dashboard-row-model.md`. Matching
+  uses composer/semver by interval intersection, not a regex over majors:
+  `^10.2` does declare core 10, and only an interval gets that right. **Null is
+  "cannot tell", never "supports nothing"**, and an empty intersection returns
+  the tracked set unchanged — a module vanishing from the dashboard is the
+  worst failure mode this tool has.
 - **A patch belongs to the branch its issue is filed against.**
   `Drupal\IssueVersion` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
@@ -347,7 +358,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6682/6682), methods (759/759) and classes (152/152), 1384 tests.
+lines (6724/6724), methods (766/766) and classes (153/153), 1410 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

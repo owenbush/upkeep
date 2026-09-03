@@ -769,4 +769,58 @@ final class GitlabClientTest extends TestCase
             $client->mergedMergeRequests(Project::fromApi(self::projectPayload())),
         );
     }
+
+    // ------------------------------------------------------------ raw files
+
+    /**
+     * A branch's info.yml, which is the only place a module says which cores
+     * it supports.
+     */
+    public function testAFileIsReadAtARef(): void
+    {
+        $client = $this->client([new MockResponse("core_version_requirement: ^10.2 || ^11 || ^12\n")]);
+
+        $body = $client->fileContents(Project::fromApi(self::projectPayload()), 'pathauto.info.yml', '8.x-1.x');
+
+        self::assertSame("core_version_requirement: ^10.2 || ^11 || ^12\n", $body);
+        self::assertStringContainsString('pathauto.info.yml', $this->requests[0]['url']);
+        self::assertStringContainsString('ref=8.x-1.x', urldecode($this->requests[0]['url']));
+    }
+
+    /**
+     * Missing file, missing branch, refused, unreachable — all null.
+     *
+     * None of them is an error worth stopping a dashboard for: the caller
+     * falls back to the tracked core set whole, which is what it did before
+     * any of this existed.
+     *
+     * @param MockResponse $response what the server does
+     */
+    #[DataProvider('unreadableFiles')]
+    public function testAnUnreadableFileIsNullRatherThanAFailure(MockResponse $response): void
+    {
+        $client = $this->client([$response]);
+
+        self::assertNull(
+            $client->fileContents(Project::fromApi(self::projectPayload()), 'widget.info.yml', '2.0.x'),
+        );
+    }
+
+    /**
+     * @return iterable<string, array{MockResponse}>
+     */
+    public static function unreadableFiles(): iterable
+    {
+        yield 'no such file or branch' => [new MockResponse('', ['http_code' => 404])];
+        yield 'refused' => [new MockResponse('', ['http_code' => 403])];
+        yield 'server error' => [new MockResponse('', ['http_code' => 503])];
+        yield 'empty body' => [new MockResponse('')];
+        // A body that raises while being read: the transport-failure path,
+        // which must be caught rather than surfacing as an exception mid-run.
+        yield 'transport failure' => [new MockResponse((static function (): \Generator {
+            yield '';
+
+            throw new \RuntimeException('connection reset');
+        })())];
+    }
 }

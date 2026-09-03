@@ -129,6 +129,37 @@ final class GitlabClient
     }
 
     /**
+     * One file's contents at a ref, or null when it is not there.
+     *
+     * Used for a branch's `.info.yml`, which is the only place a module says
+     * which Drupal cores it supports. Null covers both "no such file" and "no
+     * such branch"; neither is an error worth stopping for, and the caller
+     * falls back to the tracked core set whole.
+     */
+    public function fileContents(Project $project, string $path, string $ref): ?string
+    {
+        $url = $this->apiBase . '/projects/' . $project->id . '/repository/files/'
+            . rawurlencode($path) . '/raw?ref=' . rawurlencode($ref);
+
+        try {
+            $response = $this->http->request('GET', $url, [
+                'headers' => ['PRIVATE-TOKEN' => $this->token],
+                'timeout' => self::IDLE_TIMEOUT,
+                'max_duration' => self::MAX_DURATION,
+            ]);
+            if ($response->getStatusCode() !== 200) {
+                return null;
+            }
+
+            $body = $response->getContent(false);
+
+            return $body === '' ? null : $body;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * The project's branch names.
      *
      * Read so that an issue's "Version" field can be turned into a branch by
