@@ -193,17 +193,41 @@ No cache invalidation needed; `--refresh` picks up the rest.
 
 Each step is independently green and shippable.
 
-1. **`core_version_requirement` reading** — client method, `semver` matching,
-   fallback. No behaviour change yet; just the data.
-2. **Row identity** — `DashboardRow` keyed on (issue, branch); `forIssue()`;
-   `Contribution` as payload. `patchRows()` and the covered-by filter deleted.
-3. **Evidence per core** — LOCAL renders worst-case-plus-detail; `-v` lists all.
-4. **Verdict across cores** — `FastLaneGate` over the whole evidence set.
-   *The behaviour change; lands alone, with its reasoning in the commit.*
+1. ~~**`core_version_requirement` reading**~~ — **done** (`0aa5444`).
+   `Drupal\CoreCompatibility` + `GitlabClient::fileContents()`. No behaviour
+   change; the data only.
+2. ~~**Evidence across cores**~~ — **done** (`6faa06b`). `Dashboard\LocalEvidence`:
+   worst-case-plus-detail, and `allGreen()` as the stricter fast-lane question.
+   Not yet wired to anything.
+3. **Row identity** — *next, and indivisible.* `DashboardRow` keyed on
+   (issue, branch); `forIssue()` and `forUnlinkedMergeRequest()` replacing
+   `forPatch()`/`forMergeRequest()`; `$core` → `$branch`; `$local` →
+   `LocalEvidence`; `patchRows()` and the `isCoveredByMergeRequest()` filter
+   deleted, along with `landingsByIssue()`/`landingFor()`.
+4. **Verdict across cores** — `FastLaneGate` reading `LocalEvidence::allGreen()`.
+   The behaviour change; lands alone, with its reasoning in the commit.
 5. **Summary and UI** — `ModuleSummary` columns, `Ui\StateBuilder`.
 6. **Live verification** — real modules, row counts before and after, and the
    four never-yet-run commands (`check`, `patch:check`, `start`, `publish`)
    exercised against a real environment.
 
-Steps 1–3 are mechanical. Step 4 is the one to review carefully. Step 6 is the
-one this week says not to skip.
+### Why step 3 has no smaller green slice
+
+Measured before starting it: **20 files** reference the members it changes
+(`$core`, `$local`, `forPatch`, `forMergeRequest`), across ~1,800 lines of
+source plus eight test files. `DashboardRow`, `RowFactory`, `Guidance`,
+`ModuleSummary`, `RowAssembler`, `DashboardCommand` and `Ui\StateBuilder` all
+break together the moment the constructors change, and every dashboard test
+asserts on cell layout that moves at the same time.
+
+Attempts to slice it further were considered and rejected:
+
+- *Remove the core multiplier first, keep subject rows* — same blast radius,
+  because it is the constructor signature that breaks everything, not the row
+  count.
+- *Merge patch rows into MR rows first, keep `$core`* — leaves two row
+  identities in play at once, which is the state the whole change exists to
+  end.
+
+So it lands as one commit, and it should be started with room to finish rather
+than continued into.
