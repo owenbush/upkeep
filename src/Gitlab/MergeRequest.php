@@ -37,6 +37,12 @@ final readonly class MergeRequest
          * issue fork. Null when the payload does not carry it.
          */
         public ?int $sourceProjectId = null,
+        /**
+         * When it merged, for a merged MR. The evidence that an open issue's
+         * work has already landed — which a Project Update Bot compatibility
+         * issue, kept open by convention, cannot tell you itself.
+         */
+        public ?string $mergedAt = null,
     ) {
     }
 
@@ -100,6 +106,7 @@ final readonly class MergeRequest
             diffBaseSha: $diffRefs?->stringOrNull('base_sha'),
             diffHeadSha: $diffRefs?->stringOrNull('head_sha'),
             sourceProjectId: $payload->intOrNull('source_project_id'),
+            mergedAt: $payload->stringOrNull('merged_at'),
         );
     }
 
@@ -121,6 +128,7 @@ final readonly class MergeRequest
             'head_pipeline' => $this->headPipeline?->toApiArray(),
             'updated_at' => $this->updatedAt,
             'source_project_id' => $this->sourceProjectId,
+            'merged_at' => $this->mergedAt,
             // Round-tripped so a cached snapshot answers carriesChanges()
             // without refetching. Null when unknown, which reads back as
             // unknown rather than as "not empty".

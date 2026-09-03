@@ -12,6 +12,7 @@ use Upkeep\Gitlab\EndpointClosed;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\MalformedResponse;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Gitlab\MergeRequestList;
 use Upkeep\Gitlab\NotFound;
 use Upkeep\Gitlab\Pipeline;
 use Upkeep\Gitlab\PipelineStatus;
@@ -645,5 +646,127 @@ final class GitlabClientTest extends TestCase
             ['preparing', PipelineStatus::Preparing],
             ['some-future-status', PipelineStatus::Unknown],
         ];
+    }
+
+    // ------------------------------------------------------- forks and merges
+
+    /**
+     * Issue forks, mapped source-project id => issue node id.
+     *
+     * One request per project rather than one per merge request: a busy
+     * project has a fork per issue, and resolving each MR's source project
+     * alone would be a request per row.
+     */
+    public function testIssueForksAreMappedToTheirIssues(): void
+    {
+        $client = $this->client([self::json([
+            ['id' => 239275, 'path_with_namespace' => 'issue/pathauto-3616056'],
+            ['id' => 216803, 'path_with_namespace' => 'issue/conditions_helper-3596502'],
+            // Not an issue fork — somebody's own copy. Skipped, not guessed at.
+            ['id' => 999, 'path_with_namespace' => 'someuser/pathauto'],
+            // A fork with no id is no use for matching a merge request.
+            ['path_with_namespace' => 'issue/pathauto-3999999'],
+        ])]);
+
+        $forks = $client->issueForkNids(Project::fromApi(self::projectPayload()));
+
+        self::assertSame([239275 => 3616056, 216803 => 3596502], $forks);
+    }
+
+    /** A full page is followed by another; a short one ends it. */
+    public function testForkPaginationStopsOnAShortPage(): void
+    {
+        $full = [];
+        for ($i = 0; $i < 100; ++$i) {
+            $full[] = ['id' => 1000 + $i, 'path_with_namespace' => 'issue/pathauto-' . (3600000 + $i)];
+        }
+
+        $client = $this->client([
+            self::json($full),
+            self::json([['id' => 2000, 'path_with_namespace' => 'issue/pathauto-3700000']]),
+        ]);
+
+        $forks = $client->issueForkNids(Project::fromApi(self::projectPayload()));
+
+        self::assertIsArray($forks);
+        self::assertCount(101, $forks);
+        self::assertSame(3700000, $forks[2000]);
+    }
+
+    /** An empty page ends it too, without a further request. */
+    public function testForkPaginationStopsOnAnEmptyPage(): void
+    {
+        $client = $this->client([self::json([])]);
+
+        self::assertSame([], $client->issueForkNids(Project::fromApi(self::projectPayload())));
+    }
+
+    public function testUnreadableForksAreAFailureNotAnEmptyMap(): void
+    {
+        $client = $this->client([self::json(['message' => 'nope'], 503)]);
+
+        self::assertInstanceOf(
+            RequestRejected::class,
+            $client->issueForkNids(Project::fromApi(self::projectPayload())),
+        );
+    }
+
+    public function testForksInAnUnexpectedShapeAreAFailure(): void
+    {
+        $client = $this->client([self::json(['not' => 'a list'])]);
+
+        self::assertInstanceOf(
+            MalformedResponse::class,
+            $client->issueForkNids(Project::fromApi(self::projectPayload())),
+        );
+    }
+
+    /**
+     * Merged merge requests, which the open-only fetch could never see — and
+     * without which an open issue whose work has already landed reads exactly
+     * like one nobody has touched.
+     */
+    public function testMergedMergeRequestsAreFetchedNewestFirst(): void
+    {
+        $client = $this->client([self::json([[
+            'iid' => 1,
+            'title' => 'Automated Project Update Bot fixes',
+            'state' => 'merged',
+            'author' => ['username' => 'project update bot', 'id' => 3644742],
+            'source_branch' => 'project-update-bot-only',
+            'target_branch' => '1.0.x',
+            'web_url' => 'https://git.drupalcode.org/project/pathauto/-/merge_requests/1',
+            'merged_at' => '2026-06-12T19:48:54.079Z',
+            'source_project_id' => 216803,
+        ]])]);
+
+        $list = $client->mergedMergeRequests(Project::fromApi(self::projectPayload()));
+
+        self::assertInstanceOf(MergeRequestList::class, $list);
+        $first = $list->first();
+        self::assertInstanceOf(MergeRequest::class, $first);
+        self::assertSame('2026-06-12T19:48:54.079Z', $first->mergedAt);
+        self::assertSame(216803, $first->sourceProjectId);
+        self::assertStringContainsString('state=merged', $this->requests[0]['url']);
+    }
+
+    public function testUnreadableMergedMergeRequestsAreAFailure(): void
+    {
+        $client = $this->client([self::json(['message' => 'nope'], 503)]);
+
+        self::assertInstanceOf(
+            RequestRejected::class,
+            $client->mergedMergeRequests(Project::fromApi(self::projectPayload())),
+        );
+    }
+
+    public function testMergedMergeRequestsInAnUnexpectedShapeAreAFailure(): void
+    {
+        $client = $this->client([self::json(['not' => 'a list'])]);
+
+        self::assertInstanceOf(
+            MalformedResponse::class,
+            $client->mergedMergeRequests(Project::fromApi(self::projectPayload())),
+        );
     }
 }

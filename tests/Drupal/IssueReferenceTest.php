@@ -253,4 +253,46 @@ final class IssueReferenceTest extends TestCase
     {
         self::assertSame('https://www.drupal.org/node/3467675', IssueReference::issueUrl(3467675));
     }
+
+    // -------------------------------------------------------- the issue fork
+
+    /**
+     * The strongest pairing there is, and the only one that works for a
+     * Project Update Bot merge request.
+     *
+     * Live: those are titled "Automated Project Update Bot fixes", their
+     * branch is `project-update-bot-only`, and their description says only
+     * "Relates to #NNN" — which extractOwning() rejects on purpose, so the bot
+     * cannot suppress an issue's patches by mentioning it. Correct, and it
+     * left every bot MR paired to nothing. The fork path is a fact about how
+     * the repository came to exist rather than a string somebody typed.
+     *
+     * @param ?int $expected the issue the fork was made for
+     */
+    #[DataProvider('forkPaths')]
+    public function testTheIssueAForkWasMadeForIsReadFromItsPath(string $path, ?int $expected): void
+    {
+        self::assertSame($expected, IssueReference::fromForkPath($path));
+    }
+
+    /**
+     * @return iterable<string, array{string, ?int}>
+     */
+    public static function forkPaths(): iterable
+    {
+        // All observed live on git.drupalcode.org.
+        yield 'a plain module' => ['issue/pathauto-3616056', 3616056];
+        yield 'underscores in the name' => ['issue/conditions_helper-3596502', 3596502];
+        yield 'digits in the name' => ['issue/field_visibility_conditions-3598272', 3598272];
+        yield 'trailing whitespace' => ["issue/pathauto-3616056\n", 3616056];
+
+        // Anything that is not an issue fork is not one.
+        yield 'the canonical project' => ['project/pathauto', null];
+        yield 'a sandbox' => ['sandbox/someone/3012345', null];
+        yield 'no trailing number' => ['issue/pathauto-branch', null];
+        yield 'too few digits to be a node id' => ['issue/pathauto-42', null];
+        yield 'empty' => ['', null];
+        // The namespace must be exactly "issue", not merely end with it.
+        yield 'a lookalike namespace' => ['notissue/pathauto-3616056', null];
+    }
 }

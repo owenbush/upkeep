@@ -6,6 +6,7 @@ namespace Upkeep\Gitlab;
 
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Upkeep\Drupal\IssueReference;
 
 /**
  * Read/merge client for the git.drupalcode.org GitLab REST API (v4).
@@ -23,6 +24,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final class GitlabClient
 {
+    /** Bound on fork pagination: 100 per page, so 20 pages is 2000 forks. */
+    private const MAX_FORK_PAGES = 20;
+
     /**
      * Pagination guard. `membershipProjects()` trusts the server to eventually
      * hand back an empty page; this bounds what "eventually" may mean so a
@@ -160,6 +164,52 @@ final class GitlabClient
     }
 
     /**
+     * Every issue fork of a project, as source-project id => issue node id.
+     *
+     * One request per project (paginated) rather than one per merge request:
+     * a busy project has a fork per issue, and resolving each MR's source
+     * project on its own would be a request per row.
+     *
+     * @return array<int, int>|ApiFailure
+     */
+    public function issueForkNids(Project $project): array|ApiFailure
+    {
+        $nids = [];
+
+        for ($page = 1; $page <= self::MAX_FORK_PAGES; ++$page) {
+            $url = $this->apiBase . '/projects/' . $project->id . '/forks?per_page=100&page=' . $page;
+            $browserUrl = $project->webUrl . '/-/forks';
+
+            $data = $this->get($url, $browserUrl);
+            if ($data instanceof ApiFailure) {
+                return $data;
+            }
+            $rows = self::objectRows($data, 'forks', $url, $browserUrl);
+            if ($rows instanceof ApiFailure) {
+                return $rows;
+            }
+            if ($rows === []) {
+                break;
+            }
+
+            foreach ($rows as $row) {
+                $payload = new ApiPayload($row);
+                $id = $payload->intOrNull('id');
+                $nid = IssueReference::fromForkPath($payload->string('path_with_namespace'));
+                if ($id !== null && $nid !== null) {
+                    $nids[$id] = $nid;
+                }
+            }
+
+            if (\count($rows) < 100) {
+                break;
+            }
+        }
+
+        return $nids;
+    }
+
+    /**
      * List open merge requests for a project.
      */
     public function openMergeRequests(Project $project): MergeRequestList|ApiFailure
@@ -180,6 +230,35 @@ final class GitlabClient
      * Fetch a single merge request; includes head_pipeline and
      * detailed_merge_status.
      */
+    /**
+     * Recently merged merge requests, newest first.
+     *
+     * Bounded rather than exhaustive: the question is whether an *open* issue
+     * already has work merged, and a merge old enough to fall off this list is
+     * old enough that the issue's staying open is a deliberate choice rather
+     * than an oversight.
+     */
+    public function mergedMergeRequests(Project $project, int $limit = 100): MergeRequestList|ApiFailure
+    {
+        $url = $this->apiBase . '/projects/' . $project->id . '/merge_requests?state=merged'
+            . '&order_by=updated_at&sort=desc&per_page=' . $limit;
+        $browserUrl = $project->webUrl . '/-/merge_requests?state=merged';
+
+        $data = $this->get($url, $browserUrl);
+        if ($data instanceof ApiFailure) {
+            return $data;
+        }
+        $rows = self::objectRows($data, 'merged merge requests', $url, $browserUrl);
+        if ($rows instanceof ApiFailure) {
+            return $rows;
+        }
+
+        return new MergeRequestList(array_map(
+            static fn (array $row): MergeRequest => MergeRequest::fromApi($row),
+            $rows,
+        ));
+    }
+
     public function mergeRequest(Project $project, int $iid): MergeRequest|ApiFailure
     {
         $data = $this->get(

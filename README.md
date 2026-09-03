@@ -820,6 +820,40 @@ Known limitation: the key is the patch's URL, not its bytes. drupal.org mints a
 distinct URL per upload, so a re-roll is always detected; a `--url` pointing at
 something edited in place (a gist) is not.
 
+### Has this issue already been done?
+
+Some issues are kept open on purpose. Project Update Bot compatibility issues
+are the standard case: the convention is to leave them open so the bot can post
+again as core moves, which means an open one may have had its work merged
+months ago. Two such issues look identical until you ask what merged.
+
+`upkeep patches` now asks. The MR column reads:
+
+```
+!1 merged 2026-06-12                    the work landed, nothing since
+!1 merged 2026-06-12, newer work since  it landed, then the bot posted again
+!2 empty                                a bot draft covering nothing
+```
+
+Verified against live projects: `conditions_helper` #3596502 is *active* with
+its MR merged on 2026-06-12, while `field_visibility_conditions` #3598272 is
+*needs review* with an open draft. Opposite situations, indistinguishable
+before this.
+
+It never says "resolved" and never changes an issue's status — api-d7 is
+read-only, and whether a landed-and-quiet issue should be closed is a judgement
+about the convention, not about the evidence. It reports what merged and
+whether anything has happened since; the close stays yours.
+
+**Why bot merge requests used to pair with nothing.** They are titled
+`Automated Project Update Bot fixes`, their branch is `project-update-bot-only`,
+and their description says only "Relates to #NNN" — which upkeep rejects on
+purpose, so a bot cannot suppress an issue's patches merely by mentioning it.
+Correct, and it left every bot MR attached to no issue at all. The fix is the
+issue fork: an MR from `issue/<module>-<nid>` belongs to that issue, because
+drupal.org made that repository *for* it. That is a fact about how the fork
+exists rather than a string somebody typed, so it outranks every other signal.
+
 ### Which branch a patch is applied to
 
 A drupal.org issue is filed against a **version**, and its patches are cut from

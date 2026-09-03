@@ -16,10 +16,10 @@ use Upkeep\Patches\ContributionKind;
 final class ContributionTest extends TestCase
 {
     /** @param list<IssueFile> $files */
-    private static function issue(array $files = []): Issue
+    private static function issue(array $files = [], int $nid = 3489012): Issue
     {
         return new Issue(
-            nid: 3489012,
+            nid: $nid,
             title: 'Add config schema for settings form',
             status: IssueStatus::NeedsReview,
             url: 'https://www.drupal.org/node/3489012',
@@ -42,12 +42,19 @@ final class ContributionTest extends TestCase
      * leaves it unknown (a list payload, or a snapshot from before diff refs
      * were cached).
      */
-    private static function mr(int $iid, ?string $base, ?string $head): MergeRequest
-    {
+    private static function mr(
+        int $iid,
+        ?string $base = null,
+        ?string $head = null,
+        string $state = 'opened',
+        ?string $mergedAt = null,
+        ?string $updatedAt = null,
+        string $title = 'Issue #3489012: do the thing',
+    ): MergeRequest {
         return new MergeRequest(
             iid: $iid,
-            title: 'Issue #3489012: do the thing',
-            state: 'opened',
+            title: $title,
+            state: $state,
             authorUsername: 'alice',
             authorId: 100,
             sourceBranch: '3489012-do-the-thing',
@@ -56,8 +63,10 @@ final class ContributionTest extends TestCase
             detailedMergeStatus: null,
             headSha: $head,
             webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/' . $iid,
+            updatedAt: $updatedAt,
             diffBaseSha: $base,
             diffHeadSha: $head,
+            mergedAt: $mergedAt,
         );
     }
 
@@ -232,5 +241,147 @@ final class ContributionTest extends TestCase
                 $contribution->substantiveMergeRequests(),
             ),
         );
+    }
+
+    // ------------------------------------------------ has this already landed
+
+    /**
+     * The question a Project Update Bot compatibility issue cannot answer
+     * itself. Convention keeps those open so the bot can post again as core
+     * moves, so an open one may have had its work merged months ago — and two
+     * such issues look identical until you ask whether anything was merged.
+     *
+     * Verified against live data: conditions_helper #3596502 is "active" with
+     * its MR merged 2026-06-12, while field_visibility_conditions #3598272 is
+     * "needs review" with an open draft. Opposite states, same appearance.
+     */
+    public function testAMergedMergeRequestIsReportedAsLanded(): void
+    {
+        $contribution = new Contribution('widget', self::issue([]), [
+            self::mr(1, state: 'merged', mergedAt: '2026-06-12T19:48:54.079Z'),
+        ]);
+
+        self::assertSame('!1 merged 2026-06-12', $contribution->mergeRequestCell());
+        self::assertFalse($contribution->hasWorkNewerThanLanding());
+    }
+
+    /**
+     * A bot that posts again after its work merged has raised new work. This
+     * is why the cell never says "resolved": both readings are statements
+     * about evidence, and which one warrants closing stays the maintainer's.
+     */
+    public function testAPatchPostedAfterTheMergeIsNewerWork(): void
+    {
+        $afterTheMerge = strtotime('2026-07-01T00:00:00Z');
+
+        $contribution = new Contribution(
+            'widget',
+            self::issue([new IssueFile('reroll.patch', 'https://example.test/reroll.patch', 10, $afterTheMerge)]),
+            [self::mr(1, state: 'merged', mergedAt: '2026-06-12T19:48:54.079Z')],
+        );
+
+        self::assertTrue($contribution->hasWorkNewerThanLanding());
+        self::assertStringContainsString('newer work since', $contribution->mergeRequestCell());
+    }
+
+    /** An open MR touched after the merge is newer work too. */
+    public function testAnOpenMergeRequestUpdatedAfterTheMergeIsNewerWork(): void
+    {
+        $contribution = new Contribution('widget', self::issue([]), [
+            self::mr(1, state: 'merged', mergedAt: '2026-06-12T19:48:54.079Z'),
+            self::mr(2, state: 'opened', updatedAt: '2026-07-02T10:00:00Z'),
+        ]);
+
+        self::assertTrue($contribution->hasWorkNewerThanLanding());
+    }
+
+    /** The most recent landing is the one reported. */
+    public function testTheLatestMergeIsTheOneReported(): void
+    {
+        $contribution = new Contribution('widget', self::issue([]), [
+            self::mr(1, state: 'merged', mergedAt: '2025-01-01T00:00:00Z'),
+            self::mr(9, state: 'merged', mergedAt: '2026-06-12T19:48:54.079Z'),
+        ]);
+
+        self::assertSame(9, $contribution->landed()?->iid);
+    }
+
+    /** Nothing merged is nothing landed, and the cell reads as it always did. */
+    public function testAnIssueWithNothingMergedHasNotLanded(): void
+    {
+        $contribution = new Contribution('widget', self::issue([]), [self::mr(2, state: 'opened')]);
+
+        self::assertNull($contribution->landed());
+        self::assertFalse($contribution->hasWorkNewerThanLanding());
+        self::assertStringNotContainsString('merged', $contribution->mergeRequestCell());
+    }
+
+    /** A merge with no timestamp cannot be compared against, so nothing is newer. */
+    public function testAMergeWithNoTimestampClaimsNoNewerWork(): void
+    {
+        $contribution = new Contribution('widget', self::issue([]), [self::mr(1, state: 'merged')]);
+
+        self::assertFalse($contribution->hasWorkNewerThanLanding());
+    }
+
+    public function testAnUnparseableMergeTimestampClaimsNoNewerWork(): void
+    {
+        $contribution = new Contribution('widget', self::issue([]), [
+            self::mr(1, state: 'merged', mergedAt: 'not a date at all'),
+        ]);
+
+        self::assertFalse($contribution->hasWorkNewerThanLanding());
+    }
+
+    // ------------------------------------------------- pairing via the fork
+
+    /**
+     * The only thing that pairs a Project Update Bot merge request to its
+     * issue. Live: the MR is titled "Automated Project Update Bot fixes" on a
+     * branch called project-update-bot-only, and its description says only
+     * "Relates to #NNN" — which extractOwning() rejects on purpose so the bot
+     * cannot suppress an issue's patches by mentioning it. Correct, and it
+     * left every bot MR paired to nothing.
+     *
+     * The fork path is a fact about how the repository came to exist:
+     * drupal.org made issue/<module>-<nid> *for* that issue.
+     */
+    public function testABotMergeRequestPairsThroughItsIssueFork(): void
+    {
+        $bot = new MergeRequest(
+            iid: 1,
+            title: 'Automated Project Update Bot fixes',
+            state: 'merged',
+            authorUsername: 'project update bot',
+            authorId: 3644742,
+            sourceBranch: 'project-update-bot-only',
+            targetBranch: '1.0.x',
+            draft: false,
+            detailedMergeStatus: null,
+            headSha: null,
+            webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/1',
+            description: 'Relates to #3596502. This merge request was automatically created by the bot.',
+            sourceProjectId: 216803,
+            mergedAt: '2026-06-12T19:48:54.079Z',
+        );
+        $issue = self::issue([], nid: 3596502);
+
+        // Without the fork map it pairs to nothing at all.
+        self::assertSame([], Contribution::pair('widget', [$issue], [$bot])[0]->mergeRequests);
+
+        $paired = Contribution::pair('widget', [$issue], [$bot], [216803 => 3596502]);
+
+        self::assertCount(1, $paired[0]->mergeRequests);
+        self::assertSame('!1 merged 2026-06-12', $paired[0]->mergeRequestCell());
+    }
+
+    /** A fork map that says nothing about an MR leaves the old rules in charge. */
+    public function testTheOldRulesStillApplyWhereTheForkMapIsSilent(): void
+    {
+        $mr = self::mr(7, title: 'Issue #3467675: Make URL field required');
+
+        $paired = Contribution::pair('widget', [self::issue([], nid: 3467675)], [$mr], [999 => 111111]);
+
+        self::assertCount(1, $paired[0]->mergeRequests);
     }
 }
