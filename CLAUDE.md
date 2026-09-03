@@ -158,6 +158,17 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   merged MR never reports itself, which would say nothing. `ModuleSnapshot`
   carries `mergedMrData` and `forkNids`; a snapshot written before they
   existed reads as "nothing known to have merged", i.e. the old behaviour.
+- `Dashboard\LocalEvidence` is what a row knows locally **across every core
+  that applies**, now that core is evidence rather than identity. Several
+  cores can disagree and the cell is one string, so **worst case wins and
+  names its core** (`fail 10`, `stale 10`, `pass 11 · ? 10`); every core is
+  listed under `-v`. `allGreen()` is the fast lane's question and is stricter
+  than what it replaced: an applicable core with no fresh pass denies it,
+  where the old (subject x core) rows let a merge request green on 11 and
+  unchecked on 10 present a READY-AUTO row. Its `$byCore` is typed
+  `array<array-key, …>` deliberately — PHP stores `"10" => x` as `10 => x`, so
+  no caller can supply string keys and declaring them would be a type false at
+  every call site.
 - **A branch supports several cores at once.** `Drupal\CoreCompatibility`
   reads `core_version_requirement` from a branch's info.yml (fetched with
   `GitlabClient::fileContents()`) and answers which tracked cores apply.
@@ -358,7 +369,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6724/6724), methods (766/766) and classes (153/153), 1410 tests.
+lines (6768/6768), methods (778/778) and classes (154/154), 1419 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
