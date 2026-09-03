@@ -149,7 +149,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   are statements about evidence, and closing is a judgement about the
   convention. Live proof of the two shapes: conditions_helper #3596502 (active,
   MR merged 2026-06-12) vs field_visibility_conditions #3598272 (needs review,
-  open draft).
+  open draft). **Both views** carry it: `patches` through
+  `Contribution::mergeRequestCell()`, and the dashboard through
+  `DashboardRow::$landed` + `Guidance`, where a landing outranks every other
+  reading of the row. Landings are looked up by the *issue*, not the merge
+  request — the row a maintainer is staring at is usually the bot's open
+  draft while the work that landed came from a different MR entirely — and a
+  merged MR never reports itself, which would say nothing. `ModuleSnapshot`
+  carries `mergedMrData` and `forkNids`; a snapshot written before they
+  existed reads as "nothing known to have merged", i.e. the old behaviour.
 - **A patch belongs to the branch its issue is filed against.**
   `Drupal\IssueVersion` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
@@ -339,7 +347,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6602/6602), methods (755/755) and classes (152/152), 1377 tests.
+lines (6682/6682), methods (759/759) and classes (152/152), 1384 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

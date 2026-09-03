@@ -66,7 +66,7 @@ final readonly class StateBuilder
             }
 
             $rows = array_merge(
-                $rowFactory->rows($module, $snapshot->project(), $snapshot->mergeRequests()),
+                $rowFactory->rows($module, $snapshot->project(), $snapshot->mergeRequests(), snapshot: $snapshot),
                 $rowFactory->patchRows($module, $snapshot),
             );
 

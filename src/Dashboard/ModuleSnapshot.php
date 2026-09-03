@@ -32,6 +32,22 @@ final readonly class ModuleSnapshot
         public array $mrData,
         public array $issueData,
         public array $patchIssueData = [],
+        /**
+         * Merged merge requests, kept apart from the open ones because they
+         * make no row of their own — they answer "has this already landed?"
+         * about an issue that is still open, which for a Project Update Bot
+         * compatibility issue is the normal state and unknowable otherwise.
+         *
+         * @var list<array<array-key, mixed>>
+         */
+        public array $mergedMrData = [],
+        /**
+         * Source-project id => issue nid, from GitlabClient::issueForkNids().
+         * The only thing that pairs a bot merge request to its issue.
+         *
+         * @var array<int, int>
+         */
+        public array $forkNids = [],
     ) {
     }
 
@@ -71,6 +87,19 @@ final readonly class ModuleSnapshot
         return array_map(MergeRequest::fromApi(...), $this->mrData);
     }
 
+    /**
+     * The merged merge requests, as models.
+     *
+     * @return list<MergeRequest>
+     */
+    public function mergedMergeRequests(): array
+    {
+        return array_map(
+            static fn (array $row): MergeRequest => MergeRequest::fromApi($row),
+            $this->mergedMrData,
+        );
+    }
+
     public function issue(int $nid): ?Issue
     {
         $data = $this->issueData[$nid] ?? null;
@@ -86,6 +115,8 @@ final readonly class ModuleSnapshot
             'merge_requests' => $this->mrData,
             'issues' => $this->issueData,
             'patch_issues' => $this->patchIssueData,
+            'merged_merge_requests' => $this->mergedMrData,
+            'fork_nids' => $this->forkNids,
         ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT);
     }
 
@@ -119,14 +150,39 @@ final readonly class ModuleSnapshot
         }
 
         $patchIssues = $data['patch_issues'] ?? null;
+        $mergedMrs = $data['merged_merge_requests'] ?? null;
 
+        // Absent in a snapshot written before landings were tracked: an older
+        // cache reads as "nothing known to have merged", which is the previous
+        // behaviour rather than a wrong claim.
         return new self(
             $fetchedAt,
             $projectData,
             self::payloadList($mrData),
             self::payloadsByNid($data['issues'] ?? null),
             \is_array($patchIssues) ? self::payloadList($patchIssues) : [],
+            \is_array($mergedMrs) ? self::payloadList($mergedMrs) : [],
+            self::forkMap($data['fork_nids'] ?? null),
         );
+    }
+
+    /**
+     * @return array<int, int> source-project id => issue nid
+     */
+    private static function forkMap(mixed $raw): array
+    {
+        if (!\is_array($raw)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($raw as $projectId => $nid) {
+            if (is_numeric($projectId) && \is_int($nid)) {
+                $map[(int) $projectId] = $nid;
+            }
+        }
+
+        return $map;
     }
 
     /**

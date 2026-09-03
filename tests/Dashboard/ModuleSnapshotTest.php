@@ -83,6 +83,60 @@ final class ModuleSnapshotTest extends TestCase
         self::assertSame($original->issueData, $restored->issueData);
     }
 
+    /**
+     * Landings survive the cache, so a dashboard read from disk knows what
+     * merged just as a fresh fetch does.
+     */
+    public function testLandingsAndTheForkMapRoundTrip(): void
+    {
+        $original = new ModuleSnapshot(
+            new \DateTimeImmutable('2026-09-03T10:00:00+00:00'),
+            self::projectPayload(),
+            [],
+            [],
+            [],
+            [self::mrPayload() + ['state' => 'merged', 'merged_at' => '2026-09-03T10:00:00Z']],
+            [218528 => 3598272],
+        );
+
+        $restored = ModuleSnapshot::fromJson($original->toJson());
+
+        self::assertNotNull($restored);
+        self::assertSame([218528 => 3598272], $restored->forkNids);
+        self::assertCount(1, $restored->mergedMergeRequests());
+        self::assertSame('2026-09-03T10:00:00Z', $restored->mergedMergeRequests()[0]->mergedAt);
+    }
+
+    /**
+     * A snapshot written before landings were tracked reads as "nothing known
+     * to have merged" — the previous behaviour, not a wrong claim — and junk
+     * in the fork map is dropped rather than reaching the models as mixed.
+     */
+    public function testAnOlderOrMalformedSnapshotDegradesRatherThanLying(): void
+    {
+        $old = ModuleSnapshot::fromJson((string) json_encode([
+            'fetched_at' => '2026-01-01T00:00:00+00:00',
+            'project' => self::projectPayload(),
+            'merge_requests' => [],
+        ]));
+
+        self::assertNotNull($old);
+        self::assertSame([], $old->forkNids);
+        self::assertSame([], $old->mergedMergeRequests());
+
+        $junk = ModuleSnapshot::fromJson((string) json_encode([
+            'fetched_at' => '2026-01-01T00:00:00+00:00',
+            'project' => self::projectPayload(),
+            'merge_requests' => [],
+            'fork_nids' => ['not-a-number' => 3598272, '218528' => 'not-a-nid', '999' => 3598272],
+            'merged_merge_requests' => 'not a list',
+        ]));
+
+        self::assertNotNull($junk);
+        self::assertSame([999 => 3598272], $junk->forkNids);
+        self::assertSame([], $junk->mergedMergeRequests());
+    }
+
     public function testProjectReconstruction(): void
     {
         $snapshot = new ModuleSnapshot(

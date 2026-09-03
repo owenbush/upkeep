@@ -197,6 +197,7 @@ final class DashboardCommand extends UpkeepCommand
                     $snapshot->project(),
                     $snapshot->mergeRequests(),
                     $versionFilter,
+                    snapshot: $snapshot,
                 ) as $row
             ) {
                 $rows[] = $row;
@@ -508,6 +509,25 @@ final class DashboardCommand extends UpkeepCommand
             }
         }
 
+        // Merged ones too. Without them an issue whose work has already
+        // landed reads exactly like one nobody has touched — and a promoted
+        // patch that was fixed and merged leaves the bot's draft behind,
+        // looking like the only contribution there is.
+        $merged = $client->mergedMergeRequests($project);
+        $mergedData = [];
+        if (!$merged instanceof ApiFailure) {
+            foreach ($merged->all() as $mr) {
+                $mergedData[] = $mr->toApiArray();
+                $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
+                if ($nid !== null) {
+                    $issueNids[$nid] = true;
+                }
+            }
+        }
+
+        $forkNids = $client->issueForkNids($project);
+        $forkNids = $forkNids instanceof ApiFailure ? [] : $forkNids;
+
         $issueData = [];
         foreach (array_keys($issueNids) as $nid) {
             $issue = $drupal->issue($nid);
@@ -532,6 +552,8 @@ final class DashboardCommand extends UpkeepCommand
             $mrData,
             $issueData,
             $patchIssueData,
+            $mergedData,
+            $forkNids,
         );
     }
 

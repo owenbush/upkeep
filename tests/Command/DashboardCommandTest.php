@@ -64,6 +64,13 @@ final class DashboardCommandTest extends TestCase
                 }
             }
 
+            // Landing lookups a test has not pinned answer empty rather than
+            // exploding: they are additive, and a test about CI colouring
+            // should not have to know that merged MRs exist.
+            if (str_contains($url, '/forks?') || str_contains($url, 'state=merged')) {
+                return new MockResponse('[]', ['response_headers' => ['content-type' => 'application/json']]);
+            }
+
             throw new \LogicException('Unrouted request in test: ' . $method . ' ' . $url);
         };
 

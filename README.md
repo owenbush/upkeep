@@ -840,6 +840,11 @@ its MR merged on 2026-06-12, while `field_visibility_conditions` #3598272 is
 *needs review* with an open draft. Opposite situations, indistinguishable
 before this.
 
+The dashboard says it too, and there it matters most: promote a patch, fix it,
+merge it, and the bot's draft is left as the only *open* merge request on the
+issue — so the row used to read `draft, needs a check` and point at checking a
+branch that had been superseded. It now reads `merged 2026-09-03`.
+
 It never says "resolved" and never changes an issue's status — api-d7 is
 read-only, and whether a landed-and-quiet issue should be closed is a judgement
 about the convention, not about the evidence. It reports what merged and

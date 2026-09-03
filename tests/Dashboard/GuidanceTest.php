@@ -398,4 +398,84 @@ final class GuidanceTest extends TestCase
         self::assertSame('no patch attached', $guidance->status);
         self::assertSame('upkeep issue widget 3597808', $guidance->command);
     }
+
+    // ------------------------------------------------------------- landings
+
+    /**
+     * The row that prompted this: an issue with the bot's open draft on it,
+     * whose real work was promoted from a patch, fixed, and merged. The draft
+     * is still the only *open* merge request, so the row said
+     * "draft, needs a check" and pointed at checking a branch that had been
+     * superseded — while the work was already in git.
+     *
+     * A landing outranks every other reading of the row, because it is the one
+     * fact a maintainer cannot recover by looking at the issue.
+     */
+    public function testALandedIssueSaysSoRatherThanProposingAnotherCheck(): void
+    {
+        $guidance = Guidance::forRow(self::landedRow(newerWork: false));
+
+        self::assertSame('merged 2026-09-03', $guidance->status);
+        self::assertStringContainsString('upkeep issue widget 3', $guidance->command);
+    }
+
+    /**
+     * Landed, then somebody posted again — a bot re-running after core moved
+     * is the standard case. That is an ordinary open contribution once more,
+     * so the command goes back to checking it.
+     */
+    public function testNewerWorkAfterALandingIsCheckableAgain(): void
+    {
+        $guidance = Guidance::forRow(self::landedRow(newerWork: true));
+
+        self::assertSame('merged 2026-09-03, newer work since', $guidance->status);
+        self::assertStringContainsString('upkeep check', $guidance->command);
+    }
+
+    private static function landedRow(bool $newerWork): DashboardRow
+    {
+        $landed = new MergeRequest(
+            iid: 3,
+            title: 'Issue #3598272: Automated Drupal 12 compatibility fixes',
+            state: 'merged',
+            authorUsername: 'owenbush',
+            authorId: 1,
+            sourceBranch: '3598272-automated-drupal-12',
+            targetBranch: '2.0.x',
+            draft: false,
+            detailedMergeStatus: null,
+            headSha: null,
+            webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/3',
+            mergedAt: '2026-09-03T10:00:00Z',
+        );
+
+        return DashboardRow::forMergeRequest(
+            'widget',
+            '11',
+            new Project(1, 'widget', 'project/widget', 'Widget', 'https://git.drupalcode.org/project/widget'),
+            self::draftMr(),
+            null,
+            new GateVerdict(GateStatus::Review, ['draft', 'ci-missing', 'local-missing']),
+            null,
+            $landed,
+            $newerWork,
+        );
+    }
+
+    private static function draftMr(): MergeRequest
+    {
+        return new MergeRequest(
+            iid: 2,
+            title: 'Draft: Automated Project Update Bot fixes',
+            state: 'opened',
+            authorUsername: 'project update bot',
+            authorId: 3644742,
+            sourceBranch: 'project-update-bot-only',
+            targetBranch: '2.0.x',
+            draft: true,
+            detailedMergeStatus: null,
+            headSha: 'aaa',
+            webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/2',
+        );
+    }
 }

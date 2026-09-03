@@ -37,6 +37,19 @@ final readonly class DashboardRow
         public ?ApiFailure $ciFailure,
         public ?ApiFailure $moduleFailure,
         public ?Contribution $contribution = null,
+        /**
+         * A merge request on this row's issue whose work has already landed.
+         *
+         * The fact a row cannot otherwise carry. Project Update Bot
+         * compatibility issues are kept open on purpose so the bot can post
+         * again, so an open issue with an open draft on it may nonetheless
+         * have had its real work merged — as happens the moment a maintainer
+         * promotes a patch, fixes it and merges the result, leaving the
+         * bot's draft sitting there looking like the only contribution.
+         */
+        public ?MergeRequest $landed = null,
+        /** Whether anything on the issue is newer than that landing. */
+        public bool $newerWorkSinceLanding = false,
     ) {
     }
 
@@ -67,6 +80,8 @@ final readonly class DashboardRow
             null,
             null,
             $contribution,
+            $contribution->landed(),
+            $contribution->hasWorkNewerThanLanding(),
         );
     }
 
@@ -79,8 +94,22 @@ final readonly class DashboardRow
         ?CachedResult $local,
         GateVerdict $verdict,
         ?ApiFailure $ciFailure = null,
+        ?MergeRequest $landed = null,
+        bool $newerWorkSinceLanding = false,
     ): self {
-        return new self($module, $core, $project, $mergeRequest, $local, $verdict, $ciFailure, null);
+        return new self(
+            $module,
+            $core,
+            $project,
+            $mergeRequest,
+            $local,
+            $verdict,
+            $ciFailure,
+            null,
+            null,
+            $landed,
+            $newerWorkSinceLanding,
+        );
     }
 
     /** A module whose MRs cannot be listed still gets a visible row. */

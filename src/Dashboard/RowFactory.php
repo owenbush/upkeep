@@ -7,6 +7,7 @@ namespace Upkeep\Dashboard;
 use Upkeep\Cockpit\Module;
 use Upkeep\Gate\FastLaneGate;
 use Upkeep\Gitlab\ApiFailure;
+use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\Project;
 use Upkeep\Patches\Contribution;
@@ -46,6 +47,7 @@ final readonly class RowFactory
         array $mergeRequests,
         ?string $versionFilter = null,
         array $ciFailures = [],
+        ?ModuleSnapshot $snapshot = null,
     ): array {
         $cores = self::cores($module, $versionFilter);
         if ($cores === []) {
@@ -53,6 +55,12 @@ final readonly class RowFactory
         }
 
         usort($mergeRequests, static fn (MergeRequest $a, MergeRequest $b): int => $a->iid <=> $b->iid);
+
+        // Landings are looked up by the *issue* an MR belongs to, not by the
+        // MR itself: the row a maintainer is staring at is usually the bot's
+        // open draft, while the work that landed came from a different merge
+        // request entirely on the same issue.
+        $landings = $snapshot === null ? [] : self::landingsByIssue($module->name, $snapshot);
 
         $rows = [];
         foreach ($mergeRequests as $mergeRequest) {
@@ -66,11 +74,69 @@ final readonly class RowFactory
                     $local,
                     $this->gate->classify($mergeRequest, $core, $local),
                     $ciFailures[$mergeRequest->iid] ?? null,
+                    ...self::landingFor($mergeRequest, $landings, $snapshot),
                 );
             }
         }
 
         return $rows;
+    }
+
+    /**
+     * Contributions keyed by issue nid, so a row can ask what has landed on
+     * the issue it belongs to.
+     *
+     * @return array<int, Contribution>
+     */
+    private static function landingsByIssue(string $module, ModuleSnapshot $snapshot): array
+    {
+        $contributions = Contribution::pair(
+            $module,
+            $snapshot->patchIssues(),
+            [...$snapshot->mergeRequests(), ...$snapshot->mergedMergeRequests()],
+            $snapshot->forkNids,
+        );
+
+        $byNid = [];
+        foreach ($contributions as $contribution) {
+            $byNid[$contribution->issue->nid] = $contribution;
+        }
+
+        return $byNid;
+    }
+
+    /**
+     * The landing arguments for one merge request's row.
+     *
+     * A merge request never reports *itself* as the landing: a merged MR's own
+     * row saying "merged" is a tautology, while the useful statement is about
+     * the issue — that the work is in, whichever branch carried it.
+     *
+     * @param array<int, Contribution> $landings
+     * @return array{?MergeRequest, bool}
+     */
+    private static function landingFor(
+        MergeRequest $mergeRequest,
+        array $landings,
+        ?ModuleSnapshot $snapshot,
+    ): array {
+        $nid = ($snapshot !== null && $mergeRequest->sourceProjectId !== null
+            ? ($snapshot->forkNids[$mergeRequest->sourceProjectId] ?? null)
+            : null)
+            ?? IssueReference::extract(
+                $mergeRequest->title,
+                $mergeRequest->sourceBranch,
+                $mergeRequest->description,
+            );
+
+        $contribution = $nid === null ? null : ($landings[$nid] ?? null);
+        $landed = $contribution?->landed();
+
+        if ($landed === null || $landed->iid === $mergeRequest->iid) {
+            return [null, false];
+        }
+
+        return [$landed, $contribution->hasWorkNewerThanLanding()];
     }
 
     /**
@@ -96,7 +162,8 @@ final readonly class RowFactory
         $contributions = Contribution::pair(
             $module->name,
             $snapshot->patchIssues(),
-            $snapshot->mergeRequests(),
+            [...$snapshot->mergeRequests(), ...$snapshot->mergedMergeRequests()],
+            $snapshot->forkNids,
         );
         usort(
             $contributions,

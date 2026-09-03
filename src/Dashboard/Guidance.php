@@ -89,6 +89,27 @@ final readonly class Guidance
         // from red CI and from nothing else, never inspecting mergeability,
         // whatever "cannot proceed (e.g. merge conflicts)" in the older docs
         // suggested.
+        // A landing outranks everything else this row could say. An open
+        // issue whose work is already merged is the one thing a maintainer
+        // cannot read off the row at all, and it is exactly what a promoted-
+        // and-merged patch leaves behind: the bot's draft still sitting there,
+        // looking like the only contribution on the issue.
+        if ($row->landed !== null) {
+            $merged = substr((string) $row->landed->mergedAt, 0, 10);
+
+            if (!$row->newerWorkSinceLanding) {
+                return new self(
+                    sprintf('merged %s', $merged),
+                    sprintf('upkeep issue %s %d', $row->module, $row->landed->iid),
+                );
+            }
+
+            return new self(
+                sprintf('merged %s, newer work since', $merged),
+                self::checkCommand($row, $iid),
+            );
+        }
+
         $ciRed = \in_array('ci-red', $reasons, true) || $verdict?->status === GateStatus::Blocked;
         $prefix = \in_array('draft', $reasons, true) ? 'draft, ' : '';
 

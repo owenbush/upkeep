@@ -10,6 +10,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Cockpit\Module;
+use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Dashboard\RowFactory;
 use Upkeep\Gate\GateStatus;
 use Upkeep\Gitlab\MergeRequest;
@@ -144,5 +145,108 @@ final class RowFactoryTest extends TestCase
                 'sha' => self::HEAD_SHA,
             ],
         ]);
+    }
+
+    /**
+     * The reported row, end to end.
+     *
+     * An issue with the bot's open draft on it, whose real work was promoted
+     * from a patch, fixed and merged. The draft is the only *open* merge
+     * request, so its row said "draft, needs a check" and pointed at checking
+     * a branch that had been superseded — while the work was already in git.
+     *
+     * The pairing runs through the issue fork, which is the only thing that
+     * connects a bot MR to its issue at all.
+     */
+    public function testABotsDraftRowReportsThatTheIssuesWorkHasLanded(): void
+    {
+        $draft = MergeRequest::fromApi([
+            'iid' => 2,
+            'title' => 'Draft: Automated Project Update Bot fixes',
+            'state' => 'opened',
+            'source_branch' => 'project-update-bot-only',
+            'target_branch' => '2.0.x',
+            'draft' => true,
+            'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/2',
+            'author' => ['username' => 'Project-Update-Bot', 'id' => 66574],
+            // The fork is what pairs it: the title names no issue and the
+            // description would only say "Relates to".
+            'source_project_id' => 218528,
+        ]);
+
+        $rows = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [$draft],
+            null,
+            [],
+            self::snapshotWithLanding(),
+        );
+
+        self::assertCount(1, $rows);
+        self::assertSame(3, $rows[0]->landed?->iid);
+        self::assertFalse($rows[0]->newerWorkSinceLanding);
+    }
+
+    /** A merged MR's own row does not report itself; that says nothing. */
+    public function testAMergedMergeRequestDoesNotReportItselfAsTheLanding(): void
+    {
+        $merged = MergeRequest::fromApi(self::landedMrPayload());
+
+        $rows = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [$merged],
+            null,
+            [],
+            self::snapshotWithLanding(),
+        );
+
+        self::assertNull($rows[0]->landed);
+    }
+
+    /** With no snapshot to consult, rows are exactly what they always were. */
+    public function testWithoutASnapshotNoLandingIsClaimed(): void
+    {
+        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)]);
+
+        self::assertNull($rows[0]->landed);
+    }
+
+    /** @return array<string, mixed> */
+    private static function landedMrPayload(): array
+    {
+        return [
+            'iid' => 3,
+            'title' => 'Issue #3598272: Automated Drupal 12 compatibility fixes',
+            'state' => 'merged',
+            'source_branch' => '3598272-automated-drupal-12',
+            'target_branch' => '2.0.x',
+            'draft' => false,
+            'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/3',
+            'author' => ['username' => 'owenbush', 'id' => 1],
+            'source_project_id' => 218528,
+            'merged_at' => '2026-09-03T10:00:00Z',
+        ];
+    }
+
+    private static function snapshotWithLanding(): ModuleSnapshot
+    {
+        return new ModuleSnapshot(
+            new \DateTimeImmutable('2026-09-03T12:00:00+00:00'),
+            ['id' => 1, 'path' => 'widget', 'path_with_namespace' => 'project/widget', 'name' => 'Widget'],
+            [],
+            [],
+            [[
+                'nid' => 3598272,
+                'title' => 'Automated Drupal 12 compatibility fixes',
+                'field_issue_status' => 8,
+                'url' => 'https://www.drupal.org/node/3598272',
+                'field_project' => ['machine_name' => 'widget'],
+                'field_issue_files' => [],
+            ]],
+            [self::landedMrPayload()],
+            [218528 => 3598272],
+        );
     }
 }
