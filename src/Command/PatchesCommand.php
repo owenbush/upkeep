@@ -207,6 +207,11 @@ final class PatchesCommand extends UpkeepCommand
         $fmt[5] = match (true) {
             $cells[5] === '–' => '<fg=gray>' . $cells[5] . '</>',
             str_contains($cells[5], ' empty') => '<fg=yellow>' . $cells[5] . '</>',
+            // Merged and nothing since: the row needs no work, and the colour
+            // says so before the words are read. With newer work since, it is
+            // an ordinary open contribution again.
+            str_contains($cells[5], 'newer work since') => '<fg=yellow>' . $cells[5] . '</>',
+            str_contains($cells[5], ' merged ') => '<fg=green>' . $cells[5] . '</>',
             default => $cells[5],
         };
 
@@ -302,8 +307,17 @@ final class PatchesCommand extends UpkeepCommand
             return [];
         }
 
+        // Merged ones too. An open issue whose work has already landed reads
+        // exactly like an untouched one when only open MRs are fetched, and
+        // Project Update Bot compatibility issues — kept open on purpose so
+        // the bot can post again — are mostly that shape.
+        $merged = $gitlab->mergedMergeRequests($project);
+        $all = $merged instanceof ApiFailure ? $list->all() : [...$list->all(), ...$merged->all()];
+
+        $forkNids = $gitlab->issueForkNids($project);
+
         return $this->withResolvedEmptiness(
-            self::groupByOwningIssue($list->all(), $issues),
+            self::groupByOwningIssue($all, $issues, $forkNids instanceof ApiFailure ? [] : $forkNids),
             $gitlab,
             $project,
         );
@@ -317,9 +331,10 @@ final class PatchesCommand extends UpkeepCommand
      *
      * @param list<MergeRequest> $mrs
      * @param list<Issue>        $issues
+     * @param array<int, int>    $forkNids source-project id => issue nid
      * @return array<int, list<MergeRequest>>
      */
-    private static function groupByOwningIssue(array $mrs, array $issues): array
+    private static function groupByOwningIssue(array $mrs, array $issues, array $forkNids = []): array
     {
         $wanted = [];
         foreach ($issues as $issue) {
@@ -328,7 +343,10 @@ final class PatchesCommand extends UpkeepCommand
 
         $byNid = [];
         foreach ($mrs as $mr) {
-            $nid = IssueReference::extractOwning($mr->title, $mr->sourceBranch, $mr->description);
+            // The fork is authoritative — see Patches\Contribution::pair().
+            $nid = ($mr->sourceProjectId !== null ? ($forkNids[$mr->sourceProjectId] ?? null) : null)
+                ?? IssueReference::extractOwning($mr->title, $mr->sourceBranch, $mr->description);
+
             if ($nid === null || !isset($wanted[$nid])) {
                 continue;
             }

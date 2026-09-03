@@ -42,9 +42,16 @@ final readonly class Contribution
      *
      * @param list<Issue>        $issues
      * @param list<MergeRequest> $mergeRequests
+     * @param array<int, int>    $forkNids source-project id => issue nid, from
+     *                                     GitlabClient::issueForkNids(). The
+     *                                     authoritative pairing where it has
+     *                                     an answer: drupal.org made that fork
+     *                                     *for* that issue, which is a fact
+     *                                     about how the repository exists
+     *                                     rather than a string in a title.
      * @return list<self>
      */
-    public static function pair(string $module, array $issues, array $mergeRequests): array
+    public static function pair(string $module, array $issues, array $mergeRequests, array $forkNids = []): array
     {
         $wanted = [];
         foreach ($issues as $issue) {
@@ -53,7 +60,13 @@ final readonly class Contribution
 
         $byNid = [];
         foreach ($mergeRequests as $mr) {
-            $nid = IssueReference::extractOwning($mr->title, $mr->sourceBranch, $mr->description);
+            // The fork wins. It is the only thing that pairs a Project Update
+            // Bot MR at all: those are titled "Automated Project Update Bot
+            // fixes" on a branch called project-update-bot-only, and say only
+            // "Relates to #NNN" — which extractOwning() rejects by design.
+            $nid = ($mr->sourceProjectId !== null ? ($forkNids[$mr->sourceProjectId] ?? null) : null)
+                ?? IssueReference::extractOwning($mr->title, $mr->sourceBranch, $mr->description);
+
             if ($nid === null || !isset($wanted[$nid])) {
                 continue;
             }
@@ -66,6 +79,70 @@ final readonly class Contribution
         }
 
         return $contributions;
+    }
+
+    /**
+     * The merge request whose work has landed, if one has.
+     *
+     * The question this whole surface exists to answer for a class of issue
+     * that cannot answer it itself: Project Update Bot compatibility issues
+     * are kept open on purpose, so the bot can post again as core moves, and
+     * an open one may already have had its work merged months ago. Two such
+     * issues look identical until you ask whether anything was merged.
+     */
+    public function landed(): ?MergeRequest
+    {
+        $latest = null;
+        foreach ($this->mergeRequests as $mr) {
+            if ($mr->state !== 'merged') {
+                continue;
+            }
+            if ($latest === null || (string) $mr->mergedAt > (string) $latest->mergedAt) {
+                $latest = $mr;
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
+     * Whether anything on the issue is newer than the merge.
+     *
+     * The discriminator, and the reason this never says "resolved". A bot that
+     * posts again after its earlier work merged has raised new work; an issue
+     * where nothing has happened since is one whose open status is only the
+     * convention. Both are true statements about evidence, and which of them
+     * warrants closing the issue stays the maintainer's call.
+     */
+    public function hasWorkNewerThanLanding(): bool
+    {
+        $landed = $this->landed();
+        if ($landed?->mergedAt === null) {
+            return false;
+        }
+
+        $mergedAt = strtotime($landed->mergedAt);
+        if ($mergedAt === false) {
+            return false;
+        }
+
+        foreach ($this->issue->files as $file) {
+            if ($file->timestamp > $mergedAt) {
+                return true;
+            }
+        }
+
+        foreach ($this->mergeRequests as $mr) {
+            if ($mr->state === 'merged' || $mr->updatedAt === null) {
+                continue;
+            }
+            $updated = strtotime($mr->updatedAt);
+            if ($updated !== false && $updated > $mergedAt) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -147,6 +224,21 @@ final readonly class Contribution
     {
         if ($this->mergeRequests === []) {
             return '–';
+        }
+
+        // A landing outranks everything else the cell could say. An open issue
+        // whose work is already merged is the one case a maintainer cannot
+        // read off the issue at all, and it is the commonest shape of a
+        // Project Update Bot compatibility issue, which convention keeps open
+        // so the bot can post again.
+        $landed = $this->landed();
+        if ($landed !== null) {
+            return sprintf(
+                '!%d merged %s%s',
+                $landed->iid,
+                substr((string) $landed->mergedAt, 0, 10),
+                $this->hasWorkNewerThanLanding() ? ', newer work since' : '',
+            );
         }
 
         $substantive = $this->substantiveMergeRequests();

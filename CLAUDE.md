@@ -128,6 +128,28 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   collide with a row's file count) and `CI FAILED` (not `BLOCKED`, which is what
   that verdict is actually set by). There is no `REVIEW` column: it counted
   everything neither ready nor CI-failed, i.e. every row.
+- **An MR belongs to the issue its fork was made for.**
+  `IssueReference::fromForkPath()` reads the nid out of `issue/<module>-<nid>`,
+  and `GitlabClient::issueForkNids()` maps every fork of a project in one
+  request (source-project id => nid) rather than one per MR. It outranks every
+  other signal in `Contribution::pair()` because it is a fact about how the
+  repository came to exist. It is also the **only** thing that pairs a Project
+  Update Bot MR: those are titled "Automated Project Update Bot fixes" on
+  branch `project-update-bot-only`, and say only "Relates to #NNN" — which
+  `extractOwning()` rejects by design so a bot cannot suppress an issue's
+  patches by mentioning it. Correct, and it left every bot MR paired to
+  nothing.
+- **"Has this been done?" for issues kept open on purpose.** Bot compatibility
+  issues stay open by convention so the bot can post again, so an open one may
+  have landed months ago. `mergedMergeRequests()` fetches merged MRs alongside
+  open ones (without which a landed issue reads as untouched),
+  `Contribution::landed()` names the merge and `hasWorkNewerThanLanding()`
+  is the discriminator — anything on the issue newer than the merge is new
+  work. **It never says "resolved" and never changes a status**: both readings
+  are statements about evidence, and closing is a judgement about the
+  convention. Live proof of the two shapes: conditions_helper #3596502 (active,
+  MR merged 2026-06-12) vs field_visibility_conditions #3598272 (needs review,
+  open draft).
 - **A patch belongs to the branch its issue is filed against.**
   `Drupal\IssueVersion` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
@@ -317,7 +339,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6525/6525), methods (750/750) and classes (152/152), 1350 tests.
+lines (6602/6602), methods (755/755) and classes (152/152), 1377 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

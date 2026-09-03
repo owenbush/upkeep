@@ -44,6 +44,32 @@ final class IssueReference
         return self::resolve($title, $sourceBranch, $description, true);
     }
 
+    /**
+     * The issue an issue fork was made for, from its project path.
+     *
+     * `issue/pathauto-3616056` means drupal.org created that repository *for*
+     * issue 3616056 — a stronger claim than anything in an MR's own metadata,
+     * because it is a fact about how the fork came to exist rather than a
+     * string somebody typed.
+     *
+     * It is the only thing that pairs a Project Update Bot merge request to
+     * its issue. Those are titled "Automated Project Update Bot fixes", their
+     * branch is `project-update-bot-only`, and their description says only
+     * "Relates to #NNN" — which extractOwning() rejects on purpose, so the bot
+     * cannot suppress an issue's patches by mentioning it. Correct, and it
+     * left every bot MR paired to nothing.
+     *
+     * @param string $pathWithNamespace e.g. "issue/pathauto-3616056"
+     */
+    public static function fromForkPath(string $pathWithNamespace): ?int
+    {
+        if (preg_match('#^issue/.+-(\d{4,})$#', trim($pathWithNamespace), $m) !== 1) {
+            return null;
+        }
+
+        return (int) $m[1];
+    }
+
     public static function issueUrl(int $nid): string
     {
         return sprintf('https://www.drupal.org/node/%d', $nid);

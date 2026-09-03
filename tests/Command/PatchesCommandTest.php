@@ -94,6 +94,12 @@ final class PatchesCommandTest extends TestCase
         }, $mrs);
 
         $factory = static function (string $method, string $url) use ($project, $mrs, $listed): MockResponse {
+            // Real GitLab filters by state, and the difference matters now
+            // that merged MRs are fetched as well: without it these fixtures
+            // would be counted once per query.
+            if (str_contains($url, 'state=merged') || str_contains($url, '/forks?')) {
+                return self::json([]);
+            }
             if (str_contains($url, '/merge_requests?')) {
                 return self::json($listed);
             }
@@ -376,6 +382,9 @@ final class PatchesCommandTest extends TestCase
         unset($listed['diff_refs']);
 
         $factory = static function (string $method, string $url) use ($project, $listed): MockResponse {
+            if (str_contains($url, 'state=merged') || str_contains($url, '/forks?')) {
+                return self::json([]);
+            }
             if (str_contains($url, '/merge_requests?')) {
                 return self::json([$listed]);
             }
@@ -418,6 +427,9 @@ final class PatchesCommandTest extends TestCase
         unset($listed['diff_refs']);
 
         $factory = static function (string $method, string $url) use ($project, $listed): MockResponse {
+            if (str_contains($url, 'state=merged') || str_contains($url, '/forks?')) {
+                return self::json([]);
+            }
             if (str_contains($url, '/merge_requests?')) {
                 return self::json([$listed]);
             }
