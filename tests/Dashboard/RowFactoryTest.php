@@ -40,7 +40,13 @@ final class RowFactoryTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->resultsDir));
     }
 
-    public function testOneRowPerMergeRequestPerTrackedCoreVersionOrderedByIid(): void
+    /**
+     * Without a snapshot there are no issues to group by, so every merge
+     * request is its own row — and the tracked core versions no longer
+     * multiply them. Two merge requests across two tracked cores used to be
+     * four rows describing the same two branches.
+     */
+    public function testOneRowPerMergeRequestOrderedByIidWhateverCoresAreTracked(): void
     {
         $rows = $this->factory()->rows(
             self::module(['10', '11']),
@@ -49,20 +55,26 @@ final class RowFactoryTest extends TestCase
         );
 
         self::assertSame(
-            [['widget', '4', '10'], ['widget', '4', '11'], ['widget', '9', '10'], ['widget', '9', '11']],
+            [['widget', '4', '1.x'], ['widget', '9', '1.x']],
             array_map(
-                static fn ($row): array => [$row->module, (string) $row->requireMergeRequest()->iid, $row->core],
+                static fn ($row): array => [$row->module, (string) $row->requireMergeRequest()->iid, $row->branch],
                 $rows,
             ),
         );
+        self::assertSame(['10', '11'], $rows[0]->local->cores(), 'both cores, as one row\'s evidence');
     }
 
-    public function testAVersionFilterKeepsOnlyThatCoreVersion(): void
+    /**
+     * `--version` narrows the *evidence*, not the row count. Core stopped
+     * being part of a row's identity, so filtering by one cannot remove rows —
+     * it says which core to look at on the rows there are.
+     */
+    public function testAVersionFilterNarrowsTheEvidenceRatherThanTheRows(): void
     {
         $rows = $this->factory()->rows(self::module(['10', '11']), self::project(), [self::mergeRequest(4)], '11');
 
         self::assertCount(1, $rows);
-        self::assertSame('11', $rows[0]->core);
+        self::assertSame(['11'], $rows[0]->local->cores());
     }
 
     public function testAVersionFilterTheModuleDoesNotTrackYieldsNoRows(): void
@@ -91,6 +103,26 @@ final class RowFactoryTest extends TestCase
         $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)]);
 
         self::assertNotSame(GateStatus::ReadyAuto, $rows[0]->requireVerdict()->status);
+    }
+
+    /**
+     * The behaviour change the one-row model forced, seen end to end.
+     *
+     * A merge request checked on 11 and never checked on 10 used to produce
+     * two rows — one READY-AUTO, one not — and the fast lane took the ready
+     * one, merging on evidence that covered half the cores the module tracks.
+     * One row per merge request cannot hide that: the unchecked core is in the
+     * same cell as the pass.
+     */
+    public function testEvidenceOnOnlySomeTrackedCoresDeniesTheFastLane(): void
+    {
+        $this->storePassingLocal(4);
+
+        $rows = $this->factory()->rows(self::module(['10', '11']), self::project(), [self::mergeRequest(4)]);
+
+        self::assertCount(1, $rows);
+        self::assertFalse($rows[0]->isReadyAuto());
+        self::assertSame('pass 11 · ? 10', $rows[0]->localCell());
     }
 
     private function factory(): RowFactory
@@ -188,8 +220,15 @@ final class RowFactoryTest extends TestCase
         self::assertFalse($rows[0]->newerWorkSinceLanding);
     }
 
-    /** A merged MR's own row does not report itself; that says nothing. */
-    public function testAMergedMergeRequestDoesNotReportItselfAsTheLanding(): void
+    /**
+     * An issue whose work is entirely merged, carrying no patch, leaves the
+     * queue. There is nothing left to do about it, and a row per finished
+     * issue is how a dashboard stops being read.
+     *
+     * It used to produce a row (the merged MR's own) that reported no landing
+     * at all — a row saying nothing, about work that was done.
+     */
+    public function testAnIssueWhoseWorkIsAllMergedAndCarriesNoPatchLeavesTheQueue(): void
     {
         $merged = MergeRequest::fromApi(self::landedMrPayload());
 
@@ -202,7 +241,87 @@ final class RowFactoryTest extends TestCase
             self::snapshotWithLanding(),
         );
 
-        self::assertNull($rows[0]->landed);
+        self::assertSame([], $rows);
+    }
+
+    /**
+     * The one multiplier left, and a real one: an issue backported to two
+     * branches is two pieces of work, not one seen twice. Branch, not core —
+     * a branch supports several cores at once.
+     */
+    public function testAnIssueWithWorkOnTwoBranchesIsTwoRows(): void
+    {
+        $onOldBranch = MergeRequest::fromApi([
+            'iid' => 5,
+            'title' => 'Issue #3598272: backport',
+            'state' => 'opened',
+            'source_branch' => '3598272-backport',
+            'target_branch' => '1.0.x',
+            'draft' => false,
+            'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/5',
+            'author' => ['username' => 'owenbush', 'id' => 1],
+            'source_project_id' => 218528,
+        ]);
+        $onNewBranch = MergeRequest::fromApi([
+            'iid' => 6,
+            'title' => 'Issue #3598272: the fix',
+            'state' => 'opened',
+            'source_branch' => '3598272-fix',
+            'target_branch' => '2.0.x',
+            'draft' => false,
+            'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/6',
+            'author' => ['username' => 'owenbush', 'id' => 1],
+            'source_project_id' => 218528,
+        ]);
+
+        $rows = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [$onOldBranch, $onNewBranch],
+            null,
+            [],
+            self::snapshotWithLanding(),
+        );
+
+        self::assertSame(
+            [['1.0.x', 5], ['2.0.x', 6]],
+            array_map(static fn ($row): array => [$row->branch, $row->requireMergeRequest()->iid], $rows),
+        );
+        // Both rows belong to the same issue, and both see its landing.
+        self::assertSame([3598272, 3598272], array_map(static fn ($row): ?int => $row->issueNid, $rows));
+    }
+
+    /**
+     * A merge request claiming no issue in the module's open queue keeps a row
+     * of its own — 33 of pathauto's 162 claim no issue at all. The nid it does
+     * claim is still shown; unpaired is not anonymous.
+     */
+    public function testAMergeRequestOutsideTheIssueQueueKeepsItsOwnRow(): void
+    {
+        $orphan = MergeRequest::fromApi([
+            'iid' => 8,
+            'title' => 'Issue #3111111: something long since fixed',
+            'state' => 'opened',
+            'source_branch' => '3111111-thing',
+            'target_branch' => '2.0.x',
+            'draft' => false,
+            'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/8',
+            'author' => ['username' => 'owenbush', 'id' => 1],
+        ]);
+
+        $rows = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [$orphan],
+            null,
+            [],
+            self::snapshotWithLanding(),
+        );
+
+        self::assertCount(1, $rows);
+        self::assertNull($rows[0]->contribution, 'no issue to pair it with');
+        self::assertSame(3111111, $rows[0]->issueNid, 'but the nid it claims is still shown');
+        self::assertSame('3111111', $rows[0]->issueCell(), 'without a status, which we do not have');
     }
 
     /** With no snapshot to consult, rows are exactly what they always were. */

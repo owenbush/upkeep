@@ -116,6 +116,71 @@ final readonly class LocalEvidence
     }
 
     /**
+     * The core a maintainer should act on first, or null when every applicable
+     * core is green.
+     *
+     * The same ranking the cell uses, so `fail 10` and
+     * `upkeep check widget 14 --version=10` cannot name different cores. Under
+     * the old model the row *was* a core and the suffix was trivial; now the
+     * row spans several and the command has to pick the one worth running.
+     */
+    public function attentionCore(): ?string
+    {
+        foreach (['fail', 'stale', 'unchecked'] as $state) {
+            $cores = $this->coresIn($state);
+            if ($cores !== []) {
+                return $cores[0];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The distinct checks that failed on any applicable core, in the order
+     * they were recorded.
+     *
+     * Named rather than counted because the gate turns each into a
+     * `local-failed:<check>` reason and Guidance renders the name — "phpcs
+     * failed" is actionable in a way "1 check failed" is not. Deduplicated
+     * across cores: phpcs failing on 10 and on 11 is one thing wrong with the
+     * branch, not two.
+     *
+     * @return list<string>
+     */
+    public function failedChecks(): array
+    {
+        $failed = [];
+        foreach ($this->cores() as $core) {
+            $result = $this->byCore[$core] ?? null;
+            if ($result === null || $this->stateOf($core) !== 'fail') {
+                continue;
+            }
+            foreach ($result->result->failures() as $failure) {
+                $failed[$failure->type->value] = true;
+            }
+        }
+
+        return array_keys($failed);
+    }
+
+    /**
+     * When the newest of these results was recorded, for the merge command's
+     * context block. Null when nothing has been checked.
+     */
+    public function latestRecordedAt(): ?\DateTimeImmutable
+    {
+        $latest = null;
+        foreach ($this->byCore as $result) {
+            if ($result !== null && ($latest === null || $result->recordedAt > $latest)) {
+                $latest = $result->recordedAt;
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
      * The cell: worst case, naming the core it came from.
      *
      * Ordered by how much it should worry a maintainer — a failure outranks

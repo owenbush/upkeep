@@ -21,7 +21,7 @@ final class DashboardRowGuardTest extends TestCase
     public function testAModuleFailureRowRefusesToProduceAMergeRequest(): void
     {
         $this->expectException(WorkflowException::class);
-        $this->expectExceptionMessage('module-level failure');
+        $this->expectExceptionMessage('no open merge request');
 
         self::failureRow()->requireMergeRequest();
     }
@@ -46,7 +46,7 @@ final class DashboardRowGuardTest extends TestCase
         $cells = self::failureRow()->toTableCells();
 
         self::assertSame('widget', $cells[0]);
-        self::assertStringContainsString('n/a', $cells[4]);
+        self::assertStringContainsString('n/a', $cells[6]);
         self::assertFalse(self::failureRow()->isReadyAuto());
     }
 

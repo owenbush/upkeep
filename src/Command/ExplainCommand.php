@@ -16,7 +16,7 @@ use Upkeep\Workflow\ExitCode;
  *
  * Every other command answers a question about a module. This one answers a
  * question about the output itself, which until now had no answer anywhere: a
- * maintainer who saw `patch↑` on a dashboard row could read the source or
+ * maintainer who saw the patch arrow on a dashboard row could read the source or
  * guess, and those were the options.
  *
  * Needs no cockpit, no token and no network — it is a glossary — so it works
@@ -33,7 +33,7 @@ final class ExplainCommand extends UpkeepCommand
         $this->addArgument(
             'term',
             InputArgument::OPTIONAL,
-            'The word to explain, e.g. "patch↑", "stale", "unclaimed". Matches partially.',
+            'The word to explain, e.g. "LOCAL", "stale", "unclaimed". Matches partially.',
         );
     }
 

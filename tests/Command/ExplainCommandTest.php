@@ -14,7 +14,7 @@ use Upkeep\Workflow\ExitCode;
  * The answer to "what does that word mean?", which until now was "read the
  * source".
  *
- * `patch↑` is the case that motivated it: printed on dashboard rows, defined in
+ * The patch arrow is the case that motivated it: printed on dashboard rows, defined in
  * one comment inside DashboardCommand, and mentioned nowhere a user would look.
  */
 final class ExplainCommandTest extends TestCase
@@ -29,10 +29,10 @@ final class ExplainCommandTest extends TestCase
 
     public function testItExplainsTheSymbolNobodyCouldLookUp(): void
     {
-        $display = $this->explain('patch↑')->getDisplay();
+        $display = $this->explain('↑')->getDisplay();
 
         self::assertStringContainsString('newer than the merge request', $display);
-        self::assertStringContainsString('dashboard ISSUE', $display, 'and where it appears');
+        self::assertStringContainsString('dashboard PATCH', $display, 'and where it appears');
     }
 
     /** Bare, it is the whole legend — the point being to see them together. */
@@ -40,7 +40,7 @@ final class ExplainCommandTest extends TestCase
     {
         $display = $this->explain()->getDisplay();
 
-        foreach (['patch↑', 'unclaimed', 'stale', 'empty MR', 'READY-AUTO', 'RTBC'] as $term) {
+        foreach (['↑', 'unclaimed', 'stale', 'empty MR', 'READY-AUTO', 'RTBC'] as $term) {
             self::assertStringContainsString($term, $display, $term . ' should be listed');
         }
     }
@@ -76,7 +76,8 @@ final class ExplainCommandTest extends TestCase
 
         $emittedTerms = [
             'ready to merge', 'needs a check', 'checks are stale', 'needs your review',
-            'CI failed', 'draft', 'empty MR', 'unclaimed', 'patch↑', 'stale',
+            'CI failed', 'draft', 'empty MR', 'unclaimed', '↑', 'stale',
+            'ISSUE', 'VERSION', 'PATCH', 'LOCAL', 'BRANCHES',
         ];
         foreach ($emittedTerms as $emitted) {
             self::assertContains($emitted, $defined, $emitted . ' is printed but not defined');

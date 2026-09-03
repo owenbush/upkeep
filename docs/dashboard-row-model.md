@@ -1,7 +1,8 @@
 # Plan — the dashboard row model
 
-*Status: proposed. Nothing below is built. Written to be disagreed with before
-1,400 tests are rewritten.*
+*Status: sections 1–4 are built (`0aa5444`, `6faa06b`, and the row-identity
+commit). Section 2.3 — narrowing the applicable cores to what the branch
+declares — is the one part still unwired; see §6.*
 
 ---
 
@@ -191,29 +192,48 @@ No cache invalidation needed; `--refresh` picks up the rest.
 
 ## 6. Sequence
 
-Each step is independently green and shippable.
-
 1. ~~**`core_version_requirement` reading**~~ — **done** (`0aa5444`).
    `Drupal\CoreCompatibility` + `GitlabClient::fileContents()`. No behaviour
    change; the data only.
 2. ~~**Evidence across cores**~~ — **done** (`6faa06b`). `Dashboard\LocalEvidence`:
-   worst-case-plus-detail, and `allGreen()` as the stricter fast-lane question.
-   Not yet wired to anything.
-3. **Row identity** — *next, and indivisible.* `DashboardRow` keyed on
-   (issue, branch); `forIssue()` and `forUnlinkedMergeRequest()` replacing
-   `forPatch()`/`forMergeRequest()`; `$core` → `$branch`; `$local` →
-   `LocalEvidence`; `patchRows()` and the `isCoveredByMergeRequest()` filter
-   deleted, along with `landingsByIssue()`/`landingFor()`.
-4. **Verdict across cores** — `FastLaneGate` reading `LocalEvidence::allGreen()`.
-   The behaviour change; lands alone, with its reasoning in the commit.
-5. **Summary and UI** — `ModuleSummary` columns, `Ui\StateBuilder`.
-6. **Live verification** — real modules, row counts before and after, and the
-   four never-yet-run commands (`check`, `patch:check`, `start`, `publish`)
-   exercised against a real environment.
+   worst-case-plus-detail, and the stricter fast-lane question.
+3. ~~**Row identity**~~ — **done**, and it took step 4 with it. `DashboardRow`
+   keyed on (issue, branch); `forIssue()` and `forUnlinkedMergeRequest()`
+   replacing `forPatch()`/`forMergeRequest()`; `$core` → `$branch`; `$local` →
+   `LocalEvidence`; `patchRows()`, the `isCoveredByMergeRequest()` filter and
+   `landingsByIssue()`/`landingFor()` deleted.
+4. ~~**Verdict across cores**~~ — **done, inside step 3 rather than after it.**
+   Planned to land alone, and it could not: the moment a row stops being one
+   (subject, core) pair it has no single-core verdict to carry, so
+   `FastLaneGate::classify()` had to take the core *list* and the evidence
+   across it in the same commit. Keeping them apart would have meant picking an
+   arbitrary core to gate on for one commit — a worse state than the one being
+   fixed. The behaviour change is the same one planned: **every applicable core
+   must be green**, so rows that were READY on partial evidence no longer are.
+5. **Summary and UI** — done for `ModuleSummary` (CORES → BRANCHES) and
+   `Ui\StateBuilder` (a row's branch, its cores, its landing). The browser
+   *page* still renders the old field names and is untouched, at the user's
+   request.
+6. **Still to do.**
+   - **§2.3, applicable cores.** `CoreCompatibility` is built and tested but
+     nothing calls it: rows gather evidence on every *tracked* core, not on
+     tracked ∩ declared. Wiring it needs `ModuleSnapshot` to carry a per-branch
+     `core_version_requirement` and `fetchModule()` to read each branch's
+     info.yml. Deliberately deferred — it changes which cores a row reports on,
+     not what a row is, and it is separately green.
+   - **Live verification.** Real modules, row counts before and after, and the
+     four commands never yet run against a real environment (`check`,
+     `patch:check`, `start`, `publish`).
+   - **`ModuleSnapshot::issue()` is now unused by the dashboard.** The ISSUE
+     cell used to need a per-MR issue lookup; the row *is* the issue now, so
+     the issues come from the open-issue scan the snapshot already holds. That
+     leaves `fetchModule()` making one drupal.org request per referenced nid
+     for data nothing reads — a real cost on every `--refresh`, and worth
+     removing on its own.
 
-### Why step 3 has no smaller green slice
+### Why step 3 had no smaller green slice
 
-Measured before starting it: **20 files** reference the members it changes
+Measured before starting it: **20 files** referenced the members it changes
 (`$core`, `$local`, `forPatch`, `forMergeRequest`), across ~1,800 lines of
 source plus eight test files. `DashboardRow`, `RowFactory`, `Guidance`,
 `ModuleSummary`, `RowAssembler`, `DashboardCommand` and `Ui\StateBuilder` all
@@ -228,6 +248,3 @@ Attempts to slice it further were considered and rejected:
 - *Merge patch rows into MR rows first, keep `$core`* — leaves two row
   identities in play at once, which is the state the whole change exists to
   end.
-
-So it lands as one commit, and it should be started with room to finish rather
-than continued into.

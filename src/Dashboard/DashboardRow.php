@@ -11,32 +11,60 @@ use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\PipelineStatus;
 use Upkeep\Gitlab\Project;
 use Upkeep\Patches\Contribution;
-use Upkeep\Results\CachedResult;
 use Upkeep\Workflow\WorkflowException;
 
 /**
- * One assembled dashboard row: either an (MR x core) row carrying the full
- * structured evidence the consumers key on, or a module-level failure row
- * (the module's MRs could not be listed at all).
+ * One assembled dashboard row.
+ *
+ * **A row is one issue's work on one module branch.** That is the whole
+ * change from what came before, and it removes two multipliers that added
+ * rows without adding information (see `docs/dashboard-row-model.md`):
+ *
+ *   - An issue used to appear once per merge request *and* again as a patch
+ *     row, which is why `RowFactory` carried a filter whose only job was to
+ *     suppress the duplicate it had just created.
+ *   - Every row was multiplied by the module's tracked core versions. But a
+ *     module *branch* supports several cores at once — pathauto's single
+ *     8.x-1.x declares `^10.2 || ^11 || ^12` — so that produced rows
+ *     describing the same branch and the same work, differing only in a
+ *     column. Core is **evidence**, and lives in `LocalEvidence`.
+ *
+ * The multiplier that remains is real: an issue with work on two branches is
+ * a backport, which is two pieces of work rather than one seen twice.
+ *
+ * A merge request claiming no issue keeps a row of its own — not an edge
+ * case, since 33 of pathauto's 162 merge requests claim none — and a module
+ * whose merge requests cannot be listed gets a visible failure row.
  *
  * The dashboard renders rows as table cells; the fast-lane merge command
  * partitions them by verdict and needs the underlying objects (Project for
- * the merge call, MergeRequest for the freshness re-check, CachedResult for
+ * the merge call, MergeRequest for the freshness re-check, LocalEvidence for
  * the context block). Both consume the same cell-formatting helpers so the
  * two commands never describe the same evidence differently.
  */
 final readonly class DashboardRow
 {
+    /**
+     * @param list<MergeRequest> $mergeRequests every merge request this row
+     *                                          covers — the issue's, narrowed
+     *                                          to this branch
+     * @param ?MergeRequest      $mergeRequest  the open one the row acts on:
+     *                                          what gets checked, gated and
+     *                                          merged. Null for a row carrying
+     *                                          only patches or only a landing.
+     */
     private function __construct(
         public string $module,
-        public string $core,
-        public ?Project $project,
+        public string $branch,
+        public ?int $issueNid,
+        public ?Contribution $contribution,
+        public array $mergeRequests,
         public ?MergeRequest $mergeRequest,
-        public ?CachedResult $local,
+        public ?Project $project,
+        public LocalEvidence $local,
         public ?GateVerdict $verdict,
         public ?ApiFailure $ciFailure,
         public ?ApiFailure $moduleFailure,
-        public ?Contribution $contribution = null,
         /**
          * A merge request on this row's issue whose work has already landed.
          *
@@ -47,75 +75,126 @@ final readonly class DashboardRow
          * promotes a patch, fixes it and merges the result, leaving the
          * bot's draft sitting there looking like the only contribution.
          */
-        public ?MergeRequest $landed = null,
+        public ?MergeRequest $landed,
         /** Whether anything on the issue is newer than that landing. */
-        public bool $newerWorkSinceLanding = false,
+        public bool $newerWorkSinceLanding,
+        public int $patchCount,
+        /**
+         * Whether the newest patch on the issue postdates the merge request's
+         * last update — the old `patch↑` flag, which used to be a
+         * cross-reference between two rows and is now a statement about one.
+         */
+        public bool $patchNewerThanMergeRequest,
     ) {
     }
 
     /**
-     * A patch contribution: an issue carrying work that no branch does.
+     * An issue's work on one branch: its merge requests, its patches, or both.
      *
-     * It has no project, no merge request and — decisively — no gate verdict,
-     * which is what makes isReadyAuto() false for it by construction rather
-     * than by a check someone has to remember to write. There is nothing here
-     * upkeep could merge even if it wanted to: the fast-lane path resolves its
-     * own rows through RowAssembler and never sees these at all.
+     * Both used to be separate row kinds, and an issue carrying both produced
+     * one of each — the duplication the covered-by-a-merge-request filter
+     * existed to hide. Here they are columns of the same row, which is what
+     * they always were: an issue with a patch in comment 4 and an MR in
+     * comment 9 is one piece of work that arrived twice.
      *
-     * @param ?CachedResult $local the cached patch:check result, keyed by the
-     *                             patch's revision (Patches\PatchRevision)
+     * @param ?MergeRequest $open  the open merge request to act on, if any
+     * @param ?GateVerdict  $verdict null when there is no open merge request,
+     *                               which is what makes isReadyAuto() false by
+     *                               construction for a patch-only row rather
+     *                               than by a check someone has to remember
      */
-    public static function forPatch(
-        string $core,
+    public static function forIssue(
+        string $module,
+        string $branch,
         Contribution $contribution,
-        ?CachedResult $local,
+        ?Project $project,
+        ?MergeRequest $open,
+        LocalEvidence $local,
+        ?GateVerdict $verdict,
+        ?ApiFailure $ciFailure = null,
     ): self {
+        $landed = $contribution->landed();
+
         return new self(
-            $contribution->module,
-            $core,
-            null,
-            null,
-            $local,
-            null,
-            null,
-            null,
+            $module,
+            $branch,
+            $contribution->issue->nid,
             $contribution,
-            $contribution->landed(),
-            $contribution->hasWorkNewerThanLanding(),
+            $contribution->mergeRequests,
+            $open,
+            $project,
+            $local,
+            $verdict,
+            $ciFailure,
+            null,
+            $landed,
+            $landed !== null && $contribution->hasWorkNewerThanLanding(),
+            $contribution->issue->patchCount(),
+            self::patchIsNewer($contribution, $open),
         );
     }
 
-    /** @param ?ApiFailure $ciFailure detail-fetch failure; the row fell back to the listed MR data */
-    public static function forMergeRequest(
+    /**
+     * A merge request with no issue behind it on this dashboard.
+     *
+     * Either it claims none — 20% of pathauto's merge requests do — or it
+     * claims one outside the module's open queue, typically an issue already
+     * marked fixed. Both keep a row: the merge request is open, and an open
+     * merge request is a contribution whatever its issue says.
+     *
+     * @param ?int $issueNid the nid its metadata claims, when there is one.
+     *                       Shown, but not paired: without the issue there is
+     *                       no status, no patch count and nothing to group by.
+     */
+    public static function forUnlinkedMergeRequest(
         string $module,
-        string $core,
-        Project $project,
+        string $branch,
+        ?Project $project,
         MergeRequest $mergeRequest,
-        ?CachedResult $local,
+        LocalEvidence $local,
         GateVerdict $verdict,
         ?ApiFailure $ciFailure = null,
-        ?MergeRequest $landed = null,
-        bool $newerWorkSinceLanding = false,
+        ?int $issueNid = null,
     ): self {
         return new self(
             $module,
-            $core,
-            $project,
+            $branch,
+            $issueNid,
+            null,
+            [$mergeRequest],
             $mergeRequest,
+            $project,
             $local,
             $verdict,
             $ciFailure,
             null,
             null,
-            $landed,
-            $newerWorkSinceLanding,
+            false,
+            0,
+            false,
         );
     }
 
     /** A module whose MRs cannot be listed still gets a visible row. */
     public static function forModuleFailure(string $module, ApiFailure $failure): self
     {
-        return new self($module, '-', null, null, null, null, null, $failure);
+        return new self(
+            $module,
+            '-',
+            null,
+            null,
+            [],
+            null,
+            null,
+            LocalEvidence::none(),
+            null,
+            null,
+            $failure,
+            null,
+            false,
+            0,
+            false,
+        );
     }
 
     public function isReadyAuto(): bool
@@ -130,7 +209,7 @@ final readonly class DashboardRow
      * production php.ini default, and this invariant is load-bearing — the
      * merge command feeds the result straight into a merge call.
      *
-     * @throws WorkflowException when this is a module-failure row
+     * @throws WorkflowException when this row has no open merge request
      */
     public function requireMergeRequest(): MergeRequest
     {
@@ -138,7 +217,7 @@ final readonly class DashboardRow
     }
 
     /**
-     * @throws WorkflowException when this is a module-failure row
+     * @throws WorkflowException when this row has no open merge request
      */
     public function requireProject(): Project
     {
@@ -146,7 +225,7 @@ final readonly class DashboardRow
     }
 
     /**
-     * @throws WorkflowException when this is a module-failure row
+     * @throws WorkflowException when this row has no open merge request
      */
     public function requireVerdict(): GateVerdict
     {
@@ -156,63 +235,117 @@ final readonly class DashboardRow
     private static function notAMergeRequestRow(string $what): WorkflowException
     {
         return new WorkflowException(sprintf(
-            'Dashboard row has no %s: it reports a module-level failure, not a merge request.',
+            'Dashboard row has no %s: it carries no open merge request.',
             $what,
         ));
     }
 
     /**
      * The row exactly as the dashboard table renders it:
-     * MODULE, MR, CORE, TITLE, CI, LOCAL, STATUS, NEXT.
+     * MODULE, ISSUE, VERSION, TITLE, MR, PATCH, CI, LOCAL, STATUS, NEXT.
      *
      * STATUS is a phrase and NEXT is a command, because a row that says only
      * what it *is* leaves a maintainer with a hundred of them and no idea
      * which to touch. The gate's own reason tokens are still available —
      * `describe()` renders them, and the dashboard prints them under `-v`.
      *
-     * @param bool $verbose swap the phrase for the gate's reason tokens
+     * @param bool $verbose swap the phrase for the gate's reason tokens, and
+     *                      the LOCAL cell for every core's own state
      *
      * @return list<string>
      */
     public function toTableCells(bool $verbose = false): array
     {
         $guidance = Guidance::forRow($this);
-        $next = $guidance->command;
 
         if ($this->moduleFailure !== null) {
             $cell = self::failureCell($this->moduleFailure);
 
-            return [$this->module, '–', '–', '(merge requests unavailable)', $cell, '–', $cell, $next];
-        }
-
-        if ($this->contribution !== null) {
             return [
                 $this->module,
-                'patch',
-                $this->core,
-                self::truncate($this->contribution->issue->title),
-                // A patch has no pipeline: drupal.org runs CI on branches, not
-                // on attachments, which is half the reason patch work goes
-                // unreviewed in the first place.
                 '–',
-                $this->localCell(),
-                $verbose ? $this->statusCell() : $guidance->status,
-                $next,
+                '–',
+                $this->titleCell(),
+                '–',
+                '–',
+                $cell,
+                '–',
+                $cell,
+                $guidance->command,
             ];
         }
 
-        $mergeRequest = $this->requireMergeRequest();
-
         return [
             $this->module,
-            '!' . $mergeRequest->iid,
-            $this->core,
-            self::truncate($mergeRequest->title),
+            $this->issueCell(),
+            $this->branch,
+            self::truncate($this->titleCell()),
+            $this->mergeRequestCell(),
+            $this->patchCell(),
             $this->ciCell(),
-            $this->localCell(),
-            $verbose ? $this->requireVerdict()->describe() : $guidance->status,
-            $next,
+            $verbose ? $this->local->describe() : $this->local->cell(),
+            $verbose ? $this->statusCell() : $guidance->status,
+            $guidance->command,
         ];
+    }
+
+    /**
+     * ISSUE cell: the nid and drupal.org's own status word.
+     *
+     * The status is the half that was missing. "#3598272 review" and
+     * "#3598272 RTBC" call for different things from a maintainer, and the
+     * dashboard used to print the same cell for both.
+     */
+    public function issueCell(): string
+    {
+        if ($this->contribution !== null) {
+            return $this->contribution->issue->nid . ' ' . $this->contribution->issue->status->shortLabel();
+        }
+
+        return $this->issueNid === null ? '–' : (string) $this->issueNid;
+    }
+
+    /** TITLE cell: the issue's title, or the merge request's when there is no issue. */
+    public function titleCell(): string
+    {
+        if ($this->contribution !== null) {
+            return $this->contribution->issue->title;
+        }
+
+        if ($this->mergeRequest !== null) {
+            return $this->mergeRequest->title;
+        }
+
+        return '(merge requests unavailable)';
+    }
+
+    /** MR cell: the representative merge request, or the landing that outranks it. */
+    public function mergeRequestCell(): string
+    {
+        return Contribution::renderMergeRequestCell(
+            $this->mergeRequests,
+            $this->landed,
+            $this->newerWorkSinceLanding,
+        );
+    }
+
+    /**
+     * PATCH cell: how many patch files the issue carries, flagged when the
+     * newest of them postdates the merge request.
+     *
+     * `patch↑` used to live in the ISSUE column of a merge-request row and
+     * mean "the issue this MR mentions has a newer patch on it" — a
+     * cross-reference between two rows that no glossary explained and nobody
+     * could read. Here the patch and the merge request are the same row, so
+     * the flag is a statement about one thing.
+     */
+    public function patchCell(): string
+    {
+        if ($this->patchCount === 0) {
+            return '–';
+        }
+
+        return $this->patchCount . ($this->patchNewerThanMergeRequest ? ' ↑' : '');
     }
 
     /** CI cell: pipeline state, or the explicit typed-failure state. */
@@ -235,30 +368,12 @@ final readonly class DashboardRow
     }
 
     /**
-     * LOCAL cell: latest cached check result for the (module, MR, core) —
-     * "-" when never checked, "stale" when recorded against an older head
-     * SHA, otherwise ok / fail (failing check names).
+     * LOCAL cell: the worst state across every applicable core, naming the
+     * core it came from. See LocalEvidence.
      */
     public function localCell(): string
     {
-        if ($this->local === null) {
-            return '–';
-        }
-
-        // A patch row's evidence is current when it was recorded against the
-        // patch that is newest on the issue *now*. A re-roll posted since then
-        // is a new upload with a new URL, so the recorded revision no longer
-        // matches and the verdict reads as stale rather than as a green light
-        // for code nobody checked.
-        $current = $this->contribution !== null
-            ? $this->contribution->currentRevision()
-            : $this->mergeRequest?->headSha;
-
-        if ($current === null || $this->local->sha !== $current) {
-            return 'stale';
-        }
-
-        return $this->local->result->allPassed() ? 'pass' : 'fail';
+        return $this->local->cell();
     }
 
     /** STATUS cell: the gate verdict, the contribution kind, or the failure. */
@@ -268,11 +383,11 @@ final readonly class DashboardRow
             return self::failureCell($this->moduleFailure);
         }
 
-        if ($this->contribution !== null) {
-            return $this->contribution->dashboardStatus();
+        if ($this->verdict !== null) {
+            return $this->verdict->describe();
         }
 
-        return $this->requireVerdict()->describe();
+        return $this->contribution?->dashboardStatus() ?? '–';
     }
 
     /**
@@ -289,5 +404,21 @@ final readonly class DashboardRow
     public static function truncate(string $title, int $max = 44): string
     {
         return mb_strlen($title) <= $max ? $title : mb_substr($title, 0, $max - 1) . '…';
+    }
+
+    /**
+     * Whether the issue's newest patch postdates the merge request's last
+     * update — i.e. somebody posted a re-roll the branch does not carry.
+     */
+    private static function patchIsNewer(Contribution $contribution, ?MergeRequest $open): bool
+    {
+        $latest = $contribution->issue->latestPatch();
+        if ($latest === null || $latest->timestamp <= 0 || $open?->updatedAt === null) {
+            return false;
+        }
+
+        $updated = strtotime($open->updatedAt);
+
+        return $updated !== false && $latest->timestamp > $updated;
     }
 }

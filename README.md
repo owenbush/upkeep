@@ -2,7 +2,7 @@
 
 Upkeep is a maintenance orchestrator CLI for contributed Drupal modules. From
 one "cockpit" directory it tracks every module you maintain across the Drupal
-core versions you support, shows all open merge requests with their CI and
+core versions you support, shows every open contribution with its CI and
 local-check state on a single dashboard, runs each MR through a fully isolated
 check flow (PHPUnit, PHPStan, PHPCS, install, smoke) in a disposable
 per-module-per-core environment, and — for compat MRs that pass every gate —
@@ -289,20 +289,25 @@ upkeep dashboard --all        # every row of every module
 The overview answers "where should I look?":
 
 ```
-MODULE      CORES    MRS    PATCH ISSUES    READY    CI FAILED    UNCHECKED    CACHED
+MODULE      BRANCHES         MRS    PATCH ISSUES    READY    CI FAILED    UNCHECKED    CACHED
 
-pathauto    10,11    100              22        –            2          244    17h ago
-paragraphs  11        12              61        2            1           73    2m ago
+pathauto    8.x-1.x          100              22        –            2          118    17h ago
+paragraphs  1.0.x,2.0.x       12              61        2            1           71    2m ago
 ```
 
-`MRS` and `PATCH ISSUES` count *subjects* — one merge request tracked across
-two cores is one merge request, and the column says "issues" because a row's
+`BRANCHES` names the module branches those rows sit on. It is deliberately not
+a list of core versions: **one branch supports several cores at once** —
+pathauto's single `8.x-1.x` declares `^10.2 || ^11 || ^12` — so a core version
+says nothing about which piece of work a row is.
+
+`MRS` and `PATCH ISSUES` count *subjects*: an issue carrying two merge requests
+is one row and two merge requests, and the column says "issues" because a row's
 own patch count is a number of *files*. `READY`, `CI FAILED` and `UNCHECKED`
-count per (subject × core), because the same branch can be green on 10 and red
-on 11, which is the whole reason both are tracked.
+count rows.
 
 `UNCHECKED` is the actionable number: rows with no local verdict, plus rows
-whose verdict is about a revision that is no longer current.
+whose verdict is about a revision that is no longer current, plus rows checked
+on some of the cores their branch supports and not others.
 
 The counts are aggregated from exactly the rows the drill-down prints, never
 recounted — a module whose overview says two READY-AUTO shows two when you
@@ -311,29 +316,50 @@ open it.
 Naming a module narrows everything about the run, including the fetch: `upkeep
 dashboard pathauto --refresh` re-fetches pathauto and nothing else.
 
-Drilling in (or `--all`) shows every open contribution across tracked core
-versions — merge requests *and* patch-only issues — with the linked drupal.org
-issue, upstream CI state, local check results (from your cached `check` and
-`patch:check` runs), and the fast-lane gate status:
+### One row is one issue's work on one branch
+
+Drilling in (or `--all`) shows every open contribution — merge requests *and*
+patches, which are columns of the same row rather than rows of their own —
+with the linked drupal.org issue and its status, upstream CI, your own check
+results, and the fast-lane gate's verdict.
 
 Every row carries a **STATUS** saying what it is in plain English and a
 **NEXT** column with the command to run for it:
 
 ```
-MODULE    MR     ISSUE     CORE  TITLE                    CI    LOCAL  STATUS          NEXT
+MODULE    ISSUE            VERSION  TITLE                    MR           PATCH  CI    LOCAL       STATUS             NEXT
 
-pathauto  !12    3262847   11    Only update child taxo…  –     –      needs a check   upkeep check pathauto 12 --version=11
-pathauto  !99    3608383   11    Remove forum integration pass  pass   ready to merge  upkeep merge --fast-lane
-pathauto  !40    3311669   11    Punctuation processed…   fail  –      CI failed       upkeep check pathauto 40 --version=11
-pathauto  patch  3597857   11    Config schema for form   –     stale  4 patches       upkeep patch:check pathauto 3597857
+pathauto  3262847 review   8.x-1.x  Only update child taxo…  !12          –      –     –           needs a check      upkeep check pathauto 12 --version=10
+pathauto  3608383 RTBC     8.x-1.x  Remove forum integratio  !99          –      pass  pass 10,11  ready to merge     upkeep merge --fast-lane
+pathauto  3311669 review   8.x-1.x  Punctuation processed…   !40 +1       2 ↑    fail  fail 10     CI failed          upkeep check pathauto 40 --version=10
+pathauto  3597857 active   8.x-1.x  Config schema for form   –            4      –     stale 11    4 patches          upkeep patch:check pathauto 3597857
+widget    3598272 review   2.0.x    Drupal 12 compatibility  !3 merged 2026-09-03  2   –     –     merged 2026-09-03  upkeep issue widget 3
 ```
+
+- **ISSUE** — the nid and the status drupal.org has it in. An en dash is a
+  merge request that claims no issue; a fifth of them do.
+- **VERSION** — the module branch the work targets. The one multiplier left: an
+  issue backported to two branches is two rows, because that is two pieces of
+  work rather than one seen twice.
+- **MR** — the representative merge request, `+n` for others on the same issue,
+  and a **landing outranks everything**: `!3 merged 2026-09-03` says the issue's
+  work is already in git, which an issue kept open by convention cannot tell you
+  itself.
+- **PATCH** — how many patch files the issue carries; `↑` means the newest of
+  them postdates the merge request, so the branch may be behind the issue.
+- **LOCAL** — your cached check results across every core the branch supports,
+  **worst case winning and naming its core**. `pass 10,11` is green on both;
+  `fail 10` names where it broke and does not list the greens beside it;
+  `pass 11 · ? 10` is green where checked and honest about the core nobody has
+  run. `-v` lists every core separately.
 
 **Every row has a command.** Red CI points at `check`, because a red pipeline
 is exactly when you want the branch locally to reproduce the failure; a draft
 is checkable too, because unfinished is frequently abandoned and picking that
 up is the job. `draft,` and `CI failed` describe the row without changing what
 to do about it — the command comes from the evidence *you* hold, so an
-unchecked row says check it and a checked one says look at the change.
+unchecked row says check it and a checked one says look at the change. The core
+in the command is the core the LOCAL cell named, so the two cannot disagree.
 
 `upkeep explain <term>` defines any of it; bare, it prints the whole
 vocabulary. `-v` swaps the plain-English status for the gate's own reason
@@ -343,37 +369,30 @@ anything scripted against them should read.
 **On the gate's own verdicts**, visible under `-v`:
 
 - `READY-AUTO` — a Project Update Bot compat MR with green CI and green local
-  checks; eligible for the fast-lane merge prompt.
+  checks **on every core its branch supports**. A merge request checked on 11
+  and never checked on 10 is not ready: that used to be two rows, one of them
+  READY-AUTO, and the fast lane took the ready one.
 - `REVIEW` — needs a human look, listed with its reasons. `not-bot-author`
   appears on every human-authored MR and is not a problem: the fast lane is
   bot-only by design.
 - `BLOCKED` — set by red CI, and by nothing else. It does **not** mean merge
   conflicts; the gate never inspects mergeability.
 
-Rows whose MR column reads `patch` are contributions with no branch behind
-them. They carry no CI (drupal.org runs pipelines on branches, not on
-attachments — half the reason patch work goes unreviewed) and no gate status,
-because there is nothing there upkeep could merge. Their STATUS says what
-arrived instead:
+A row with an empty MR column is a contribution with no branch behind it. It
+carries no CI (drupal.org runs pipelines on branches, not on attachments — half
+the reason patch work goes unreviewed) and no gate status, because there is
+nothing there upkeep could merge.
 
-```
-MODULE   MR     ISSUE      CORE  TITLE                      CI  LOCAL  STATUS
-
-widget   !7     3467675    11    Make URL field required    ok  pass   READY-AUTO
-widget   patch  3597808    11    Drupal 12 compatibility    –   pass   PATCH 1 patch
-widget   patch  3597857    11    Config schema for form     –   stale  PATCH 4 patches, !1 empty
-```
-
-`LOCAL` on a patch row is its cached `patch:check` verdict, keyed to the exact
+`LOCAL` on such a row is its cached `patch:check` verdict, keyed to the exact
 patch it was recorded against. A re-roll posted since then is a new upload, so
 the row reads `stale` rather than showing you a green light for code nobody
-checked. An issue whose work a *real* branch already carries gets no patch row
-— it already has its MR row above, and the classification is the same one
-`upkeep patches` uses, so the two views cannot disagree about what is covered.
+checked. An issue with nothing open and no patch attached gets no row at all —
+that is `upkeep issues`' subject, where being unclaimed is the point.
 
 `upkeep dashboard --no-patches` restores the merge-request-only view.
 
-Filter to one core version with `upkeep dashboard --version=11`.
+`upkeep dashboard --version=11` narrows the *evidence* to one core. It does not
+remove rows: core is not what a row is about.
 
 Remote data (GitLab MRs and drupal.org issues) is cached per module. On
 subsequent runs the dashboard loads instantly from cache. To re-fetch:
@@ -1181,7 +1200,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep api:probe <module>` | Probe the GitLab API for a module: open MRs and head pipeline status |
 | `upkeep base-artifacts:build --version=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
-| `upkeep dashboard [<module>] [--version=N] [--refresh[=MODULE]] [--no-patches] [--all]` | Per-module overview; name a module (or `--all`) for individual MR and patch rows |
+| `upkeep dashboard [<module>] [--version=N] [--refresh[=MODULE]] [--no-patches] [--all]` | Per-module overview; name a module (or `--all`) for a row per (issue, branch) |
 | `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR |
 | `upkeep check <module> --working-copy [--version=N] [--fixture=NAME]` | Run the suite against the current working copy; caches nothing |
 | `upkeep review <module> <mr> [--version=N]` | Apply an MR to a running site and print its browsable URL |

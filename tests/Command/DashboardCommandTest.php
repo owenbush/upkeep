@@ -23,9 +23,9 @@ use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 
 /**
- * Command-level tests for the dashboard's thin wiring: row assembly per
- * (open MR x tracked core), the --version filter, LOCAL cache states, and
- * typed client failures rendering as explicit cell states. The gate logic
+ * Command-level tests for the dashboard's thin wiring: a row per (issue,
+ * module branch), the --version filter over the evidence, LOCAL cache states,
+ * and typed client failures rendering as explicit cell states. The gate logic
  * itself is exhaustively covered in FastLaneGateTest.
  */
 final class DashboardCommandTest extends TestCase
@@ -95,6 +95,7 @@ final class DashboardCommandTest extends TestCase
             'path_with_namespace' => 'project/widget',
             'name' => 'Widget',
             'web_url' => 'https://git.drupalcode.org/project/widget',
+            'default_branch' => '1.x',
         ];
     }
 
@@ -177,37 +178,39 @@ final class DashboardCommandTest extends TestCase
         ];
     }
 
-    public function testRendersOneRowPerOpenMrPerTrackedCoreVersion(): void
+    public function testRendersOneRowPerMergeRequestWhateverCoresAreTracked(): void
     {
         $tester = $this->runDashboard($this->client($this->healthyRoutes()));
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
 
-        foreach (['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS'] as $header) {
+        foreach (['MODULE', 'ISSUE', 'VERSION', 'TITLE', 'MR', 'PATCH', 'CI', 'LOCAL', 'STATUS'] as $header) {
             self::assertStringContainsString($header, $display);
         }
-        // One row per tracked core version of the module for the single MR.
-        self::assertSame(2, substr_count($display, 'Automated Project Update Bot fixes'));
-        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+10/', $display);
-        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11/', $display);
+        // One row, for the one merge request. The module tracks two cores and
+        // that used to be two rows describing the same branch.
+        self::assertSame(1, substr_count($display, 'Automated Project Update Bot fixes'));
+        // VERSION is the branch the MR targets, not a core major.
+        self::assertMatchesRegularExpression('/widget\s+–\s+1\.x\s+Automated/', $display);
         self::assertStringContainsString('cached just now', $display);
         // CI green, nothing cached locally: visible – and a review status.
-        self::assertSame(2, substr_count($display, 'needs a check'), 'one per tracked core');
-        // And each says what to run about it.
-        self::assertSame(2, substr_count($display, 'upkeep check widget 5'));
+        self::assertSame(1, substr_count($display, 'needs a check'));
+        // The command names the first core that needs attention.
+        self::assertStringContainsString('upkeep check widget 5 --version=10', $display);
     }
 
-    public function testVersionOptionFiltersToOneTargetCoreVersion(): void
+    public function testVersionOptionNarrowsTheEvidenceRatherThanTheRows(): void
     {
         $tester = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11']);
 
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
 
+        // The row is the same row; what changed is which core it reports on.
         self::assertSame(1, substr_count($display, 'Automated Project Update Bot fixes'));
-        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11/', $display);
-        self::assertDoesNotMatchRegularExpression('/widget\s+!5\s+–\s+10/', $display);
+        self::assertStringContainsString('upkeep check widget 5 --version=11', $display);
+        self::assertStringNotContainsString('--version=10', $display);
     }
 
     public function testFreshAllGreenLocalResultYieldsReadyAutoRow(): void
@@ -218,7 +221,7 @@ final class DashboardCommandTest extends TestCase
 
         $display = $tester->getDisplay();
         self::assertStringContainsString('ready to merge', $display);
-        self::assertMatchesRegularExpression('/pass\s+pass\s+ready to merge/', $display);
+        self::assertMatchesRegularExpression('/pass\s+pass 11\s+ready to merge/', $display);
         self::assertStringContainsString('upkeep merge --fast-lane', $display);
     }
 
@@ -284,7 +287,7 @@ final class DashboardCommandTest extends TestCase
         // carries no pipeline — an en-dash CI cell and no fast lane. The gate's
         // own ci-missing reason is what -v restores, which is now the only
         // place that vocabulary appears.
-        self::assertMatchesRegularExpression('/widget\s+!5\s+–\s+11\s+.*–\s+–/', $display);
+        self::assertMatchesRegularExpression('/widget\s+–\s+1\.x\s+.*!5\s+–\s+–\s+–/', $display);
         self::assertStringNotContainsString('ready to merge', $display);
 
         // CommandTester carries verbosity as an option to execute(), not as an
@@ -402,6 +405,59 @@ final class DashboardCommandTest extends TestCase
         self::assertStringContainsString('Automated Project Update Bot fixes', $display);
     }
 
+    /**
+     * The row the user reported, rendered.
+     *
+     * A compatibility issue kept open by convention, carrying the bot's draft
+     * — and, invisibly, a merge request whose work went in weeks ago. The
+     * draft was the only *open* merge request, so the row said "draft, needs a
+     * check" and pointed at checking a branch that had been superseded.
+     *
+     * The MR column now leads with the landing, and it is the one cell on the
+     * table coloured for being *done* rather than for needing something.
+     */
+    public function testALandedIssueSaysSoInTheMergeRequestColumn(): void
+    {
+        $nid = 3598272;
+        $draft = self::botMrPayload([
+            'iid' => 5,
+            'title' => 'Draft: Automated Project Update Bot fixes',
+            'draft' => true,
+            'source_project_id' => 218528,
+            'head_pipeline' => self::greenPipeline(),
+        ]);
+        $landed = self::botMrPayload([
+            'iid' => 3,
+            'title' => 'Issue #' . $nid . ': the real work',
+            'state' => 'merged',
+            'source_branch' => $nid . '-the-real-work',
+            'source_project_id' => 218528,
+            'merged_at' => '2026-09-03T10:00:00Z',
+        ]);
+
+        (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            self::projectPayload(),
+            [$draft],
+            [],
+            [self::patchIssuePayload($nid, [])],
+            [$landed],
+            [218528 => $nid],
+        ));
+
+        $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
+        $tester->execute(['module' => 'widget', '--cockpit' => $this->cockpit]);
+
+        $tester->assertCommandIsSuccessful();
+        $display = $tester->getDisplay();
+        self::assertStringContainsString('!3 merged 2026-09-03', $display, 'the landing, in the MR column');
+        self::assertStringContainsString('merged 2026-09-03', $display, 'and as the row\'s status');
+        self::assertStringNotContainsString('needs a check', $display);
+        // The issue and its drupal.org status, which the old ISSUE cell never
+        // carried — "review" and "RTBC" ask different things of a maintainer.
+        self::assertStringContainsString($nid . ' review', $display);
+    }
+
     public function testCachePersistsAfterFreshFetch(): void
     {
         $tester = $this->runDashboard($this->client($this->healthyRoutes()), ['--version' => '11']);
@@ -445,11 +501,15 @@ final class DashboardCommandTest extends TestCase
             'updated_at' => $mrUpdated,
         ]);
 
+        // The issue goes in the module's open queue: a row *is* an issue now,
+        // so the patch flag is a statement about the row rather than a
+        // cross-reference from a merge-request row to an issue somewhere else.
         $snapshot = new ModuleSnapshot(
             new \DateTimeImmutable(),
             self::projectPayload(),
             [$mr],
             [$issueNid => $issueData],
+            [$issueData],
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('widget', $snapshot);
@@ -462,7 +522,7 @@ final class DashboardCommandTest extends TestCase
         $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
-        self::assertStringContainsString('patch↑', $tester->getDisplay());
+        self::assertStringContainsString('↑', $tester->getDisplay());
     }
 
     public function testIssueWithOlderPatchDoesNotShowFlag(): void
@@ -495,11 +555,15 @@ final class DashboardCommandTest extends TestCase
             'updated_at' => $mrUpdated,
         ]);
 
+        // The issue goes in the module's open queue: a row *is* an issue now,
+        // so the patch flag is a statement about the row rather than a
+        // cross-reference from a merge-request row to an issue somewhere else.
         $snapshot = new ModuleSnapshot(
             new \DateTimeImmutable(),
             self::projectPayload(),
             [$mr],
             [$issueNid => $issueData],
+            [$issueData],
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('widget', $snapshot);
@@ -512,7 +576,7 @@ final class DashboardCommandTest extends TestCase
         $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
-        self::assertStringNotContainsString('patch↑', $tester->getDisplay());
+        self::assertStringNotContainsString('↑', $tester->getDisplay());
     }
 
     /**
@@ -634,7 +698,7 @@ final class DashboardCommandTest extends TestCase
         $tester->assertCommandIsSuccessful();
         $display = $tester->getDisplay();
         self::assertStringContainsString('ready to merge', $display);
-        self::assertMatchesRegularExpression('/pass\s+pass\s+ready to merge/', $display);
+        self::assertMatchesRegularExpression('/pass\s+pass 11\s+ready to merge/', $display);
         self::assertStringContainsString('upkeep merge --fast-lane', $display);
     }
 
@@ -878,20 +942,22 @@ final class DashboardCommandTest extends TestCase
         self::assertStringContainsString('PATCH ISSUES', $display, 'issues, not files');
         self::assertStringContainsString('CI FAILED', $display, 'what BLOCKED actually meant');
         self::assertStringNotContainsString('BLOCKED', $display);
-        // Two MRs across two cores plus a patch issue is five detailed rows;
-        // the overview is one line, and never names an individual MR.
+        // Two merge requests and a patch issue are three detailed rows; the
+        // overview is one line, and never names an individual MR. BRANCHES,
+        // not CORES: a branch is what a row is about, and supports several
+        // cores at once.
         self::assertStringNotContainsString('!5', $display);
         self::assertStringNotContainsString('3597808', $display);
-        self::assertMatchesRegularExpression('/widget\s+10,11\s+2\s/', $display);
+        self::assertMatchesRegularExpression('/widget\s+1\.x\s+2\s/', $display);
         self::assertStringContainsString('upkeep dashboard <module>', $display);
     }
 
     /**
-     * Counts are per distinct subject, not per row: one merge request tracked
-     * across two cores is one merge request, or the queue would read as twice
-     * the size for every module tracking two cores.
+     * The BRANCHES column, and counts per distinct subject. One merge request
+     * on one branch is one of each, whatever the module tracks — the column
+     * used to name the tracked cores, which said nothing about the work.
      */
-    public function testTheOverviewCountsSubjectsNotRows(): void
+    public function testTheOverviewNamesBranchesAndCountsSubjects(): void
     {
         $this->twoModuleCockpit();
         $this->saveSnapshot('widget', [self::botMrPayload(['iid' => 5])]);
@@ -900,8 +966,8 @@ final class DashboardCommandTest extends TestCase
         $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
         $tester->execute(['--cockpit' => $this->cockpit]);
 
-        // One MR, two cores -> "1", not "2".
-        self::assertMatchesRegularExpression('/widget\s+10,11\s+1\s/', $tester->getDisplay());
+        self::assertStringContainsString('BRANCHES', $tester->getDisplay());
+        self::assertMatchesRegularExpression('/widget\s+1\.x\s+1\s/', $tester->getDisplay());
     }
 
     /** Naming a module drills in, and shows only that module. */
@@ -937,12 +1003,11 @@ final class DashboardCommandTest extends TestCase
 
         $overview = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
         $overview->execute(['--cockpit' => $this->cockpit, '--version' => '11']);
-        self::assertMatchesRegularExpression('/widget\s+11\s+2\s/', $overview->getDisplay());
+        self::assertMatchesRegularExpression('/widget\s+1\.x\s+2\s/', $overview->getDisplay());
 
         $detail = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
         $detail->execute(['module' => 'widget', '--cockpit' => $this->cockpit, '--version' => '11']);
-        $rows = substr_count($detail->getDisplay(), 'widget    !');
-        self::assertSame(2, $rows, 'the overview said two merge requests');
+        self::assertSame(2, substr_count($detail->getDisplay(), '!5') + substr_count($detail->getDisplay(), '!6'));
         self::assertStringContainsString('3597808', $detail->getDisplay());
     }
 

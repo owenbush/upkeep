@@ -12,6 +12,7 @@ use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\Guidance;
+use Upkeep\Dashboard\LocalEvidence;
 use Upkeep\Drupal\Issue;
 use Upkeep\Drupal\IssueFile;
 use Upkeep\Drupal\IssueStatus;
@@ -48,13 +49,17 @@ final class GuidanceTest extends TestCase
     }
 
     /**
-     * @param list<string> $reasons
+     * @param list<string>                    $reasons
+     * @param array<array-key, ?CachedResult> $byCore what is known locally; the
+     *                                                default is a single
+     *                                                unchecked core, which is
+     *                                                what most rows are
      */
-    private static function mrRow(GateStatus $status, array $reasons, string $core = '11'): DashboardRow
+    private static function mrRow(GateStatus $status, array $reasons, array $byCore = ['11' => null]): DashboardRow
     {
-        return DashboardRow::forMergeRequest(
+        return DashboardRow::forUnlinkedMergeRequest(
             'widget',
-            $core,
+            '1.0.x',
             self::project(),
             new MergeRequest(
                 iid: 5,
@@ -69,7 +74,7 @@ final class GuidanceTest extends TestCase
                 headSha: self::HEAD,
                 webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/5',
             ),
-            null,
+            LocalEvidence::of($byCore, self::HEAD),
             new GateVerdict($status, $reasons),
         );
     }
@@ -237,16 +242,40 @@ final class GuidanceTest extends TestCase
     }
 
     /**
-     * A module tracking one core does not need telling which, and the command
-     * is shorter for it.
+     * The core in the command is the core the LOCAL cell named.
+     *
+     * A row now spans every core its branch supports, so the command has to
+     * pick one — and if it picked a different core from the cell beside it,
+     * the table would be telling a maintainer two things about one row.
      */
-    public function testTheCoreIsNamedOnlyWhenTheRowHasOne(): void
+    public function testTheCommandNamesTheSameCoreTheLocalCellDoes(): void
     {
-        $withCore = Guidance::forRow(self::mrRow(GateStatus::Review, ['local-missing'], '11'));
-        self::assertSame('upkeep check widget 5 --version=11', $withCore->command);
+        $row = self::mrRow(
+            GateStatus::Review,
+            ['local-missing'],
+            ['10' => null, '11' => self::cachedRun(self::HEAD, CheckStatus::Passed)],
+        );
 
-        $withoutCore = Guidance::forRow(self::mrRow(GateStatus::Review, ['local-missing'], '-'));
-        self::assertSame('upkeep check widget 5', $withoutCore->command);
+        self::assertSame('pass 11 · ? 10', $row->localCell());
+        self::assertSame('upkeep check widget 5 --version=10', Guidance::forRow($row)->command);
+    }
+
+    /**
+     * Green on every applicable core: there is no core to name, so the command
+     * does not name one. It used to append whatever core the row *was*, which
+     * on a row that is about all of them would have been a guess.
+     */
+    public function testNoCoreIsNamedWhenNoneNeedsAttention(): void
+    {
+        $pass = self::cachedRun('aaa', CheckStatus::Passed);
+        $green = ['10' => $pass, '11' => $pass];
+
+        // A landing with newer work since is the honest way to reach a check
+        // command on green evidence: the phrase comes from the landing, not
+        // from the gate's reasons.
+        $guidance = Guidance::forRow(self::landedRow(newerWork: true, byCore: $green, revision: 'aaa'));
+
+        self::assertSame('upkeep check widget 2', $guidance->command);
     }
 
     /** A module whose MRs could not be listed is told to re-fetch. */
@@ -263,10 +292,35 @@ final class GuidanceTest extends TestCase
 
     // ---------------------------------------------------------------- patches
 
-    /** @param list<IssueFile> $files */
-    private static function patchRow(array $files, ?CachedResult $local = null): DashboardRow
+    /**
+     * @param list<IssueFile>    $files
+     * @param list<MergeRequest> $mergeRequests
+     */
+    private static function patchRow(
+        array $files,
+        ?CachedResult $local = null,
+        array $mergeRequests = [],
+    ): DashboardRow {
+        $contribution = self::contribution($files, $mergeRequests);
+
+        return DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            null,
+            null,
+            LocalEvidence::of(['11' => $local], $contribution->currentRevision()),
+            null,
+        );
+    }
+
+    /**
+     * @param list<IssueFile>    $files
+     * @param list<MergeRequest> $mergeRequests
+     */
+    private static function contribution(array $files, array $mergeRequests = []): Contribution
     {
-        return DashboardRow::forPatch('11', new Contribution('widget', new Issue(
+        return new Contribution('widget', new Issue(
             nid: 3597808,
             title: 'An issue',
             status: IssueStatus::NeedsReview,
@@ -277,7 +331,7 @@ final class GuidanceTest extends TestCase
             component: 'Code',
             category: 'Task',
             files: $files,
-        )), $local);
+        ), $mergeRequests);
     }
 
     private static function file(string $url): IssueFile
@@ -337,7 +391,9 @@ final class GuidanceTest extends TestCase
         ));
 
         self::assertSame('1 patch, failed', $guidance->status);
-        self::assertSame('upkeep issue widget 3597808', $guidance->command);
+        // `start` rather than `issue`: a patch that does not hold up is work
+        // to pick up, and `issue` takes a merge request IID, not a node id.
+        self::assertSame('upkeep start widget 3597808', $guidance->command);
     }
 
     public function testAStaleVerdictSaysSoAndPointsAtCheckingAgain(): void
@@ -357,46 +413,23 @@ final class GuidanceTest extends TestCase
      */
     public function testAnEmptyMergeRequestBesideAPatchIsNamedInTheStatus(): void
     {
-        $row = DashboardRow::forPatch('11', new Contribution(
-            'widget',
-            new Issue(
-                nid: 3597808,
-                title: 'An issue',
-                status: IssueStatus::NeedsReview,
-                url: 'https://www.drupal.org/node/3597808',
-                project: 'widget',
-                priority: 200,
-                version: '1.0.x-dev',
-                component: 'Code',
-                category: 'Task',
-                files: [self::file('https://x.test/a.patch')],
-            ),
-            [new MergeRequest(
-                iid: 1,
-                title: 'Issue #3597808: bot',
-                state: 'opened',
-                authorUsername: 'bot',
-                authorId: 2,
-                sourceBranch: '3597808-bot',
-                targetBranch: '1.0.x',
-                draft: true,
-                detailedMergeStatus: null,
-                headSha: 'same',
-                webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/1',
-                diffBaseSha: 'same',
-                diffHeadSha: 'same',
-            )],
-        ), null);
+        $row = self::patchRow([self::file('https://x.test/a.patch')], null, [new MergeRequest(
+            iid: 1,
+            title: 'Issue #3597808: bot',
+            state: 'opened',
+            authorUsername: 'bot',
+            authorId: 2,
+            sourceBranch: '3597808-bot',
+            targetBranch: '1.0.x',
+            draft: true,
+            detailedMergeStatus: null,
+            headSha: 'same',
+            webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/1',
+            diffBaseSha: 'same',
+            diffHeadSha: 'same',
+        )]);
 
         self::assertSame('1 patch, empty MR', Guidance::forRow($row)->status);
-    }
-
-    public function testAnIssueWithNoPatchAtAllPointsAtOpeningIt(): void
-    {
-        $guidance = Guidance::forRow(self::patchRow([]));
-
-        self::assertSame('no patch attached', $guidance->status);
-        self::assertSame('upkeep issue widget 3597808', $guidance->command);
     }
 
     // ------------------------------------------------------------- landings
@@ -432,8 +465,14 @@ final class GuidanceTest extends TestCase
         self::assertStringContainsString('upkeep check', $guidance->command);
     }
 
-    private static function landedRow(bool $newerWork): DashboardRow
-    {
+    /**
+     * @param array<array-key, ?CachedResult> $byCore
+     */
+    private static function landedRow(
+        bool $newerWork,
+        array $byCore = ['11' => null],
+        ?string $revision = null,
+    ): DashboardRow {
         $landed = new MergeRequest(
             iid: 3,
             title: 'Issue #3598272: Automated Drupal 12 compatibility fixes',
@@ -449,20 +488,22 @@ final class GuidanceTest extends TestCase
             mergedAt: '2026-09-03T10:00:00Z',
         );
 
-        return DashboardRow::forMergeRequest(
+        // "Newer work" is a fact about the issue, not a flag anybody sets: the
+        // bot's draft was touched after the merge landed.
+        $draft = self::draftMr($newerWork ? '2026-09-04T09:00:00Z' : '2026-09-01T09:00:00Z');
+
+        return DashboardRow::forIssue(
             'widget',
-            '11',
+            '2.0.x',
+            self::contribution([], [$draft, $landed]),
             new Project(1, 'widget', 'project/widget', 'Widget', 'https://git.drupalcode.org/project/widget'),
-            self::draftMr(),
-            null,
+            $draft,
+            LocalEvidence::of($byCore, $revision),
             new GateVerdict(GateStatus::Review, ['draft', 'ci-missing', 'local-missing']),
-            null,
-            $landed,
-            $newerWork,
         );
     }
 
-    private static function draftMr(): MergeRequest
+    private static function draftMr(string $updatedAt): MergeRequest
     {
         return new MergeRequest(
             iid: 2,
@@ -476,6 +517,35 @@ final class GuidanceTest extends TestCase
             detailedMergeStatus: null,
             headSha: 'aaa',
             webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/2',
+            updatedAt: $updatedAt,
         );
+    }
+
+    /**
+     * A landing on an issue with nothing open is still the headline. This is
+     * conditions_helper #3596502's shape: an issue kept open by convention,
+     * whose work merged months ago, with a patch still attached.
+     */
+    public function testALandingOnAPatchOnlyRowOutranksThePatchCount(): void
+    {
+        $landed = new MergeRequest(
+            iid: 3,
+            title: 'Issue #3597808: the fix',
+            state: 'merged',
+            authorUsername: 'owenbush',
+            authorId: 1,
+            sourceBranch: '3597808-fix',
+            targetBranch: '1.0.x',
+            draft: false,
+            detailedMergeStatus: null,
+            headSha: null,
+            webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/3',
+            mergedAt: '2026-09-03T10:00:00Z',
+        );
+
+        $guidance = Guidance::forRow(self::patchRow([self::file('https://x.test/a.patch')], null, [$landed]));
+
+        self::assertSame('merged 2026-09-03', $guidance->status);
+        self::assertSame('upkeep issue widget 3', $guidance->command);
     }
 }

@@ -92,17 +92,7 @@ final readonly class Contribution
      */
     public function landed(): ?MergeRequest
     {
-        $latest = null;
-        foreach ($this->mergeRequests as $mr) {
-            if ($mr->state !== 'merged') {
-                continue;
-            }
-            if ($latest === null || (string) $mr->mergedAt > (string) $latest->mergedAt) {
-                $latest = $mr;
-            }
-        }
-
-        return $latest;
+        return MergeRequest::latestMerged($this->mergeRequests);
     }
 
     /**
@@ -159,8 +149,17 @@ final readonly class Contribution
      */
     public function substantiveMergeRequests(): array
     {
+        return self::substantive($this->mergeRequests);
+    }
+
+    /**
+     * @param list<MergeRequest> $mergeRequests
+     * @return list<MergeRequest>
+     */
+    public static function substantive(array $mergeRequests): array
+    {
         return array_values(array_filter(
-            $this->mergeRequests,
+            $mergeRequests,
             static fn (MergeRequest $mr): bool => $mr->carriesChanges() !== false,
         ));
     }
@@ -222,7 +221,31 @@ final readonly class Contribution
      */
     public function mergeRequestCell(): string
     {
-        if ($this->mergeRequests === []) {
+        return self::renderMergeRequestCell(
+            $this->mergeRequests,
+            $this->landed(),
+            $this->hasWorkNewerThanLanding(),
+        );
+    }
+
+    /**
+     * The MR column, from merge requests alone.
+     *
+     * Static because the dashboard row renders the same cell and only
+     * sometimes holds an Issue: a merge request whose issue is closed, or
+     * outside the snapshot's queue, still has an MR column and no
+     * contribution to ask. One implementation, so the two views cannot
+     * describe the same merge requests differently.
+     *
+     * @param list<MergeRequest> $mergeRequests every MR the row covers
+     * @param ?MergeRequest      $landed        the one whose work is already in
+     */
+    public static function renderMergeRequestCell(
+        array $mergeRequests,
+        ?MergeRequest $landed,
+        bool $newerWorkSinceLanding,
+    ): string {
+        if ($mergeRequests === []) {
             return '–';
         }
 
@@ -231,25 +254,24 @@ final readonly class Contribution
         // read off the issue at all, and it is the commonest shape of a
         // Project Update Bot compatibility issue, which convention keeps open
         // so the bot can post again.
-        $landed = $this->landed();
         if ($landed !== null) {
             return sprintf(
                 '!%d merged %s%s',
                 $landed->iid,
                 substr((string) $landed->mergedAt, 0, 10),
-                $this->hasWorkNewerThanLanding() ? ', newer work since' : '',
+                $newerWorkSinceLanding ? ', newer work since' : '',
             );
         }
 
-        $substantive = $this->substantiveMergeRequests();
-        $representative = $substantive[0] ?? $this->mergeRequests[0];
+        $substantive = self::substantive($mergeRequests);
+        $representative = $substantive[0] ?? $mergeRequests[0];
 
         $cell = '!' . $representative->iid;
         if ($representative->carriesChanges() === false) {
             $cell .= ' empty';
         }
 
-        $others = \count($this->mergeRequests) - 1;
+        $others = \count($mergeRequests) - 1;
 
         return $others > 0 ? $cell . ' +' . $others : $cell;
     }

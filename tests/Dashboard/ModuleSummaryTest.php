@@ -10,6 +10,7 @@ use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Dashboard\DashboardRow;
+use Upkeep\Dashboard\LocalEvidence;
 use Upkeep\Dashboard\ModuleSummary;
 use Upkeep\Drupal\Issue;
 use Upkeep\Drupal\IssueFile;
@@ -28,8 +29,13 @@ use Upkeep\Results\CachedResult;
  *
  * Worth pinning directly rather than through the rendered table: the counting
  * rule is subtle (subjects, not rows) and getting it wrong would overstate a
- * maintainer's queue by however many core versions they track — the sort of
- * error that looks plausible on screen and is never questioned.
+ * maintainer's queue — the sort of error that looks plausible on screen and is
+ * never questioned.
+ *
+ * The rule survived the row model; what it counts changed. Rows are no longer
+ * multiplied by core, so the gap between rows and subjects narrowed — but an
+ * issue can still carry two merge requests on one branch, and a backport is
+ * still two rows over one issue.
  */
 final class ModuleSummaryTest extends TestCase
 {
@@ -45,12 +51,12 @@ final class ModuleSummaryTest extends TestCase
         ]);
     }
 
-    private static function mr(int $iid): MergeRequest
+    private static function mr(int $iid, string $state = 'opened'): MergeRequest
     {
         return new MergeRequest(
             iid: $iid,
             title: 'Issue #1: a change',
-            state: 'opened',
+            state: $state,
             authorUsername: 'alice',
             authorId: 1,
             sourceBranch: 'fix',
@@ -59,17 +65,34 @@ final class ModuleSummaryTest extends TestCase
             detailedMergeStatus: null,
             headSha: self::HEAD,
             webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/' . $iid,
+            mergedAt: $state === 'merged' ? '2026-09-01T00:00:00Z' : null,
         );
     }
 
-    private static function mrRow(int $iid, string $core, GateStatus $status, ?CachedResult $local = null): DashboardRow
+    /**
+     * @param list<string> $cores
+     */
+    private static function evidence(
+        ?CachedResult $local,
+        array $cores = ['11'],
+        ?string $revision = self::HEAD,
+    ): LocalEvidence {
+        $byCore = [];
+        foreach ($cores as $core) {
+            $byCore[$core] = $local;
+        }
+
+        return LocalEvidence::of($byCore, $revision);
+    }
+
+    private static function mrRow(int $iid, GateStatus $status, ?CachedResult $local = null): DashboardRow
     {
-        return DashboardRow::forMergeRequest(
+        return DashboardRow::forUnlinkedMergeRequest(
             'widget',
-            $core,
+            '1.0.x',
             self::project(),
             self::mr($iid),
-            $local,
+            self::evidence($local),
             new GateVerdict($status, $status === GateStatus::ReadyAuto ? [] : ['because']),
         );
     }
@@ -83,11 +106,14 @@ final class ModuleSummaryTest extends TestCase
         );
     }
 
-    private static function patchRow(int $nid, string $core, ?CachedResult $local = null): DashboardRow
+    /**
+     * @param list<MergeRequest> $mergeRequests
+     */
+    private static function issue(int $nid, array $mergeRequests = []): Contribution
     {
         $url = 'https://example.test/' . $nid . '.patch';
 
-        return DashboardRow::forPatch($core, new Contribution('widget', new Issue(
+        return new Contribution('widget', new Issue(
             nid: $nid,
             title: 'An issue',
             status: IssueStatus::NeedsReview,
@@ -98,44 +124,83 @@ final class ModuleSummaryTest extends TestCase
             component: 'Code',
             category: 'Task',
             files: [new IssueFile('p.patch', $url, 2048, 1705400000)],
-        )), $local);
+        ), $mergeRequests);
+    }
+
+    private static function patchRow(int $nid, ?CachedResult $local = null): DashboardRow
+    {
+        $contribution = self::issue($nid);
+
+        return DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            null,
+            null,
+            self::evidence($local, ['11'], $contribution->currentRevision()),
+            null,
+        );
     }
 
     /**
-     * The rule that matters: one merge request tracked across two cores is one
-     * merge request. Counting rows instead would report a two-core module's
-     * queue as twice its real size.
+     * The rule that matters, in the shape that survives the row model: an
+     * issue carrying two open merge requests on one branch is one row and two
+     * merge requests. Counting rows instead would understate the queue — the
+     * opposite of the old error, and just as wrong.
      */
-    public function testSubjectsAreCountedOncePerModuleNotOncePerCore(): void
+    public function testMergeRequestsAreCountedPerSubjectNotPerRow(): void
     {
-        $summary = ModuleSummary::fromRows('widget', [
-            self::mrRow(5, '10', GateStatus::Review),
-            self::mrRow(5, '11', GateStatus::Review),
-            self::mrRow(6, '10', GateStatus::Review),
-            self::mrRow(6, '11', GateStatus::Review),
-            self::patchRow(3597808, '10'),
-            self::patchRow(3597808, '11'),
-        ]);
+        $contribution = self::issue(3597808, [self::mr(5), self::mr(6)]);
 
-        self::assertSame(2, $summary->mergeRequests, 'two MRs, not four rows');
-        self::assertSame(1, $summary->patchIssues, 'one issue, not two rows');
-        self::assertSame(['10', '11'], $summary->cores);
+        $row = DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            self::project(),
+            self::mr(5),
+            self::evidence(null),
+            new GateVerdict(GateStatus::Review, ['because']),
+        );
+
+        $summary = ModuleSummary::fromRows('widget', [$row]);
+
+        self::assertSame(2, $summary->mergeRequests, 'two MRs on one row');
+        self::assertSame(1, $summary->patchIssues, 'one issue');
+        self::assertSame(['1.0.x'], $summary->branches);
+    }
+
+    /** A merged merge request is not part of the open queue it is counting. */
+    public function testAMergedMergeRequestIsNotCountedAsOpen(): void
+    {
+        $contribution = self::issue(3597808, [self::mr(5), self::mr(3, 'merged')]);
+
+        $row = DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            self::project(),
+            self::mr(5),
+            self::evidence(null),
+            new GateVerdict(GateStatus::Review, ['because']),
+        );
+
+        self::assertSame(1, ModuleSummary::fromRows('widget', [$row])->mergeRequests);
     }
 
     /**
-     * Verdicts and evidence *are* per (subject x core): the same branch can be
-     * green on one core and red on another, which is the entire reason both
-     * are tracked. Those stay per-row.
+     * One verdict per row, because a row is one piece of work. This used to be
+     * one verdict per (merge request x core), which is how a merge request
+     * green on 11 and unchecked on 10 could contribute a READY count of 1.
      */
-    public function testVerdictsAreCountedPerCoreBecauseTheyDifferPerCore(): void
+    public function testVerdictsAreCountedOncePerRow(): void
     {
         $summary = ModuleSummary::fromRows('widget', [
-            self::mrRow(5, '10', GateStatus::ReadyAuto, self::green(self::HEAD)),
-            self::mrRow(5, '11', GateStatus::Review, self::green(self::HEAD)),
-            self::mrRow(6, '11', GateStatus::Blocked, self::green(self::HEAD)),
+            self::mrRow(5, GateStatus::ReadyAuto, self::green(self::HEAD)),
+            self::mrRow(6, GateStatus::Review, self::green(self::HEAD)),
+            self::mrRow(7, GateStatus::Blocked, self::green(self::HEAD)),
         ]);
 
-        self::assertSame(2, $summary->mergeRequests);
+        self::assertSame(3, $summary->mergeRequests);
         self::assertSame(1, $summary->readyAuto);
         self::assertSame(1, $summary->review);
         self::assertSame(1, $summary->blocked);
@@ -149,14 +214,33 @@ final class ModuleSummaryTest extends TestCase
     public function testUncheckedCountsBothNeverCheckedAndStale(): void
     {
         $summary = ModuleSummary::fromRows('widget', [
-            self::mrRow(5, '11', GateStatus::Review),
-            self::mrRow(6, '11', GateStatus::Review, self::green('0000000')),
-            self::mrRow(7, '11', GateStatus::Review, self::green(self::HEAD)),
-            self::patchRow(3597808, '11'),
-            self::patchRow(3501234, '11', self::green(PatchRevision::of('https://example.test/3501234.patch'))),
+            self::mrRow(5, GateStatus::Review),
+            self::mrRow(6, GateStatus::Review, self::green('0000000')),
+            self::mrRow(7, GateStatus::Review, self::green(self::HEAD)),
+            self::patchRow(3597808),
+            self::patchRow(3501234, self::green(PatchRevision::of('https://example.test/3501234.patch'))),
         ]);
 
         self::assertSame(3, $summary->unchecked, 'never-checked MR, stale MR, never-checked patch');
+    }
+
+    /**
+     * A row green on one core and unchecked on another counts as unchecked.
+     * The number exists to say how much work stands between the queue and a
+     * verdict, and half-covered evidence is work.
+     */
+    public function testARowGreenOnOneCoreAndUncheckedOnAnotherCountsAsUnchecked(): void
+    {
+        $row = DashboardRow::forUnlinkedMergeRequest(
+            'widget',
+            '1.0.x',
+            self::project(),
+            self::mr(5),
+            LocalEvidence::of(['10' => null, '11' => self::green(self::HEAD)], self::HEAD),
+            new GateVerdict(GateStatus::Review, ['local-missing']),
+        );
+
+        self::assertSame(1, ModuleSummary::fromRows('widget', [$row])->unchecked);
     }
 
     public function testAModuleWhoseMergeRequestsCannotBeListedIsMarkedFailed(): void
@@ -178,19 +262,21 @@ final class ModuleSummaryTest extends TestCase
      * a real zero is a fact, and the dash on a failed row is the absence of
      * one.
      */
-    public function testARealZeroRendersAsADashButTheModuleStillReportsItsCores(): void
+    public function testARealZeroRendersAsADashButTheModuleStillReportsItsBranches(): void
     {
         $summary = ModuleSummary::fromRows('widget', [
-            self::mrRow(5, '11', GateStatus::Review, self::green(self::HEAD)),
+            self::mrRow(5, GateStatus::Review, self::green(self::HEAD)),
         ]);
 
         self::assertFalse($summary->failed);
-        // MODULE, CORES, MRS, PATCH ISSUES, READY, CI FAILED, UNCHECKED, CACHED.
-        // The REVIEW column is gone: it counted everything neither ready nor
-        // CI-failed, which is every row, and a number that is always the total
-        // says nothing. The count itself survives on the object.
+        // MODULE, BRANCHES, MRS, PATCH ISSUES, READY, CI FAILED, UNCHECKED,
+        // CACHED. BRANCHES replaced CORES: a branch is what a row is about,
+        // and it supports several cores at once. The REVIEW column is gone —
+        // it counted everything neither ready nor CI-failed, which is every
+        // row, and a number that is always the total says nothing. The count
+        // itself survives on the object.
         self::assertSame(
-            ['widget', '11', '1', '0', '–', '–', '–', '2m ago'],
+            ['widget', '1.0.x', '1', '0', '–', '–', '–', '2m ago'],
             $summary->toTableCells('2m ago'),
         );
         self::assertSame(1, $summary->review, 'still counted, just not a column');
@@ -202,7 +288,7 @@ final class ModuleSummaryTest extends TestCase
 
         self::assertSame(0, $summary->mergeRequests);
         self::assertSame(0, $summary->patchIssues);
-        self::assertSame([], $summary->cores);
+        self::assertSame([], $summary->branches);
         self::assertSame(['widget', '–', '0', '0', '–', '–', '–', 'never'], $summary->toTableCells('never'));
     }
 }

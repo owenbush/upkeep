@@ -6,6 +6,7 @@ namespace Upkeep\Tests\Dashboard;
 
 use PHPUnit\Framework\TestCase;
 use Upkeep\Dashboard\DashboardRow;
+use Upkeep\Dashboard\LocalEvidence;
 use Upkeep\Gate\GateStatus;
 use Upkeep\Gate\GateVerdict;
 use Upkeep\Gitlab\MergeRequest;
@@ -52,9 +53,9 @@ final class DashboardRowCellsTest extends TestCase
         // The rendered cell is a phrase, not the verdict: a maintainer reading
         // a hundred rows needs what to do, not the gate's bookkeeping. The
         // verdict is what -v restores, and what the merge command reads.
-        self::assertSame('needs a check', $row->toTableCells()[6]);
-        self::assertSame($row->statusCell(), $row->toTableCells(true)[6]);
-        self::assertStringContainsString('upkeep check widget 4', $row->toTableCells()[7]);
+        self::assertSame('needs a check', $row->toTableCells()[8]);
+        self::assertSame($row->statusCell(), $row->toTableCells(true)[8]);
+        self::assertStringContainsString('upkeep check widget 4', $row->toTableCells()[9]);
 
         $failure = DashboardRow::forModuleFailure(
             'widget',
@@ -70,9 +71,9 @@ final class DashboardRowCellsTest extends TestCase
 
     private static function row(?Pipeline $pipeline, ?NotFound $ciFailure = null): DashboardRow
     {
-        return DashboardRow::forMergeRequest(
+        return DashboardRow::forUnlinkedMergeRequest(
             'widget',
-            '11',
+            '1.x',
             Project::fromApi([
                 'id' => 1,
                 'path' => 'widget',
@@ -93,7 +94,7 @@ final class DashboardRowCellsTest extends TestCase
                 webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/4',
                 headPipeline: $pipeline,
             ),
-            null,
+            LocalEvidence::of(['11' => null], self::HEAD_SHA),
             new GateVerdict(GateStatus::Review, ['local-missing']),
             $ciFailure,
         );
