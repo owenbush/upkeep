@@ -3,7 +3,12 @@
     "description": "Maintenance orchestrator CLI for contributed Drupal modules: cockpit-driven module registry, fixtures, and merge-request workflows.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["drupal", "maintenance", "cli", "contrib"],
+    "keywords": [
+        "drupal",
+        "maintenance",
+        "cli",
+        "contrib"
+    ],
     "authors": [
         {
             "name": "Owen Bush",
@@ -37,7 +42,10 @@
         }
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "platform": {
+            "php": "8.2.0"
+        }
     },
     "scripts": {
         "lint": "phpcs",

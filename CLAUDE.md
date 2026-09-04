@@ -378,6 +378,33 @@ vendor/bin/phpunit # the suite, with the 100% line-coverage floor enforced
 ./bin/upkeep list  # the binary still boots
 ```
 
+**Run `composer install` after pulling.** Adding a dependency is a one-line
+change to composer.json that leaves every existing checkout broken until it
+reinstalls. That is not hypothetical: `composer/semver` was added, and the
+next `dashboard --refresh` on a stale checkout died with an uncaught
+`Class "Composer\Semver\VersionParser" not found`. No gate caught it —
+`./bin/upkeep list` boots the application and reaches no dependency-using
+path, so it exited 0 with the package gone, and the suite runs where every
+package is present by construction. `Workflow\RuntimeRequirements` now
+compares composer.json's `require` against `Composer\InstalledVersions` at the
+top of `bin/upkeep` and refuses with exit 2 and the recovery command, so the
+boot gate does catch it — and reads composer.json rather than a hand-kept
+list, since a hand-kept list is what the offending commit would have forgotten
+to update.
+
+**`composer.lock` is committed, and `config.platform.php` is pinned to
+`8.2.0`.** Upkeep is cloned and run, not required as a library, so the lock is
+the artefact that says what a checkout should hold. The platform pin is what
+makes that safe: without it, resolution follows whatever PHP the resolver
+happens to be on, and a lock built on 8.4 pulled in Symfony 8.1 — which
+requires `php >=8.4.1` and would have failed `composer install` outright on
+the 8.2 and 8.3 CI legs. It was already causing quieter trouble: local runs
+were on Symfony 8.1 while CI's 8.2 leg resolved 7.x, so the four gates were
+being run against a dependency tree no user had. Pinned to the lowest
+supported version, everyone installs the same tree. The `|| ^8.0` half of the
+Symfony constraints is therefore never exercised by `composer install`; only
+an explicit `composer update` on PHP 8.4 reaches it.
+
 `composer lint:fix` (phpcbf) fixes what phpcs can fix automatically. CI also
 runs `composer validate --strict` before installing, so touching
 `composer.json` means re-running that too.
@@ -398,7 +425,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6923/6923), methods (795/795) and classes (154/154), 1432 tests.
+lines (6957/6957), methods (798/798) and classes (155/155), 1442 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

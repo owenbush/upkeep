@@ -78,6 +78,30 @@ final class CommandSurfaceTest extends TestCase
      * added to `bin/upkeep` and not to the harness would otherwise be a
      * command no end-to-end test could ever reach.
      */
+    /**
+     * The dependency check runs before anything is constructed.
+     *
+     * Structural, because it cannot be reached any other way: the suite runs
+     * where every dependency is installed, so the guard's own branch never
+     * fires here. What can be asserted is that it is still there and still
+     * first — a checkout whose vendor/ predates a newly declared dependency
+     * must meet one sentence and exit 2, not an uncaught "Class ... not found"
+     * from wherever that package happened to be reached.
+     */
+    public function testBinUpkeepChecksItsDependenciesBeforeComposingAnything(): void
+    {
+        $source = file_get_contents(__DIR__ . '/../../bin/upkeep');
+        self::assertIsString($source);
+
+        $guard = strpos($source, 'RuntimeRequirements::missing(');
+        $composition = strpos($source, 'new DdevContribAdapterFactory(');
+
+        self::assertIsInt($guard, 'bin/upkeep no longer checks its runtime dependencies');
+        self::assertIsInt($composition);
+        self::assertLessThan($composition, $guard, 'the check must precede the composition root');
+        self::assertStringContainsString('ExitCode::INFRASTRUCTURE', $source, 'and refuse with a 2');
+    }
+
     public function testTheHarnessRegistersExactlyTheCommandsBinUpkeepDoes(): void
     {
         $source = file_get_contents(__DIR__ . '/../../bin/upkeep');
