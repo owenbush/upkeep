@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use Composer\InstalledVersions;
 use Symfony\Component\Console\Application;
 use Upkeep\Adapter\DdevContribAdapterFactory;
 use Upkeep\Adapter\ProcessRunner;
@@ -36,12 +37,30 @@ use Upkeep\Command\StatusCommand;
 use Upkeep\Command\UiCommand;
 use Upkeep\Command\VersionOptionInput;
 use Upkeep\Security\SecretRedactor;
+use Upkeep\Workflow\ExitCode;
+use Upkeep\Workflow\RuntimeRequirements;
 
 foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
     if (file_exists($autoload)) {
         require $autoload;
         break;
     }
+}
+
+// Before anything is constructed: is what composer.json declares actually
+// installed? A checkout that pulled a commit adding a dependency has a
+// vendor/ older than its code, and every path that reaches the new package
+// dies with an uncaught "Class ... not found" partway through a command. This
+// is the exit-code contract applied to the one failure that used to escape it
+// — 2, because upkeep could not do the job, with the command that fixes it.
+$missingPackages = RuntimeRequirements::missing(
+    RuntimeRequirements::declaredIn(__DIR__ . '/../composer.json'),
+    InstalledVersions::isInstalled(...),
+);
+if ($missingPackages !== []) {
+    fwrite(STDERR, RuntimeRequirements::message($missingPackages, \dirname(__DIR__)));
+
+    exit(ExitCode::INFRASTRUCTURE);
 }
 
 // ---------------------------------------------------------------------------
