@@ -68,7 +68,7 @@ final class ModuleSnapshotTest extends TestCase
             new \DateTimeImmutable('2026-07-31T10:00:00+00:00'),
             self::projectPayload(),
             [self::mrPayload()],
-            [3467675 => self::issuePayload()],
+            [self::issuePayload()],
         );
 
         $restored = ModuleSnapshot::fromJson($original->toJson());
@@ -80,7 +80,7 @@ final class ModuleSnapshotTest extends TestCase
         );
         self::assertSame($original->projectData, $restored->projectData);
         self::assertSame($original->mrData, $restored->mrData);
-        self::assertSame($original->issueData, $restored->issueData);
+        self::assertSame($original->patchIssueData, $restored->patchIssueData);
     }
 
     /**
@@ -92,7 +92,6 @@ final class ModuleSnapshotTest extends TestCase
         $original = new ModuleSnapshot(
             new \DateTimeImmutable('2026-09-03T10:00:00+00:00'),
             self::projectPayload(),
-            [],
             [],
             [],
             [self::mrPayload() + ['state' => 'merged', 'merged_at' => '2026-09-03T10:00:00Z']],
@@ -171,51 +170,6 @@ final class ModuleSnapshotTest extends TestCase
         self::assertSame('Fixes https://www.drupal.org/node/3467675', $mrs[0]->description);
     }
 
-    public function testIssueReconstruction(): void
-    {
-        $snapshot = new ModuleSnapshot(
-            new \DateTimeImmutable(),
-            self::projectPayload(),
-            [],
-            [3467675 => self::issuePayload()],
-        );
-
-        $issue = $snapshot->issue(3467675);
-
-        self::assertNotNull($issue);
-        self::assertSame(3467675, $issue->nid);
-        self::assertSame('Needs review', $issue->status->label());
-        self::assertSame('Normal', $issue->priorityLabel());
-        self::assertSame('Bug report', $issue->category);
-    }
-
-    public function testIssueMissingFromSnapshotReturnsNull(): void
-    {
-        $snapshot = new ModuleSnapshot(
-            new \DateTimeImmutable(),
-            self::projectPayload(),
-            [],
-            [],
-        );
-
-        self::assertNull($snapshot->issue(9999));
-    }
-
-    public function testNullIssueDataPreservedInRoundTrip(): void
-    {
-        $snapshot = new ModuleSnapshot(
-            new \DateTimeImmutable(),
-            self::projectPayload(),
-            [],
-            [3467675 => null],
-        );
-
-        $restored = ModuleSnapshot::fromJson($snapshot->toJson());
-
-        self::assertNotNull($restored);
-        self::assertNull($restored->issue(3467675));
-    }
-
     public function testFromJsonRejectsInvalidJson(): void
     {
         self::assertNull(ModuleSnapshot::fromJson('not json'));
@@ -254,43 +208,82 @@ final class ModuleSnapshotTest extends TestCase
     public function testUnusableEntriesInsideAReadableCacheFileAreDroppedNotPropagated(): void
     {
         // The envelope is fine, so the snapshot loads — but the individual
-        // merge-request and issue entries are still validated one by one. A
-        // null issue entry is meaningful (the lookup was made and failed) and
-        // must survive; a scalar payload or an unusable key must not.
+        // entries are still validated one by one. A scalar where a payload
+        // belongs, or a constraint that is not a string, must not reach the
+        // models as mixed.
         $json = json_encode([
             'fetched_at' => '2026-07-31T10:00:00+00:00',
             'project' => self::projectPayload(),
             'merge_requests' => [self::mrPayload(), 'not-a-payload'],
-            'issues' => [
-                '3467675' => self::issuePayload(),
-                'not-a-nid' => self::issuePayload(),
-                '3467676' => null,
-                '3467677' => 'not-a-payload',
-            ],
+            'patch_issues' => [self::issuePayload(), 42],
+            'core_constraints' => ['2.0.x' => '^10 || ^11', '1.0.x' => ['not', 'a', 'string'], '3.0.x' => ''],
         ], \JSON_THROW_ON_ERROR);
 
         $snapshot = ModuleSnapshot::fromJson($json);
 
         self::assertNotNull($snapshot);
         self::assertCount(1, $snapshot->mergeRequests());
-        self::assertNotNull($snapshot->issue(3467675));
-        self::assertNull($snapshot->issue(3467676));
-        self::assertNull($snapshot->issue(3467677));
+        self::assertCount(1, $snapshot->patchIssues());
+        self::assertSame(['2.0.x' => '^10 || ^11'], $snapshot->coreConstraints);
     }
 
-    public function testAnIssuesSectionThatIsNotAMappingLeavesTheSnapshotWithNoIssues(): void
+    /**
+     * What each branch declares about core survives the cache, so a dashboard
+     * read from disk narrows the same way a fresh fetch does.
+     */
+    public function testCoreConstraintsRoundTrip(): void
     {
-        $json = json_encode([
+        $original = new ModuleSnapshot(
+            new \DateTimeImmutable('2026-09-04T10:00:00+00:00'),
+            self::projectPayload(),
+            [],
+            [],
+            [],
+            [],
+            // Read live from git.drupalcode.org on 2026-09-04.
+            ['1.0.x' => '^10 || ^11', '2.0.x' => '^10.1 || ^11 || ^12'],
+        );
+
+        $restored = ModuleSnapshot::fromJson($original->toJson());
+
+        self::assertNotNull($restored);
+        self::assertSame(
+            ['1.0.x' => '^10 || ^11', '2.0.x' => '^10.1 || ^11 || ^12'],
+            $restored->coreConstraints,
+        );
+    }
+
+    /**
+     * A snapshot written before branches declared anything, or one whose
+     * constraints section is junk, reads as "cannot tell" — which every caller
+     * turns back into the tracked core set. Never "supports nothing": a module
+     * vanishing from the dashboard is the worst failure this tool has.
+     */
+    public function testAnAbsentOrUnusableConstraintsSectionReadsAsCannotTell(): void
+    {
+        foreach (['nonsense', 42, null] as $junk) {
+            $json = json_encode([
+                'fetched_at' => '2026-07-31T10:00:00+00:00',
+                'project' => self::projectPayload(),
+                'merge_requests' => [],
+                'core_constraints' => $junk,
+            ], \JSON_THROW_ON_ERROR);
+
+            $snapshot = ModuleSnapshot::fromJson($json);
+
+            self::assertNotNull($snapshot);
+            self::assertSame([], $snapshot->coreConstraints);
+        }
+
+        // And a cache written before the field existed at all.
+        $older = ModuleSnapshot::fromJson((string) json_encode([
             'fetched_at' => '2026-07-31T10:00:00+00:00',
             'project' => self::projectPayload(),
             'merge_requests' => [],
-            'issues' => 'nonsense',
-        ], \JSON_THROW_ON_ERROR);
+        ], \JSON_THROW_ON_ERROR));
 
-        $snapshot = ModuleSnapshot::fromJson($json);
-
-        self::assertNotNull($snapshot);
-        self::assertNull($snapshot->issue(3467675));
+        self::assertNotNull($older);
+        self::assertSame([], $older->coreConstraints);
     }
 
     public function testAgeLabelJustNow(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Dashboard;
 
 use Upkeep\Cockpit\Module;
+use Upkeep\Drupal\CoreCompatibility;
 use Upkeep\Drupal\IssueReference;
 use Upkeep\Drupal\IssueVersion;
 use Upkeep\Gate\FastLaneGate;
@@ -30,6 +31,12 @@ use Upkeep\Results\ResultsCache;
  * module branch supports several at once, so a row per (subject x core) was
  * describing one piece of work several times. See
  * `docs/dashboard-row-model.md`.
+ *
+ * And they are narrowed per row, to what the row's branch actually declares
+ * (`ModuleSnapshot::$coreConstraints`). Checking pathauto's 8.x-1.x on a core
+ * it does not declare produces a failure that says nothing about the module,
+ * and — since the fast lane now requires every applicable core to be green —
+ * would deny a merge on the strength of a core the branch never claimed.
  */
 final readonly class RowFactory
 {
@@ -82,6 +89,7 @@ final readonly class RowFactory
         );
 
         $branches = self::knownBranches($project, [...$mergeRequests, ...$merged]);
+        $constraints = $snapshot === null ? [] : $snapshot->coreConstraints;
 
         $rows = [];
         $claimed = [];
@@ -89,7 +97,16 @@ final readonly class RowFactory
             foreach ($contribution->mergeRequests as $mr) {
                 $claimed[$mr->iid] = true;
             }
-            foreach ($this->issueRows($module, $project, $contribution, $branches, $cores, $ciFailures) as $row) {
+            $issueRows = $this->issueRows(
+                $module,
+                $project,
+                $contribution,
+                $branches,
+                $cores,
+                $constraints,
+                $ciFailures,
+            );
+            foreach ($issueRows as $row) {
                 $rows[] = $row;
             }
         }
@@ -98,10 +115,34 @@ final readonly class RowFactory
             if (isset($claimed[$mergeRequest->iid])) {
                 continue;
             }
-            $rows[] = $this->unlinkedRow($module, $project, $mergeRequest, $cores, $ciFailures);
+            $rows[] = $this->unlinkedRow($module, $project, $mergeRequest, $cores, $constraints, $ciFailures);
         }
 
         return $rows;
+    }
+
+    /**
+     * The cores worth gathering evidence on for one branch: the tracked ones,
+     * narrowed to what the branch declares.
+     *
+     * A branch with no recorded constraint keeps the tracked set whole. So
+     * does one whose constraint will not parse, and one that appears to
+     * declare none of the tracked cores — that is far likelier to be a
+     * constraint misread than a real state, and returning nothing would make
+     * the module vanish. Nothing here ever narrows to empty.
+     *
+     * @param list<string>              $cores
+     * @param array<array-key, string>  $constraints
+     * @return list<string>
+     */
+    private static function applicable(array $cores, array $constraints, string $branch): array
+    {
+        $constraint = $constraints[$branch] ?? null;
+        if ($constraint === null) {
+            return $cores;
+        }
+
+        return CoreCompatibility::fromConstraint($constraint, $cores)?->applicableTo($cores) ?? $cores;
     }
 
     /**
@@ -116,9 +157,10 @@ final readonly class RowFactory
      * That is `upkeep issues`' subject — being unclaimed is the point there,
      * where here it would be 29 of pathauto's 93 issues saying nothing.
      *
-     * @param list<string>           $branches   the project's known branch names
-     * @param list<string>           $cores      cores to gather evidence on
-     * @param array<int, ApiFailure> $ciFailures
+     * @param list<string>             $branches    the project's known branch names
+     * @param list<string>               $cores       tracked cores, before narrowing
+     * @param array<array-key, string>   $constraints branch => core_version_requirement
+     * @param array<int, ApiFailure>     $ciFailures
      *
      * @return list<DashboardRow>
      */
@@ -128,6 +170,7 @@ final readonly class RowFactory
         Contribution $contribution,
         array $branches,
         array $cores,
+        array $constraints,
         array $ciFailures,
     ): array {
         /** @var array<array-key, list<MergeRequest>> $byBranch */
@@ -154,7 +197,7 @@ final readonly class RowFactory
                 $this->evidence(
                     $module->name,
                     ResultKey::patch($contribution->issue->nid),
-                    $cores,
+                    self::applicable($cores, $constraints, $branch),
                     $contribution->currentRevision(),
                 ),
                 null,
@@ -170,10 +213,11 @@ final readonly class RowFactory
             // to an empty one: an issue can carry both a real branch and the
             // bot's empty draft, and the real branch is what gets merged.
             $representative = Contribution::substantive($open)[0] ?? $open[0];
+            $applicable = self::applicable($cores, $constraints, $branch);
             $local = $this->evidence(
                 $module->name,
                 ResultKey::mergeRequest($representative->iid),
-                $cores,
+                $applicable,
                 $representative->headSha,
             );
 
@@ -184,7 +228,7 @@ final readonly class RowFactory
                 $project,
                 $representative,
                 $local,
-                $this->gate->classify($representative, $cores, $local),
+                $this->gate->classify($representative, $applicable, $local),
                 $ciFailures[$representative->iid] ?? null,
             );
         }
@@ -200,20 +244,23 @@ final readonly class RowFactory
      * queue. The nid it does claim is still shown where there is one — an
      * unpaired merge request is not an anonymous one.
      *
-     * @param list<string>           $cores
-     * @param array<int, ApiFailure> $ciFailures
+     * @param list<string>             $cores
+     * @param array<array-key, string> $constraints
+     * @param array<int, ApiFailure>   $ciFailures
      */
     private function unlinkedRow(
         Module $module,
         Project $project,
         MergeRequest $mergeRequest,
         array $cores,
+        array $constraints,
         array $ciFailures,
     ): DashboardRow {
+        $applicable = self::applicable($cores, $constraints, $mergeRequest->targetBranch);
         $local = $this->evidence(
             $module->name,
             ResultKey::mergeRequest($mergeRequest->iid),
-            $cores,
+            $applicable,
             $mergeRequest->headSha,
         );
 
@@ -223,7 +270,7 @@ final readonly class RowFactory
             $project,
             $mergeRequest,
             $local,
-            $this->gate->classify($mergeRequest, $cores, $local),
+            $this->gate->classify($mergeRequest, $applicable, $local),
             $ciFailures[$mergeRequest->iid] ?? null,
             IssueReference::extract(
                 $mergeRequest->title,

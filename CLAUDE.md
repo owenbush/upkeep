@@ -174,7 +174,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   every call site.
 - **A branch supports several cores at once.** `Drupal\CoreCompatibility`
   reads `core_version_requirement` from a branch's info.yml (fetched with
-  `GitlabClient::fileContents()`) and answers which tracked cores apply.
+  `GitlabClient::fileContents()`, one request per branch a row could sit on)
+  and answers which tracked cores apply. `ModuleSnapshot::$coreConstraints`
+  caches the **raw constraint**, not a resolved answer — the registry's tracked
+  cores can change between the fetch and the read, and a snapshot holding
+  "10,11" would be answering a question nobody had asked yet.
+  `RowFactory::applicable()` narrows per row, which matters more now the fast
+  lane needs *every* applicable core green: an unchecked core the branch never
+  claimed would deny a merge on its own.
   Measured live: pathauto's *single* 8.x-1.x declares `^10.2 || ^11 || ^12`,
   so treating core as part of a row's identity multiplied every row by a test
   matrix while saying nothing new — see `docs/dashboard-row-model.md`. Matching
@@ -276,6 +283,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   someone has to remember. `RowAssembler` has no snapshot and so groups
   nothing — one row per merge request, which is what the fast lane wants; the
   *classification* is identical, which is the part that must not drift.
+  The ISSUE cell used to be filled by a per-merge-request drupal.org lookup —
+  **155 requests on a pathauto refresh**, plus an attachment lookup per file on
+  each. A row *is* an issue now and takes it from the open-issue scan the
+  snapshot already holds, so that fetch and `ModuleSnapshot::issue()` are gone.
+  Verified end to end against live pathauto data rather than fixtures
+  (`docs/dashboard-row-model.md` §7): 244 rows became 115, and of the 48
+  merge requests left unpaired, 46 name an issue that is genuinely closed and
+  2 name none — no pairing misses.
   `Results\ResultKey` keeps MR and patch results in separate path namespaces
   (`<iid>` vs `patch-<nid>`) — both subjects are identified by a number and
   nothing keeps the ranges apart, and a patch verdict
@@ -383,7 +398,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6908/6908), methods (793/793) and classes (154/154), 1432 tests.
+lines (6923/6923), methods (795/795) and classes (154/154), 1432 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

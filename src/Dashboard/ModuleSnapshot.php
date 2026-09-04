@@ -9,28 +9,33 @@ use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\Project;
 
 /**
- * Cached remote state for one module: the GitLab project, its open MRs
- * (with detail/pipeline data), and any resolved drupal.org issues.
+ * Cached remote state for one module: the GitLab project, its open and merged
+ * merge requests, its open drupal.org issues, the fork-to-issue map that pairs
+ * the two, and what each branch declares about core.
  *
  * Stores raw API payloads so deserialization goes through the same fromApi()
  * path as a live fetch — no separate serialization contract to maintain.
+ *
+ * It used to carry a second issue collection as well, keyed by nid, fetched one
+ * request at a time for every issue any merge request mentioned. That existed
+ * to put a number in the dashboard's ISSUE cell. A row *is* an issue now and
+ * takes its issue from the open-issue scan already here, so the second
+ * collection — 155 requests per pathauto refresh, plus an attachment lookup
+ * per file on each — read by nothing.
  */
 final readonly class ModuleSnapshot
 {
     /**
-     * @param array<array-key, mixed>                  $projectData raw GitLab project API payload
-     * @param list<array<array-key, mixed>>            $mrData      raw GitLab MR detail API payloads
-     * @param array<int, array<array-key, mixed>|null> $issueData   raw drupal.org issue API payloads keyed by nid
-     *                                                              (a null entry records a lookup that failed)
-     * @param list<array<array-key, mixed>>            $patchIssueData raw drupal.org payloads for the module's
-     *                                                                 Needs Review / RTBC issues, with their
-     *                                                                 attachments already dereferenced
+     * @param array<array-key, mixed>       $projectData    raw GitLab project API payload
+     * @param list<array<array-key, mixed>> $mrData         raw GitLab MR detail API payloads
+     * @param list<array<array-key, mixed>> $patchIssueData raw drupal.org payloads for the module's open
+     *                                                      issues, with their attachments already
+     *                                                      dereferenced
      */
     public function __construct(
         public \DateTimeImmutable $fetchedAt,
         public array $projectData,
         public array $mrData,
-        public array $issueData,
         public array $patchIssueData = [],
         /**
          * Merged merge requests, kept apart from the open ones because they
@@ -48,18 +53,41 @@ final readonly class ModuleSnapshot
          * @var array<int, int>
          */
         public array $forkNids = [],
+        /**
+         * Branch name => its `core_version_requirement`, read from the
+         * branch's info.yml.
+         *
+         * Which cores a row's evidence is worth gathering on. A *branch*
+         * supports several at once, and not always the ones the registry
+         * tracks — checking a branch on a core it does not declare produces a
+         * failure that says nothing about the module.
+         *
+         * A branch absent from this map is "cannot tell", never "supports
+         * nothing": the file may not exist on that branch (token's
+         * 691078-field-tokens has no info.yml at all), the fetch may have
+         * failed, or the snapshot may predate this field. Every one of those
+         * falls back to the tracked set whole, which is what the dashboard did
+         * before any of this.
+         *
+         * **array-key, not string**, and not by choice: PHP stores a
+         * numeric-looking key as an int, so a branch named "11" arrives here
+         * as 11 however the caller writes it.
+         *
+         * @var array<array-key, string>
+         */
+        public array $coreConstraints = [],
     ) {
     }
 
     /**
-     * The Needs Review / RTBC issues this module had when the snapshot was
-     * taken, for the dashboard's patch rows.
+     * The open issues this module had when the snapshot was taken — the
+     * dashboard's rows, and `upkeep issues`' queue.
      *
-     * Empty for a snapshot written before patch rows existed, which reads as
-     * "this module contributed no patch rows" — the pre-existing dashboard,
-     * until the next --refresh. Cheaper and less surprising than silently
-     * going to the network from a command whose whole promise is that a cached
-     * run costs nothing.
+     * Empty for a snapshot written before they were stored, which reads as
+     * "this module contributed no rows" — the pre-existing dashboard, until
+     * the next --refresh. Cheaper and less surprising than silently going to
+     * the network from a command whose whole promise is that a cached run
+     * costs nothing.
      *
      * @return list<Issue>
      */
@@ -100,23 +128,16 @@ final readonly class ModuleSnapshot
         );
     }
 
-    public function issue(int $nid): ?Issue
-    {
-        $data = $this->issueData[$nid] ?? null;
-
-        return $data !== null ? Issue::fromApi($data) : null;
-    }
-
     public function toJson(): string
     {
         return json_encode([
             'fetched_at' => $this->fetchedAt->format(\DateTimeInterface::ATOM),
             'project' => $this->projectData,
             'merge_requests' => $this->mrData,
-            'issues' => $this->issueData,
             'patch_issues' => $this->patchIssueData,
             'merged_merge_requests' => $this->mergedMrData,
             'fork_nids' => $this->forkNids,
+            'core_constraints' => $this->coreConstraints,
         ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT);
     }
 
@@ -159,10 +180,10 @@ final readonly class ModuleSnapshot
             $fetchedAt,
             $projectData,
             self::payloadList($mrData),
-            self::payloadsByNid($data['issues'] ?? null),
             \is_array($patchIssues) ? self::payloadList($patchIssues) : [],
             \is_array($mergedMrs) ? self::payloadList($mergedMrs) : [],
             self::forkMap($data['fork_nids'] ?? null),
+            self::constraintMap($data['core_constraints'] ?? null),
         );
     }
 
@@ -203,27 +224,24 @@ final readonly class ModuleSnapshot
     }
 
     /**
-     * Issue payloads keyed by node id. A null entry is meaningful — it records
-     * that the issue was looked up and the lookup failed — so it is kept,
-     * while an unusable key or a non-object payload is dropped.
+     * Branch name => core constraint, from an untrusted cache file.
      *
-     * @return array<int, array<array-key, mixed>|null>
+     * @return array<array-key, string>
      */
-    private static function payloadsByNid(mixed $raw): array
+    private static function constraintMap(mixed $raw): array
     {
         if (!\is_array($raw)) {
             return [];
         }
 
-        $payloads = [];
-        foreach ($raw as $nid => $entry) {
-            if (!\is_int($nid) || ($entry !== null && !\is_array($entry))) {
-                continue;
+        $map = [];
+        foreach ($raw as $branch => $constraint) {
+            if (\is_string($constraint) && $constraint !== '') {
+                $map[$branch] = $constraint;
             }
-            $payloads[$nid] = $entry;
         }
 
-        return $payloads;
+        return $map;
     }
 
     public function ageLabel(\DateTimeImmutable $now): string

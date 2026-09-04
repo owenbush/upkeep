@@ -199,7 +199,6 @@ final class UiSurfaceTest extends TestCase
                 'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
                 'diff_refs' => ['base_sha' => 'base', 'head_sha' => 'head'],
             ]],
-            [],
             [[
                 'nid' => 3597808,
                 'title' => 'A patch issue',
@@ -212,7 +211,7 @@ final class UiSurfaceTest extends TestCase
                     'filesize' => '10',
                     'timestamp' => '1705400000',
                 ]]],
-            ]],
+            ]]
         ));
 
         (new ResultsCache($this->cockpit . '/results'))->store(
@@ -259,8 +258,7 @@ final class UiSurfaceTest extends TestCase
         (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
             new \DateTimeImmutable(),
             ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
-            [],
-            [],
+            []
         ));
 
         $state = (new StateBuilder(new Cockpit($this->cockpit)))->build();
@@ -292,7 +290,6 @@ final class UiSurfaceTest extends TestCase
                 'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
                 'diff_refs' => ['base_sha' => 'base', 'head_sha' => 'head'],
             ]],
-            [],
             [
                 // Active with nothing on it — invisible under the old scan, and
                 // the row the queue view exists for.
@@ -301,7 +298,7 @@ final class UiSurfaceTest extends TestCase
                 self::issuePayload(3467675, '8', 'A change'),
                 // RTBC with a patch.
                 self::issuePayload(3398583, '14', 'Prevent dot aliases', [['p.patch', 'https://x.test/p.patch']]),
-            ],
+            ]
         ));
 
         $module = self::arr(self::arr((new StateBuilder(new Cockpit($this->cockpit)))->build()['modules'])[0]);
@@ -332,8 +329,7 @@ final class UiSurfaceTest extends TestCase
             new \DateTimeImmutable(),
             ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
             [],
-            [],
-            [self::issuePayload(3611658, '1', 'Cache grows unbounded')],
+            [self::issuePayload(3611658, '1', 'Cache grows unbounded')]
         ));
 
         $module = self::arr(self::arr((new StateBuilder(new Cockpit($this->cockpit)))->build()['modules'])[0]);

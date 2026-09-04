@@ -305,8 +305,7 @@ final class DashboardCommandTest extends TestCase
         $snapshot = new ModuleSnapshot(
             new \DateTimeImmutable(),
             self::projectPayload(),
-            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])],
-            [],
+            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])]
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('widget', $snapshot);
@@ -331,8 +330,7 @@ final class DashboardCommandTest extends TestCase
         $snapshot = new ModuleSnapshot(
             new \DateTimeImmutable('-1 hour'),
             self::projectPayload(),
-            [self::botMrPayload(['title' => 'Old cached title', 'head_pipeline' => self::greenPipeline()])],
-            [],
+            [self::botMrPayload(['title' => 'Old cached title', 'head_pipeline' => self::greenPipeline()])]
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('widget', $snapshot);
@@ -383,14 +381,12 @@ final class DashboardCommandTest extends TestCase
                     'sha' => self::HEAD_SHA,
                     'web_url' => 'https://git.drupalcode.org/project/alpha/-/merge_requests/1',
                 ],
-            ],
-            [],
+            ]
         ));
         $cache->save('widget', new ModuleSnapshot(
             new \DateTimeImmutable('-2 hours'),
             self::projectPayload(),
-            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])],
-            [],
+            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])]
         ));
 
         // Only refresh widget — alpha should come from cache, widget from API.
@@ -439,10 +435,9 @@ final class DashboardCommandTest extends TestCase
             new \DateTimeImmutable(),
             self::projectPayload(),
             [$draft],
-            [],
             [self::patchIssuePayload($nid, [])],
             [$landed],
-            [218528 => $nid],
+            [218528 => $nid]
         ));
 
         $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
@@ -508,7 +503,6 @@ final class DashboardCommandTest extends TestCase
             new \DateTimeImmutable(),
             self::projectPayload(),
             [$mr],
-            [$issueNid => $issueData],
             [$issueData],
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
@@ -562,7 +556,6 @@ final class DashboardCommandTest extends TestCase
             new \DateTimeImmutable(),
             self::projectPayload(),
             [$mr],
-            [$issueNid => $issueData],
             [$issueData],
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
@@ -633,44 +626,90 @@ final class DashboardCommandTest extends TestCase
     }
 
     /**
-     * On a live fetch the linked drupal.org issue is resolved and cached into
-     * the snapshot, so the ISSUE column is populated on the very first run —
-     * not only on later runs reading a hand-seeded cache.
+     * On a live fetch each branch's own `core_version_requirement` is read and
+     * cached, and it narrows the cores the row gathers evidence on.
+     *
+     * The registry tracks 10 and 11; this branch declares 11 and 12. Checking
+     * it on 10 would produce a failure that says nothing about the module —
+     * and, since the fast lane now requires *every* applicable core to be
+     * green, an unchecked core 10 would deny a merge on the strength of a core
+     * the branch never claimed.
      */
-    public function testALiveFetchResolvesTheLinkedIssueAndCachesItIntoTheSnapshot(): void
+    public function testALiveFetchReadsWhatEachBranchDeclaresAboutCoreAndNarrowsToIt(): void
     {
-        $issueNid = 3467675;
-        $mr = self::botMrPayload([
-            'title' => 'Issue #' . $issueNid . ': Make URL field required',
-            'source_branch' => $issueNid . '-make-url-required',
-            'head_pipeline' => self::greenPipeline(),
-        ]);
-
-        $drupal = new DrupalOrgClient(new MockHttpClient(static fn (): MockResponse => self::json([
-            'nid' => $issueNid,
-            'title' => 'Make URL field required',
-            'url' => 'https://www.drupal.org/project/widget/issues/' . $issueNid,
-            'field_issue_status' => '8',
-            'field_project' => ['machine_name' => 'widget'],
-        ])));
-
+        $mr = self::botMrPayload(['head_pipeline' => self::greenPipeline()]);
         $client = $this->client([
+            '/repository/files/' => new MockResponse(
+                "name: Widget\ntype: module\ncore_version_requirement: ^11 || ^12\n",
+            ),
             '/merge_requests/5' => self::json($mr),
             '/merge_requests?' => self::json([$mr]),
             '/projects/project%2Fwidget' => self::json(self::projectPayload()),
         ]);
 
-        $tester = new CommandTester(new DashboardCommand($client, $drupal));
-        $tester->execute(['--cockpit' => $this->cockpit, '--version' => '11', '--all' => true]);
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--all' => true]);
 
         $tester->assertCommandIsSuccessful();
-        self::assertStringContainsString((string) $issueNid, $tester->getDisplay());
+        // Core 10 is tracked but not declared, so it is not asked about.
+        self::assertStringContainsString('upkeep check widget 5 --version=11', $tester->getDisplay());
+        self::assertStringNotContainsString('--version=10', $tester->getDisplay());
 
-        // The issue travelled into the on-disk snapshot, so the next run needs
-        // neither GitLab nor drupal.org to render the same ISSUE cell.
+        // And the constraint travelled into the snapshot, so the next run
+        // narrows the same way without going near the network.
         $snapshot = (new DashboardCache($this->cockpit . '/cache/dashboard'))->load('widget');
         self::assertNotNull($snapshot);
-        self::assertNotNull($snapshot->issue($issueNid));
+        self::assertSame(['1.x' => '^11 || ^12'], $snapshot->coreConstraints);
+    }
+
+    /**
+     * A branch whose info.yml cannot be read keeps every tracked core.
+     *
+     * Not hypothetical: token's `691078-field-tokens` branch has no
+     * `token.info.yml` at all. Missing evidence about a branch is not evidence
+     * that the branch supports nothing, and narrowing to empty would hide the
+     * module — the worst failure this tool has.
+     */
+    public function testABranchWithNoReadableInfoYamlKeepsEveryTrackedCore(): void
+    {
+        $mr = self::botMrPayload(['head_pipeline' => self::greenPipeline()]);
+        $client = $this->client([
+            '/repository/files/' => new MockResponse('', ['http_code' => 404]),
+            '/merge_requests/5' => self::json($mr),
+            '/merge_requests?' => self::json([$mr]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('upkeep check widget 5 --version=10', $tester->getDisplay());
+
+        $snapshot = (new DashboardCache($this->cockpit . '/cache/dashboard'))->load('widget');
+        self::assertNotNull($snapshot);
+        self::assertSame([], $snapshot->coreConstraints);
+    }
+
+    /**
+     * A constraint nobody can parse is "cannot tell", never "supports
+     * nothing" — same fallback, different cause.
+     */
+    public function testAnUnparseableConstraintFallsBackToTheTrackedCores(): void
+    {
+        $mr = self::botMrPayload(['head_pipeline' => self::greenPipeline()]);
+        $client = $this->client([
+            '/repository/files/' => new MockResponse("core_version_requirement: see the README\n"),
+            '/merge_requests/5' => self::json($mr),
+            '/merge_requests?' => self::json([$mr]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        self::assertStringContainsString('upkeep check widget 5 --version=10', $tester->getDisplay());
     }
 
     public function testCachedLocalResultsAlwaysResolvedFresh(): void
@@ -679,8 +718,7 @@ final class DashboardCommandTest extends TestCase
         $snapshot = new ModuleSnapshot(
             new \DateTimeImmutable(),
             self::projectPayload(),
-            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])],
-            [],
+            [self::botMrPayload(['head_pipeline' => self::greenPipeline()])]
         );
         $cache = new DashboardCache($this->cockpit . '/cache/dashboard');
         $cache->save('widget', $snapshot);
@@ -711,8 +749,7 @@ final class DashboardCommandTest extends TestCase
             new \DateTimeImmutable(),
             self::projectPayload(),
             [],
-            [],
-            $patchIssues,
+            $patchIssues
         ));
     }
 
@@ -876,8 +913,7 @@ final class DashboardCommandTest extends TestCase
         (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
             new \DateTimeImmutable(),
             self::projectPayload(),
-            [self::botMrPayload()],
-            [],
+            [self::botMrPayload()]
         ));
 
         $tester = new CommandTester(new DashboardCommand($this->noApiClient(), $this->noDrupalClient()));
@@ -902,8 +938,7 @@ final class DashboardCommandTest extends TestCase
             new \DateTimeImmutable(),
             self::projectPayload(),
             $mrs,
-            [],
-            $patchIssues,
+            $patchIssues
         ));
     }
 

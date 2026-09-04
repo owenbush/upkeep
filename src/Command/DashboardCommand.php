@@ -18,13 +18,14 @@ use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Dashboard\ModuleSummary;
 use Upkeep\Dashboard\RowFactory;
+use Upkeep\Drupal\CoreCompatibility;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\Issue;
-use Upkeep\Drupal\IssueReference;
 use Upkeep\Drupal\IssueStatus;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
+use Upkeep\Gitlab\Project;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
 
@@ -460,17 +461,13 @@ final class DashboardCommand extends UpkeepCommand
 
         $projectData = $project->toApiArray();
         $mrData = [];
-        $issueNids = [];
+        $branches = $project->defaultBranch !== '' ? [$project->defaultBranch => true] : [];
 
         foreach ($list->all() as $listed) {
             $detail = $client->mergeRequest($project, $listed->iid);
             $mr = $detail instanceof ApiFailure ? $listed : $detail;
             $mrData[] = $mr->toApiArray();
-
-            $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
-            if ($nid !== null) {
-                $issueNids[$nid] = true;
-            }
+            $branches[$mr->targetBranch] = true;
         }
 
         // Merged ones too. Without them an issue whose work has already
@@ -482,21 +479,12 @@ final class DashboardCommand extends UpkeepCommand
         if (!$merged instanceof ApiFailure) {
             foreach ($merged->all() as $mr) {
                 $mergedData[] = $mr->toApiArray();
-                $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
-                if ($nid !== null) {
-                    $issueNids[$nid] = true;
-                }
+                $branches[$mr->targetBranch] = true;
             }
         }
 
         $forkNids = $client->issueForkNids($project);
         $forkNids = $forkNids instanceof ApiFailure ? [] : $forkNids;
-
-        $issueData = [];
-        foreach (array_keys($issueNids) as $nid) {
-            $issue = $drupal->issue($nid);
-            $issueData[$nid] = $issue?->toApiArray();
-        }
 
         // Every *open* issue, not only the two statuses a contribution sits
         // in. One snapshot serves both questions a maintainer asks — "what is
@@ -514,11 +502,49 @@ final class DashboardCommand extends UpkeepCommand
             new \DateTimeImmutable(),
             $projectData,
             $mrData,
-            $issueData,
             $patchIssueData,
             $mergedData,
             $forkNids,
+            self::coreConstraints($client, $project, $module, array_keys($branches)),
         );
+    }
+
+    /**
+     * What each branch declares about core, read from its own info.yml.
+     *
+     * One request per branch a row could sit on, which on a real module is one
+     * or two — measured on pathauto, every open and merged merge request
+     * targets 8.x-1.x. It replaces a far larger fetch: the per-merge-request
+     * issue lookup this used to do cost 155 requests on pathauto alone, plus
+     * an attachment lookup per file on each, for a cell that is now the row's
+     * own identity.
+     *
+     * Every failure is silent and falls back to the tracked cores: a branch
+     * with no info.yml at that path (token's 691078-field-tokens has none), a
+     * closed endpoint, a module whose machine name is not its project path.
+     * Missing evidence about a branch is not evidence that the branch supports
+     * nothing, and a module vanishing from the dashboard is the worst failure
+     * this tool has.
+     *
+     * @param list<string> $branches
+     * @return array<array-key, string> branch => raw constraint
+     */
+    private static function coreConstraints(
+        GitlabClient $client,
+        Project $project,
+        Module $module,
+        array $branches,
+    ): array {
+        $constraints = [];
+        foreach ($branches as $branch) {
+            $info = $client->fileContents($project, $module->name . '.info.yml', $branch);
+            $constraint = $info === null ? null : CoreCompatibility::constraintIn($info);
+            if ($constraint !== null) {
+                $constraints[$branch] = $constraint;
+            }
+        }
+
+        return $constraints;
     }
 
     /**

@@ -89,11 +89,29 @@ final readonly class CoreCompatibility
      */
     public static function fromInfoYaml(string $infoYaml, array $candidates): ?self
     {
+        $constraint = self::constraintIn($infoYaml);
+
+        return $constraint === null ? null : self::fromConstraint($constraint, $candidates);
+    }
+
+    /**
+     * The raw constraint an info.yml declares, unparsed.
+     *
+     * What the snapshot stores. A cache holds *data*, not a resolved answer:
+     * the tracked core list can change between the fetch and the read (a
+     * registry edit costs nothing and goes to no network), and a snapshot
+     * holding "10, 11" rather than "^10.2 || ^11 || ^12" would answer for a
+     * question nobody asked yet.
+     */
+    public static function constraintIn(string $infoYaml): ?string
+    {
         if (preg_match('/^core_version_requirement:\s*(.+?)\s*$/m', $infoYaml, $m) !== 1) {
             return null;
         }
 
-        return self::fromConstraint(trim($m[1], "'\" \t"), $candidates);
+        $constraint = trim($m[1], "'\" \t");
+
+        return $constraint === '' ? null : $constraint;
     }
 
     /** Whether a tracked core is one this branch declares. */

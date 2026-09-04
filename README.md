@@ -391,6 +391,15 @@ that is `upkeep issues`' subject, where being unclaimed is the point.
 
 `upkeep dashboard --no-patches` restores the merge-request-only view.
 
+- **LOCAL's cores** are the ones the row's *branch* declares, not every core in
+  the registry. Each branch's `core_version_requirement` is read from its own
+  info.yml on a refresh, so pathauto's 8.x-1.x is never asked about a core it
+  does not claim — a failure there would say nothing about the module, and
+  since the fast lane needs every applicable core green, an unchecked core the
+  branch never claimed would block a merge on its own. A branch whose info.yml
+  cannot be read, or whose constraint will not parse, keeps every tracked core:
+  missing evidence about a branch is not evidence about a branch.
+
 `upkeep dashboard --version=11` narrows the *evidence* to one core. It does not
 remove rows: core is not what a row is about.
 

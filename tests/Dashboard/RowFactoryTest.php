@@ -355,7 +355,6 @@ final class RowFactoryTest extends TestCase
             new \DateTimeImmutable('2026-09-03T12:00:00+00:00'),
             ['id' => 1, 'path' => 'widget', 'path_with_namespace' => 'project/widget', 'name' => 'Widget'],
             [],
-            [],
             [[
                 'nid' => 3598272,
                 'title' => 'Automated Drupal 12 compatibility fixes',
@@ -365,7 +364,7 @@ final class RowFactoryTest extends TestCase
                 'field_issue_files' => [],
             ]],
             [self::landedMrPayload()],
-            [218528 => 3598272],
+            [218528 => 3598272]
         );
     }
 }

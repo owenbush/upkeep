@@ -1,8 +1,6 @@
 # Plan — the dashboard row model
 
-*Status: sections 1–4 are built (`0aa5444`, `6faa06b`, and the row-identity
-commit). Section 2.3 — narrowing the applicable cores to what the branch
-declares — is the one part still unwired; see §6.*
+*Status: built, and verified against live pathauto data — see §7.*
 
 ---
 
@@ -193,43 +191,26 @@ No cache invalidation needed; `--refresh` picks up the rest.
 ## 6. Sequence
 
 1. ~~**`core_version_requirement` reading**~~ — **done** (`0aa5444`).
-   `Drupal\CoreCompatibility` + `GitlabClient::fileContents()`. No behaviour
-   change; the data only.
-2. ~~**Evidence across cores**~~ — **done** (`6faa06b`). `Dashboard\LocalEvidence`:
-   worst-case-plus-detail, and the stricter fast-lane question.
-3. ~~**Row identity**~~ — **done**, and it took step 4 with it. `DashboardRow`
-   keyed on (issue, branch); `forIssue()` and `forUnlinkedMergeRequest()`
-   replacing `forPatch()`/`forMergeRequest()`; `$core` → `$branch`; `$local` →
-   `LocalEvidence`; `patchRows()`, the `isCoveredByMergeRequest()` filter and
-   `landingsByIssue()`/`landingFor()` deleted.
+2. ~~**Evidence across cores**~~ — **done** (`6faa06b`).
+3. ~~**Row identity**~~ — **done** (`9334156`), and it took step 4 with it.
 4. ~~**Verdict across cores**~~ — **done, inside step 3 rather than after it.**
    Planned to land alone, and it could not: the moment a row stops being one
    (subject, core) pair it has no single-core verdict to carry, so
    `FastLaneGate::classify()` had to take the core *list* and the evidence
    across it in the same commit. Keeping them apart would have meant picking an
    arbitrary core to gate on for one commit — a worse state than the one being
-   fixed. The behaviour change is the same one planned: **every applicable core
-   must be green**, so rows that were READY on partial evidence no longer are.
-5. **Summary and UI** — done for `ModuleSummary` (CORES → BRANCHES) and
-   `Ui\StateBuilder` (a row's branch, its cores, its landing). The browser
-   *page* still renders the old field names and is untouched, at the user's
-   request.
-6. **Still to do.**
-   - **§2.3, applicable cores.** `CoreCompatibility` is built and tested but
-     nothing calls it: rows gather evidence on every *tracked* core, not on
-     tracked ∩ declared. Wiring it needs `ModuleSnapshot` to carry a per-branch
-     `core_version_requirement` and `fetchModule()` to read each branch's
-     info.yml. Deliberately deferred — it changes which cores a row reports on,
-     not what a row is, and it is separately green.
-   - **Live verification.** Real modules, row counts before and after, and the
-     four commands never yet run against a real environment (`check`,
-     `patch:check`, `start`, `publish`).
-   - **`ModuleSnapshot::issue()` is now unused by the dashboard.** The ISSUE
-     cell used to need a per-MR issue lookup; the row *is* the issue now, so
-     the issues come from the open-issue scan the snapshot already holds. That
-     leaves `fetchModule()` making one drupal.org request per referenced nid
-     for data nothing reads — a real cost on every `--refresh`, and worth
-     removing on its own.
+   fixed.
+5. ~~**Summary and UI**~~ — done for `ModuleSummary` (CORES → BRANCHES) and
+   `Ui\StateBuilder`. The browser *page* still renders the old field names and
+   is untouched, at the user's request.
+6. ~~**§2.3, applicable cores**~~ — **done.** `ModuleSnapshot::$coreConstraints`
+   holds branch => raw `core_version_requirement`, read from that branch's
+   info.yml on a refresh, and `RowFactory::applicable()` narrows the tracked
+   cores to it per row. Landed together with the deletion it paid for: the
+   per-merge-request issue lookup, which cost **155 drupal.org requests on
+   pathauto alone** plus an attachment lookup per file on each, for a cell that
+   is now the row's own identity. A refresh is strictly cheaper than before —
+   one info.yml per branch (pathauto: two) against 155 issue fetches.
 
 ### Why step 3 had no smaller green slice
 
@@ -248,3 +229,48 @@ Attempts to slice it further were considered and rejected:
 - *Merge patch rows into MR rows first, keep `$core`* — leaves two row
   identities in play at once, which is the state the whole change exists to
   end.
+
+---
+
+## 7. Live verification
+
+Run on 2026-09-04 against pathauto's real GitLab and drupal.org data — 107 open
+merge requests, 62 merged, 196 issue forks, 93 open issues with their 301
+attachments dereferenced — fed through the real `ModuleSnapshot`, `RowFactory`
+and `ModuleSummary`. Fixtures were what hid every bug this week; this is the
+check that was missing.
+
+| | |
+|---|---|
+| Rows, old model | ~244 — (107 MRs + 22 patch issues) x 2 tracked cores |
+| **Rows, new model** | **115** — 67 issue rows + 48 unlinked merge-request rows |
+| Rows per branch | 114 on `8.x-1.x`, 1 on `7.x-1.x` |
+| Merge requests counted | 107 (matches the input) |
+| Patch issues counted | 42 |
+
+What the sample table confirmed, which no fixture had:
+
+- **The grouping is real.** `!73 +1` is one issue carrying two merge requests
+  on one row, where the old model made two.
+- **Patch and merge request coexist.** `!133` with 8 patch files, `!125` with
+  4 — each was previously an MR row plus a patch row the covered-by filter
+  suppressed.
+- **Pairing loses nothing.** Of the 48 unlinked rows, 2 claim no issue at all
+  and 46 claim an issue that is genuinely *not open* (fixed or closed).
+  **Zero** referenced an issue that was in the open queue, i.e. no pairing
+  misses. Those 46 still print their nid, which is why `forUnlinkedMergeRequest`
+  carries one.
+- **drupal.org status earns its column.** `RTBC`, `needs work`, `postponed`
+  and `review` all appear, and they ask different things of a maintainer.
+
+### The one thing that is wrong, and knowably so
+
+pathauto's `7.x-1.x` branch has no `core_version_requirement` — Drupal 7 used
+`core = 7.x` in a `.info` file, which predates the key entirely. So the
+constraint lookup finds nothing, the fallback applies, and that row gathers
+evidence on cores 10 and 11 for a branch that obviously supports neither.
+
+Left as it is on purpose. The fallback rule is *missing evidence about a branch
+is not evidence about a branch*, and the alternative — inferring core support
+from a branch name — is exactly the parsing `Drupal\IssueVersion` exists to
+refuse. One row on one module, and it is visibly a D7 branch.

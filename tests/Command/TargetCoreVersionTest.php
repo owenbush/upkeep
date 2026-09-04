@@ -204,8 +204,7 @@ final class TargetCoreVersionTest extends TestCase
             [MockGitlab::mergeRequestPayload('widget', 5, [
                 'title' => 'Automated bot fixes',
                 'sha' => self::HEAD_SHA,
-            ])],
-            [],
+            ])]
         ));
     }
 }

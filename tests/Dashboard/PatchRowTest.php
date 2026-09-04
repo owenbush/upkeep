@@ -108,8 +108,7 @@ final class PatchRowTest extends TestCase
                 'default_branch' => '1.0.x',
             ],
             array_map(static fn (MergeRequest $mr): array => $mr->toApiArray(), $mrs),
-            [],
-            array_map(static fn (Issue $i): array => $i->toApiArray(), $patchIssues),
+            array_map(static fn (Issue $i): array => $i->toApiArray(), $patchIssues)
         );
     }
 
