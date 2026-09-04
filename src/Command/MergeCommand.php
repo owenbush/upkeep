@@ -10,6 +10,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Dashboard\DashboardRow;
+use Upkeep\Dashboard\LocalEvidence;
 use Upkeep\Dashboard\RowAssembler;
 use Upkeep\Gate\FastLaneGate;
 use Upkeep\Gate\GateStatus;
@@ -236,8 +237,16 @@ final class MergeCommand extends UpkeepCommand
         // Re-classify against the fresh MR and re-read local evidence: this
         // catches CI regression, a new draft marker, and stale local results
         // with the exact same conservative logic that admitted the row.
-        $local = $cache->latest($row->module, ResultKey::mergeRequest($iid), $row->core);
-        $verdict = (new FastLaneGate())->classify($fresh, $row->core, $local);
+        $cores = $row->local->cores();
+        $byCore = [];
+        foreach ($cores as $core) {
+            $byCore[$core] = $cache->latest($row->module, ResultKey::mergeRequest($iid), $core);
+        }
+        $verdict = (new FastLaneGate())->classify(
+            $fresh,
+            $cores,
+            LocalEvidence::of($byCore, $fresh->headSha),
+        );
         if ($verdict->status !== GateStatus::ReadyAuto) {
             $reasons = array_merge($reasons, $verdict->reasons);
         }
@@ -300,7 +309,14 @@ final class MergeCommand extends UpkeepCommand
     private function renderContext(SymfonyStyle $io, DashboardRow $row): void
     {
         $mr = $row->requireMergeRequest();
-        $io->section(sprintf('%s !%d (core %s) — READY-AUTO', $row->module, $mr->iid, $row->core));
+        $cores = $row->local->cores();
+        $io->section(sprintf(
+            '%s !%d (%s %s) — READY-AUTO',
+            $row->module,
+            $mr->iid,
+            \count($cores) === 1 ? 'core' : 'cores',
+            $cores === [] ? 'none' : implode(',', $cores),
+        ));
         $io->writeln('  Title:  ' . $mr->title);
         $io->writeln(sprintf('  Branch: %s -> %s', $mr->sourceBranch, $mr->targetBranch));
         $io->writeln('  Head:   ' . ($mr->headSha ?? 'unknown'));
@@ -309,10 +325,11 @@ final class MergeCommand extends UpkeepCommand
             $row->ciCell(),
             $mr->headPipeline !== null && $mr->headPipeline->webUrl !== '' ? ' — ' . $mr->headPipeline->webUrl : '',
         ));
+        $recorded = $row->local->latestRecordedAt();
         $io->writeln(sprintf(
             '  Local:  %s%s',
             $row->localCell(),
-            $row->local !== null ? ' (recorded ' . $row->local->recordedAt->format(\DateTimeInterface::ATOM) . ')' : '',
+            $recorded !== null ? ' (recorded ' . $recorded->format(\DateTimeInterface::ATOM) . ')' : '',
         ));
         $io->writeln('  URL:    ' . $mr->webUrl);
     }
@@ -335,10 +352,10 @@ final class MergeCommand extends UpkeepCommand
         }
 
         return sprintf(
-            '  %s !%d (core %s): %s — %s',
+            '  %s !%d (%s): %s — %s',
             $row->module,
             $row->mergeRequest->iid,
-            $row->core,
+            $row->branch,
             $row->statusCell(),
             DashboardRow::truncate($row->mergeRequest->title),
         );

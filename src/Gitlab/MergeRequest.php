@@ -78,6 +78,34 @@ final readonly class MergeRequest
     }
 
     /**
+     * The most recently merged of a set of merge requests, if any.
+     *
+     * The question a still-open drupal.org issue cannot answer about itself.
+     * Project Update Bot compatibility issues are kept open on purpose so the
+     * bot can post again as core moves, so an open one may have had its real
+     * work merged months ago — and a maintainer staring at the bot's leftover
+     * draft has no way to tell. Shared by Patches\\Contribution and by the
+     * dashboard row, because a landing shown in one view and not the other is
+     * worse than not showing it at all.
+     *
+     * @param list<self> $mergeRequests
+     */
+    public static function latestMerged(array $mergeRequests): ?self
+    {
+        $latest = null;
+        foreach ($mergeRequests as $mr) {
+            if ($mr->state !== 'merged') {
+                continue;
+            }
+            if ($latest === null || (string) $mr->mergedAt > (string) $latest->mergedAt) {
+                $latest = $mr;
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
      * @param array<array-key, mixed> $data a decoded merge-request JSON object
      */
     public static function fromApi(array $data): self

@@ -119,25 +119,31 @@ final class TargetCoreVersionTest extends TestCase
         self::assertStringNotContainsString('Upkeep dev', $this->cli->display());
     }
 
-    /** On the dashboard the flag filters rows to the one target core. */
-    public function testTheDashboardShowsOnlyRowsTargetingTheRequestedCore(): void
+    /**
+     * On the dashboard the flag narrows the *evidence*, not the rows.
+     *
+     * Core stopped being part of a row's identity — a module branch supports
+     * several cores at once — so filtering by one cannot remove rows. It says
+     * which core the row reports on, which is visible in the LOCAL cell and in
+     * the command the row hands you.
+     */
+    public function testTheDashboardEvidenceNarrowsToTheRequestedCore(): void
     {
         $this->cli->registerModule('widget', coreVersions: ['10', '11']);
         $this->cacheDashboardSnapshot();
 
-        self::assertSame(ExitCode::OK, $this->cli->run('dashboard'));
+        self::assertSame(ExitCode::OK, $this->cli->run('dashboard', 'widget'));
         $unfiltered = $this->cli->display();
-        self::assertStringContainsString('10', $unfiltered);
-        self::assertStringContainsString('11', $unfiltered);
+        self::assertStringContainsString('widget', $unfiltered);
+        // Nothing checked on either core, so the row points at the first that
+        // needs attention.
+        self::assertStringContainsString('--version=10', $unfiltered);
 
-        // "10" can only reach the filtered table as a CORE cell: the snapshot
-        // fixture's title, branch and SHA carry no digits, and the only other
-        // number rendered is the MR iid.
-        self::assertSame(ExitCode::OK, $this->cli->run('dashboard', '--version=11'));
+        self::assertSame(ExitCode::OK, $this->cli->run('dashboard', 'widget', '--version=11'));
         $filtered = $this->cli->display();
         self::assertStringContainsString('widget', $filtered);
-        self::assertStringContainsString('11', $filtered);
-        self::assertStringNotContainsString('10', $filtered);
+        self::assertStringContainsString('--version=11', $filtered);
+        self::assertStringNotContainsString('--version=10', $filtered);
     }
 
     /**
@@ -198,8 +204,7 @@ final class TargetCoreVersionTest extends TestCase
             [MockGitlab::mergeRequestPayload('widget', 5, [
                 'title' => 'Automated bot fixes',
                 'sha' => self::HEAD_SHA,
-            ])],
-            [],
+            ])]
         ));
     }
 }

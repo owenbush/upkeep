@@ -65,9 +65,11 @@ final readonly class StateBuilder
                 continue;
             }
 
-            $rows = array_merge(
-                $rowFactory->rows($module, $snapshot->project(), $snapshot->mergeRequests()),
-                $rowFactory->patchRows($module, $snapshot),
+            $rows = $rowFactory->rows(
+                $module,
+                $snapshot->project(),
+                $snapshot->mergeRequests(),
+                snapshot: $snapshot,
             );
 
             $out[] = [
@@ -158,23 +160,27 @@ final readonly class StateBuilder
         return [
             'kind' => match (true) {
                 $row->moduleFailure !== null => 'failure',
-                $contribution !== null => 'patch',
+                $contribution !== null => 'issue',
                 default => 'mr',
             },
-            'core' => $row->core,
+            'branch' => $row->branch,
+            // The cores the row's evidence covers, and the cell that summarises
+            // them. Core is evidence rather than identity now, so a row carries
+            // several and the page renders the same worst-case-wins cell the
+            // terminal does.
+            'cores' => $row->local->cores(),
             'mr' => $mr?->iid,
-            'issue' => $contribution?->issue->nid,
-            'title' => match (true) {
-                $contribution !== null => $contribution->issue->title,
-                $mr !== null => $mr->title,
-                default => 'merge requests unavailable',
-            },
+            'merge_requests' => $row->mergeRequestCell(),
+            'issue' => $row->issueNid,
+            'issue_status' => $contribution?->issue->status->shortLabel(),
+            'title' => $row->titleCell(),
             'url' => $contribution !== null ? $contribution->issue->url : $mr?->webUrl,
             'ci' => $row->ciCell(),
             'local' => $row->localCell(),
             'status' => $row->statusCell(),
             'ready_auto' => $row->isReadyAuto(),
-            'patches' => $contribution?->issue->patchCount(),
+            'patches' => $row->patchCount,
+            'landed' => $row->landed?->iid,
         ];
     }
 

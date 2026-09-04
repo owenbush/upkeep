@@ -123,11 +123,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   both are exactly when a maintainer wants the branch locally; a property test
   over every subset of gate reasons holds that. `Command\Glossary` +
   `upkeep explain` define every term the tool prints, which nothing did before:
-  `patch↑` existed only in a source comment. The overview's columns use the same
-  words as the rows they summarise — `PATCH ISSUES` (not `PATCHES`, which would
-  collide with a row's file count) and `CI FAILED` (not `BLOCKED`, which is what
-  that verdict is actually set by). There is no `REVIEW` column: it counted
-  everything neither ready nor CI-failed, i.e. every row.
+  the patch arrow existed only in a source comment. The overview's columns use
+  the same words as the rows they summarise — `PATCH ISSUES` (not `PATCHES`,
+  which would collide with a row's file count) and `CI FAILED` (not `BLOCKED`,
+  which is what that verdict is actually set by). There is no `REVIEW` column:
+  it counted everything neither ready nor CI-failed, i.e. every row.
 - **An MR belongs to the issue its fork was made for.**
   `IssueReference::fromForkPath()` reads the nid out of `issue/<module>-<nid>`,
   and `GitlabClient::issueForkNids()` maps every fork of a project in one
@@ -149,7 +149,47 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   are statements about evidence, and closing is a judgement about the
   convention. Live proof of the two shapes: conditions_helper #3596502 (active,
   MR merged 2026-06-12) vs field_visibility_conditions #3598272 (needs review,
-  open draft).
+  open draft). **Both views** carry it, through one implementation:
+  `Contribution::renderMergeRequestCell()` is static because
+  the dashboard row renders the same cell and only sometimes holds an `Issue`.
+  A landing outranks every other reading of the row. It is a fact about the
+  *issue*, not about a merge request — the row a maintainer is staring at is
+  usually the bot's open draft while the work that landed came from a different
+  MR entirely — which is why a row keyed on the issue gets it for nothing.
+  `ModuleSnapshot` carries `mergedMrData` and `forkNids`; a snapshot written
+  before they existed reads as "nothing known to have merged", i.e. the old
+  behaviour.
+- `Dashboard\LocalEvidence` is what a row knows locally **across every core
+  that applies**, now that core is evidence rather than identity. Several
+  cores can disagree and the cell is one string, so **worst case wins and
+  names its core** (`fail 10`, `stale 10`, `pass 11 · ? 10`); every core is
+  listed under `-v`. `FastLaneGate::classify()` takes the applicable cores and
+  this, and is stricter than what it replaced: **every** applicable core must
+  be green, where the old (subject x core) rows let a merge request green on 11
+  and unchecked on 10 present a READY-AUTO row that the fast lane then took.
+  `attentionCore()` is where a row's NEXT command gets its `--version=`, so the
+  cell and the command cannot name different cores. Its `$byCore` is typed
+  `array<array-key, …>` deliberately — PHP stores `"10" => x` as `10 => x`, so
+  no caller can supply string keys and declaring them would be a type false at
+  every call site.
+- **A branch supports several cores at once.** `Drupal\CoreCompatibility`
+  reads `core_version_requirement` from a branch's info.yml (fetched with
+  `GitlabClient::fileContents()`, one request per branch a row could sit on)
+  and answers which tracked cores apply. `ModuleSnapshot::$coreConstraints`
+  caches the **raw constraint**, not a resolved answer — the registry's tracked
+  cores can change between the fetch and the read, and a snapshot holding
+  "10,11" would be answering a question nobody had asked yet.
+  `RowFactory::applicable()` narrows per row, which matters more now the fast
+  lane needs *every* applicable core green: an unchecked core the branch never
+  claimed would deny a merge on its own.
+  Measured live: pathauto's *single* 8.x-1.x declares `^10.2 || ^11 || ^12`,
+  so treating core as part of a row's identity multiplied every row by a test
+  matrix while saying nothing new — see `docs/dashboard-row-model.md`. Matching
+  uses composer/semver by interval intersection, not a regex over majors:
+  `^10.2` does declare core 10, and only an interval gets that right. **Null is
+  "cannot tell", never "supports nothing"**, and an empty intersection returns
+  the tracked set unchanged — a module vanishing from the dashboard is the
+  worst failure mode this tool has.
 - **A patch belongs to the branch its issue is filed against.**
   `Drupal\IssueVersion` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
@@ -227,14 +267,33 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   renders `Dashboard\ModuleSummary` (one line per module), naming a module or
   passing `--all` renders the rows. The summary is aggregated from exactly the
   rows the drill-down would print, never recounted from the underlying data —
-  two counts of the same thing that can disagree are worse than one. Subjects
-  (MRs, patch issues) are counted once per module; verdicts and check evidence
-  are counted per (subject x core), because they genuinely differ per core. A dashboard row is a merge request, a patch
-  contribution, or a module failure; only the first carries a `GateVerdict`, so
-  `isReadyAuto()` is false for a patch row *by construction* rather than by a
-  check someone has to remember. `Results\ResultKey` keeps MR and patch results
-  in separate path namespaces (`<iid>` vs `patch-<nid>`) — both subjects are
-  identified by a number and nothing keeps the ranges apart, and a patch verdict
+  two counts of the same thing that can disagree are worse than one. **A row is
+  one issue's work on one module branch** — identity is `(module, issue,
+  branch)` and evidence is per core (`docs/dashboard-row-model.md`). That
+  removed two multipliers which added rows without adding information: an issue
+  appeared once per merge request *and* again as a patch row, which is why
+  `RowFactory` carried a filter whose only job was suppressing the duplicate it
+  had just made; and every row was multiplied by the module's tracked cores
+  even though a branch supports several at once. The one multiplier left is
+  real — an issue backported to two branches is two pieces of work — and a
+  merge request claiming no listed issue keeps a row of its own, which 33 of
+  pathauto's 162 do. Subjects (MRs, patch issues) are still counted once per
+  module. A row with no *open* merge request carries no `GateVerdict`, so
+  `isReadyAuto()` is false for it *by construction* rather than by a check
+  someone has to remember. `RowAssembler` has no snapshot and so groups
+  nothing — one row per merge request, which is what the fast lane wants; the
+  *classification* is identical, which is the part that must not drift.
+  The ISSUE cell used to be filled by a per-merge-request drupal.org lookup —
+  **155 requests on a pathauto refresh**, plus an attachment lookup per file on
+  each. A row *is* an issue now and takes it from the open-issue scan the
+  snapshot already holds, so that fetch and `ModuleSnapshot::issue()` are gone.
+  Verified end to end against live pathauto data rather than fixtures
+  (`docs/dashboard-row-model.md` §7): 244 rows became 115, and of the 48
+  merge requests left unpaired, 46 name an issue that is genuinely closed and
+  2 name none — no pairing misses.
+  `Results\ResultKey` keeps MR and patch results in separate path namespaces
+  (`<iid>` vs `patch-<nid>`) — both subjects are identified by a number and
+  nothing keeps the ranges apart, and a patch verdict
   read as an MR verdict would put unmergeable evidence in front of the
   fast-lane gate. Patch results are keyed by `Patches\PatchRevision` (a hash of
   the patch's source URL, not its bytes — the dashboard must judge staleness
@@ -339,7 +398,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6602/6602), methods (755/755) and classes (152/152), 1377 tests.
+lines (6923/6923), methods (795/795) and classes (154/154), 1432 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

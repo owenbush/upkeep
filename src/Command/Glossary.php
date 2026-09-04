@@ -11,7 +11,7 @@ namespace Upkeep\Command;
  * tokens, CI states, local-check states, contribution kinds, drupal.org issue
  * statuses — and some words appear in more than one with different meanings
  * ("review" is both a gate verdict and an issue status). A maintainer reading
- * `patch↑` had no way to find out what it meant: it was in the source and
+ * The patch arrow had no way to find out what it meant: it was in the source and
  * nowhere else.
  *
  * So the definitions live in one place, as data, and `upkeep explain` prints
@@ -91,10 +91,25 @@ final readonly class Glossary
             ],
 
             // ------------------------------------------------------ the cells
-            'patch↑' => [
+            'ISSUE' => [
+                'The drupal.org issue this row is about, and the status drupal.org has it in. An en dash means a '
+                    . 'merge request that claims no issue — a fifth of them do.',
+                'dashboard column',
+            ],
+            'VERSION' => [
+                'The module branch the row\'s work targets — 1.0.x, 8.x-1.x. Not a core version: one branch '
+                    . 'supports several cores at once, which is why the cores live in LOCAL instead.',
+                'dashboard column',
+            ],
+            'PATCH' => [
+                'How many patch files the issue carries. An arrow beside the count means the newest of them '
+                    . 'postdates the merge request.',
+                'dashboard column',
+            ],
+            '↑' => [
                 'The issue carries a patch newer than the merge request\'s last update. Someone posted a patch '
                     . 'after the branch was last touched, so the branch may be behind the issue.',
-                'dashboard ISSUE',
+                'dashboard PATCH',
             ],
             'CI' => [
                 "drupal.org's pipeline for the branch: pass, fail, a raw pipeline state, or an en dash when no "
@@ -103,8 +118,10 @@ final readonly class Glossary
                 'dashboard column',
             ],
             'LOCAL' => [
-                'Your own cached check result: pass, fail, stale, or an en dash for never checked. It is what '
-                    . '`upkeep check` and `upkeep patch:check` write.',
+                'Your own cached check results, across every core the branch supports, with the worst case '
+                    . 'winning and naming its core: "pass 10,11", "fail 10", "pass 11 · ? 10" for a core nobody '
+                    . 'has checked. An en dash means never checked at all. It is what `upkeep check` and '
+                    . '`upkeep patch:check` write, and -v lists every core separately.',
                 'dashboard column',
             ],
             'stale' => [
@@ -116,6 +133,11 @@ final readonly class Glossary
                 'The command to run for that row. Every row has one — red CI and draft describe the row without '
                     . 'changing what to do about it, since both are exactly when you want the branch locally.',
                 'dashboard column',
+            ],
+            'BRANCHES' => [
+                'The module branches that module\'s rows sit on. It named the tracked core versions until '
+                    . 'those stopped being what a row is about.',
+                'dashboard overview column',
             ],
             'PATCH ISSUES' => [
                 'How many *issues* on that module carry patch files. A row\'s own patch count is a number of '
@@ -159,7 +181,9 @@ final readonly class Glossary
                 'dashboard STATUS (-v)',
             ],
             'local-missing' => [
-                'A gate reason: no cached check result for this (module, MR, core).',
+                'A gate reason: at least one core the branch supports has no cached check result. Every '
+                    . 'applicable core must be green for the fast lane, so a merge request checked on one core '
+                    . 'and not another is denied — it used to be admitted on the half that was checked.',
                 'dashboard STATUS (-v)',
             ],
             'local-stale' => [

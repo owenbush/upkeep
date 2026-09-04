@@ -11,6 +11,7 @@ use Upkeep\Adapter\CheckStatus;
 use Upkeep\Adapter\CheckType;
 use Upkeep\Cockpit\Module;
 use Upkeep\Dashboard\DashboardRow;
+use Upkeep\Dashboard\LocalEvidence;
 use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Dashboard\RowFactory;
 use Upkeep\Drupal\Issue;
@@ -26,10 +27,16 @@ use Upkeep\Results\ResultsCache;
 /**
  * Patch contributions as dashboard rows.
  *
- * The load-bearing property is negative: a patch row must never look mergeable.
- * The fast-lane path partitions on isReadyAuto(), and a patch is not something
- * upkeep can merge at all — so the row carries no gate verdict, and its check
- * evidence lives in a namespace the gate never reads.
+ * The load-bearing property is negative: a row carrying only patches must
+ * never look mergeable. The fast-lane path partitions on isReadyAuto(), and a
+ * patch is not something upkeep can merge at all — so such a row carries no
+ * gate verdict, and its check evidence lives in a namespace the gate never
+ * reads.
+ *
+ * A patch is no longer a *kind* of row. An issue with a patch in comment 4 and
+ * a merge request in comment 9 is one piece of work that arrived twice, so it
+ * is one row with both columns filled — where it used to be two rows and a
+ * filter to suppress the duplicate.
  */
 final class PatchRowTest extends TestCase
 {
@@ -94,10 +101,14 @@ final class PatchRowTest extends TestCase
     {
         return new ModuleSnapshot(
             new \DateTimeImmutable('2026-08-01T10:00:00+00:00'),
-            ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
+            [
+                'id' => 42,
+                'path_with_namespace' => 'project/widget',
+                'path' => 'widget',
+                'default_branch' => '1.0.x',
+            ],
             array_map(static fn (MergeRequest $mr): array => $mr->toApiArray(), $mrs),
-            [],
-            array_map(static fn (Issue $i): array => $i->toApiArray(), $patchIssues),
+            array_map(static fn (Issue $i): array => $i->toApiArray(), $patchIssues)
         );
     }
 
@@ -109,6 +120,33 @@ final class PatchRowTest extends TestCase
     private function factory(): RowFactory
     {
         return new RowFactory(new ResultsCache($this->resultsDir));
+    }
+
+    /**
+     * A row for an issue whose work is patches only: no project, no open merge
+     * request, and so no gate verdict.
+     *
+     * @param list<string> $cores
+     */
+    private static function patchRow(
+        Contribution $contribution,
+        ?CachedResult $local,
+        array $cores = ['11'],
+    ): DashboardRow {
+        $byCore = [];
+        foreach ($cores as $core) {
+            $byCore[$core] = $local;
+        }
+
+        return DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            null,
+            null,
+            LocalEvidence::of($byCore, $contribution->currentRevision()),
+            null,
+        );
     }
 
     /**
@@ -127,13 +165,13 @@ final class PatchRowTest extends TestCase
             new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'ok', 1.0)]),
         );
 
-        $row = DashboardRow::forPatch('11', $contribution, $green);
+        $row = self::patchRow($contribution, $green);
 
         self::assertFalse($row->isReadyAuto(), 'A patch is not something upkeep can merge.');
         self::assertNull($row->verdict);
         self::assertNull($row->mergeRequest);
         self::assertNull($row->project);
-        self::assertSame('pass', $row->localCell());
+        self::assertSame('pass 11', $row->localCell());
     }
 
     /**
@@ -147,15 +185,17 @@ final class PatchRowTest extends TestCase
             self::patch('3597808-4.patch', 'https://example.test/b.patch'),
         ]));
 
-        $cells = DashboardRow::forPatch('11', $contribution, null)->toTableCells();
+        $cells = self::patchRow($contribution, null)->toTableCells();
 
         self::assertSame('widget', $cells[0]);
-        self::assertSame('patch', $cells[1]);
-        self::assertSame('11', $cells[2]);
-        self::assertSame('–', $cells[4], 'no pipeline');
-        self::assertSame('–', $cells[5], 'never checked');
-        self::assertStringContainsString('upkeep patch:check', $cells[7], 'and what to run about it');
-        self::assertSame('2 patches', $cells[6]);
+        self::assertSame('3597808 review', $cells[1], 'the issue, and what drupal.org says about it');
+        self::assertSame('1.0.x', $cells[2], 'the module branch, not a core version');
+        self::assertSame('–', $cells[4], 'no merge request');
+        self::assertSame('2', $cells[5], 'two patch files');
+        self::assertSame('–', $cells[6], 'no pipeline');
+        self::assertSame('–', $cells[7], 'never checked');
+        self::assertSame('2 patches', $cells[8]);
+        self::assertStringContainsString('upkeep patch:check', $cells[9], 'and what to run about it');
     }
 
     public function testThePatchRowStatusNamesAnEmptyMergeRequestBesideIt(): void
@@ -192,7 +232,7 @@ final class PatchRowTest extends TestCase
             self::patch('bot.patch', $old, 1781212289),
         ]));
 
-        self::assertSame('stale', DashboardRow::forPatch('11', $contribution, $checkedTheOldOne)->localCell());
+        self::assertSame('stale 11', self::patchRow($contribution, $checkedTheOldOne)->localCell());
     }
 
     public function testAnIssueWithNoPatchAtAllHasNoRevisionForEvidenceToMatch(): void
@@ -203,66 +243,103 @@ final class PatchRowTest extends TestCase
         self::assertSame('PATCH nothing attached', $contribution->dashboardStatus());
 
         $orphanEvidence = new CachedResult('a1b2c3d', new \DateTimeImmutable(), new CheckRunResult([]));
-        self::assertSame('stale', DashboardRow::forPatch('11', $contribution, $orphanEvidence)->localCell());
+        self::assertSame('stale 11', self::patchRow($contribution, $orphanEvidence)->localCell());
     }
 
     // --------------------------------------------------------- via the factory
 
-    public function testTheFactoryEmitsOneRowPerPatchIssuePerTrackedCore(): void
+    /**
+     * Rows the way every consumer builds them: from one snapshot.
+     *
+     * @return list<DashboardRow>
+     */
+    private function rows(Module $module, ModuleSnapshot $snapshot, ?string $versionFilter = null): array
+    {
+        return $this->factory()->rows(
+            $module,
+            $snapshot->project(),
+            $snapshot->mergeRequests(),
+            $versionFilter,
+            [],
+            $snapshot,
+        );
+    }
+
+    /**
+     * One row per patch-carrying issue, and the tracked cores are no longer a
+     * multiplier — they are the cores the row's evidence covers.
+     *
+     * This is the halving. Two issues across two tracked cores used to be four
+     * rows saying two things.
+     */
+    public function testEachPatchIssueIsOneRowWhateverCoresTheModuleTracks(): void
     {
         $snapshot = self::snapshot([
             self::issue(3597808, [self::patch('a.patch', 'https://example.test/a.patch')]),
             self::issue(3501234, [self::patch('b.patch', 'https://example.test/b.patch')]),
         ]);
 
-        $rows = $this->factory()->patchRows(self::module('10', '11'), $snapshot);
+        $rows = $this->rows(self::module('10', '11'), $snapshot);
 
-        self::assertCount(4, $rows);
+        self::assertCount(2, $rows);
         self::assertSame(
-            [[3501234, '10'], [3501234, '11'], [3597808, '10'], [3597808, '11']],
-            array_map(static fn (DashboardRow $r): array => [$r->contribution?->issue->nid, $r->core], $rows),
-            'ordered by issue nid, then tracked core',
+            [[3501234, '1.0.x'], [3597808, '1.0.x']],
+            array_map(static fn (DashboardRow $r): array => [$r->issueNid, $r->branch], $rows),
+            'ordered by issue nid; the branch is the only remaining multiplier',
         );
+        self::assertSame(['10', '11'], $rows[0]->local->cores(), 'both tracked cores, as evidence');
     }
 
     /**
-     * An issue a real branch carries already has an MR row above it; a second
-     * row for the same work would be noise. The classification is
-     * Contribution's, the same one `upkeep patches` uses, so the two views
-     * cannot disagree about what is covered.
+     * The duplication the old model created and then filtered out. An issue
+     * with a patch *and* an open merge request is one piece of work that
+     * arrived twice, so it is one row carrying both — not an MR row plus a
+     * patch row that a covered-by-a-merge-request filter has to suppress.
      */
-    public function testAnIssueCarriedByARealBranchProducesNoPatchRow(): void
+    public function testAnIssueWithBothAPatchAndAMergeRequestIsASingleRow(): void
     {
-        $covered = self::issue(3467675, []);
-        $stillOpen = self::issue(3597808, [self::patch('a.patch', 'https://example.test/a.patch')]);
-
         $snapshot = self::snapshot(
-            [$covered, $stillOpen],
+            [self::issue(3467675, [self::patch('a.patch', 'https://example.test/a.patch')])],
             [self::mr(7, 'Issue #3467675: real work', '3467675-fix', 'base', 'head')],
         );
 
-        $rows = $this->factory()->patchRows(self::module('11'), $snapshot);
+        $rows = $this->rows(self::module('11'), $snapshot);
 
         self::assertCount(1, $rows);
-        self::assertSame(3597808, $rows[0]->contribution?->issue->nid);
+        self::assertSame(3467675, $rows[0]->issueNid);
+        self::assertSame(7, $rows[0]->mergeRequest?->iid, 'the merge request is what the row acts on');
+        self::assertSame('1', $rows[0]->patchCell(), 'and the patch is a column, not a second row');
     }
 
     /**
-     * An empty MR covers nothing, so the issue's patch still needs a row —
-     * the regression the whole patch surface exists for, now visible on the
-     * dashboard rather than only in `upkeep patches`.
+     * An issue nobody has contributed to belongs in `upkeep issues`, where
+     * being unclaimed is the point. On the dashboard it would be 29 of
+     * pathauto's 93 open issues saying nothing.
      */
-    public function testAnEmptyMergeRequestStillLeavesThePatchRowInPlace(): void
+    public function testAnIssueWithNothingOpenAndNoPatchGetsNoRowAtAll(): void
+    {
+        $snapshot = self::snapshot([self::issue(3597808, [])]);
+
+        self::assertSame([], $this->rows(self::module('11'), $snapshot));
+    }
+
+    /**
+     * An empty MR covers nothing, so the patch beside it is still the story —
+     * the regression the whole patch surface exists for. One row now says both
+     * things at once: an empty merge request, and a patch nobody has applied.
+     */
+    public function testAnEmptyMergeRequestAndAPatchAreOneRowSayingBoth(): void
     {
         $snapshot = self::snapshot(
             [self::issue(3597808, [self::patch('a.patch', 'https://example.test/a.patch')])],
             [self::mr(1, 'Issue #3597808: bot', '3597808-bot', 'same', 'same')],
         );
 
-        $rows = $this->factory()->patchRows(self::module('11'), $snapshot);
+        $rows = $this->rows(self::module('11'), $snapshot);
 
         self::assertCount(1, $rows);
-        self::assertStringContainsString('empty', $rows[0]->statusCell());
+        self::assertStringContainsString('empty', $rows[0]->mergeRequestCell());
+        self::assertSame('1', $rows[0]->patchCell());
     }
 
     /**
@@ -279,12 +356,12 @@ final class PatchRowTest extends TestCase
         $cache->store('widget', ResultKey::mergeRequest(3597808), '11', str_repeat('a', 40), $red);
         $cache->store('widget', ResultKey::patch(3597808), '11', PatchRevision::of($url), $red);
 
-        $rows = $this->factory()->patchRows(
+        $rows = $this->rows(
             self::module('11'),
             self::snapshot([self::issue(3597808, [self::patch('a.patch', $url)])]),
         );
 
-        self::assertSame('fail', $rows[0]->localCell());
+        self::assertSame('fail 11', $rows[0]->localCell());
 
         $asMr = $cache->latest('widget', ResultKey::mergeRequest(3597808), '11');
         $asPatch = $cache->latest('widget', ResultKey::patch(3597808), '11');
@@ -297,11 +374,11 @@ final class PatchRowTest extends TestCase
         );
     }
 
-    public function testAVersionFilterThatMatchesNothingEmitsNoPatchRows(): void
+    public function testAVersionFilterThatMatchesNothingEmitsNoRows(): void
     {
         $snapshot = self::snapshot([self::issue(3597808, [self::patch('a.patch', 'https://example.test/a.patch')])]);
 
-        self::assertSame([], $this->factory()->patchRows(self::module('11'), $snapshot, '9'));
+        self::assertSame([], $this->rows(self::module('11'), $snapshot, '9'));
     }
 
     /**
@@ -321,7 +398,7 @@ final class PatchRowTest extends TestCase
 
         self::assertNotNull($legacy);
         self::assertSame([], $legacy->patchIssues());
-        self::assertSame([], $this->factory()->patchRows(self::module('11'), $legacy));
+        self::assertSame([], $this->rows(self::module('11'), $legacy));
     }
 
     public function testPatchIssuesSurviveTheSnapshotRoundTrip(): void

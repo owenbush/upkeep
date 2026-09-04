@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Upkeep\Dashboard;
 
 use Upkeep\Gate\GateStatus;
-use Upkeep\Patches\Contribution;
 
 /**
  * What a row *is*, in a phrase, and what to run about it.
@@ -50,9 +49,9 @@ final readonly class Guidance
             return new self('unavailable', sprintf('upkeep dashboard --refresh=%s', $row->module));
         }
 
-        return $row->contribution !== null
-            ? self::forPatch($row, $row->contribution)
-            : self::forMergeRequest($row);
+        return $row->mergeRequest !== null
+            ? self::forMergeRequest($row)
+            : self::forDormantIssue($row);
     }
 
     /**
@@ -62,7 +61,7 @@ final readonly class Guidance
     {
         $verdict = $row->verdict;
         $reasons = $verdict === null ? [] : $verdict->reasons;
-        $iid = $row->mergeRequest === null ? 0 : $row->mergeRequest->iid;
+        $iid = $row->requireMergeRequest()->iid;
 
         if ($verdict?->status === GateStatus::ReadyAuto) {
             return new self('ready to merge', 'upkeep merge --fast-lane');
@@ -76,6 +75,16 @@ final readonly class Guidance
                 \count($failed) === 1 ? $failed[0] . ' failed' : \count($failed) . ' checks failed',
                 sprintf('upkeep needs-work %s %d', $row->module, $iid),
             );
+        }
+
+        // A landing outranks everything else this row could say. An open
+        // issue whose work is already merged is the one thing a maintainer
+        // cannot read off the row at all, and it is exactly what a promoted-
+        // and-merged patch leaves behind: the bot's draft still sitting there,
+        // looking like the only contribution on the issue.
+        $landing = self::landing($row, self::checkCommand($row, $iid));
+        if ($landing !== null) {
+            return $landing;
         }
 
         // Red CI and draft are *modifiers*: they change what the row is, not
@@ -116,42 +125,81 @@ final readonly class Guidance
     }
 
     /**
-     * A patch contribution. There is no gate here — nothing about a patch is
-     * mergeable — so the ranking is simply whether it has been checked.
+     * An issue with nothing of its own open: patches waiting, work already
+     * landed, or both.
+     *
+     * There is no gate here — nothing about a patch is mergeable — so the
+     * ranking is what has already happened, then whether the patch has been
+     * checked.
      */
-    private static function forPatch(DashboardRow $row, Contribution $contribution): self
+    private static function forDormantIssue(DashboardRow $row): self
     {
-        $nid = $contribution->issue->nid;
-        $patches = $contribution->issue->patchCount();
-        $local = $row->localCell();
+        $nid = $row->issueNid ?? 0;
+        $next = self::patchCheckCommand($row, $nid);
 
-        if ($patches === 0) {
-            return new self('no patch attached', sprintf('upkeep issue %s %d', $row->module, $nid));
+        $landing = self::landing($row, $next);
+        if ($landing !== null) {
+            return $landing;
         }
 
-        $status = $patches === 1 ? '1 patch' : $patches . ' patches';
+        $status = $row->patchCount === 1 ? '1 patch' : $row->patchCount . ' patches';
+
         // An empty merge request beside a patch is the thing worth flagging:
         // the row looks covered and is not.
-        if (str_contains($contribution->mergeRequestCell(), 'empty')) {
+        if (str_contains($row->mergeRequestCell(), 'empty')) {
             $status .= ', empty MR';
         }
 
-        if ($local === 'pass') {
-            return new self($status . ', checked', sprintf('upkeep patch:apply %s %d', $row->module, $nid));
+        // Green on every applicable core, and stricter than it reads: a patch
+        // checked on 11 and never checked on 10 is not "checked".
+        if ($row->local->allGreen()) {
+            return new self(
+                $status . ', checked',
+                sprintf('upkeep patch:apply %s %d', $row->module, $nid),
+            );
         }
-        if ($local === 'fail') {
-            return new self($status . ', failed', sprintf('upkeep issue %s %d', $row->module, $nid));
+
+        // A failing patch is work to pick up rather than a verdict to deliver:
+        // `start` opens a branch on the issue, which is what a maintainer does
+        // next with a patch that does not hold up.
+        if ($row->local->anyFailed()) {
+            return new self($status . ', failed', sprintf('upkeep start %s %d', $row->module, $nid));
+        }
+
+        return new self($row->local->anyStale() ? $status . ', stale check' : $status, $next);
+    }
+
+    /**
+     * The landing phrase, shared by both row shapes, or null when nothing on
+     * the issue has merged.
+     *
+     * @param string $ifNewerWork what to run when the landing is not the last
+     *                            word — a bot that posts again after its work
+     *                            merged has raised new work to check
+     */
+    private static function landing(DashboardRow $row, string $ifNewerWork): ?self
+    {
+        if ($row->landed === null) {
+            return null;
+        }
+
+        $merged = substr((string) $row->landed->mergedAt, 0, 10);
+
+        if ($row->newerWorkSinceLanding) {
+            return new self(sprintf('merged %s, newer work since', $merged), $ifNewerWork);
         }
 
         return new self(
-            $local === 'stale' ? $status . ', stale check' : $status,
-            self::patchCheckCommand($row, $nid),
+            sprintf('merged %s', $merged),
+            sprintf('upkeep issue %s %d', $row->module, $row->landed->iid),
         );
     }
 
     /**
-     * The check commands carry `--version` only when the row is one of
-     * several: a module tracking one core does not need telling which.
+     * The check commands carry `--version` only when a core needs attention:
+     * a row whose evidence is green everywhere has nothing to re-run, and the
+     * core named is the one the LOCAL cell named, so the table and the command
+     * cannot disagree about which core is the problem.
      */
     private static function checkCommand(DashboardRow $row, int $iid): string
     {
@@ -165,7 +213,9 @@ final readonly class Guidance
 
     private static function coreSuffix(DashboardRow $row): string
     {
-        return $row->core === '-' ? '' : ' --version=' . $row->core;
+        $core = $row->local->attentionCore();
+
+        return $core === null ? '' : ' --version=' . $core;
     }
 
     /**

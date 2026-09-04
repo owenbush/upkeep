@@ -15,19 +15,18 @@ use Upkeep\Gate\GateStatus;
  * same thing that can disagree are worse than one count.
  *
  * The overview exists because per-module volume is real: a mature contrib
- * project can carry a hundred open merge requests and forty Needs Review /
- * RTBC issues, and multiplying that by tracked core versions puts one module
- * past two hundred rows. A cockpit-wide detailed table stopped being readable
- * some time before it stopped being printable.
+ * project can carry a hundred open merge requests and forty open issues, and
+ * a cockpit-wide detailed table stopped being readable some time before it
+ * stopped being printable.
  */
 final readonly class ModuleSummary
 {
     /**
-     * @param list<string> $cores tracked core versions this run covered
+     * @param list<string> $branches the module branches this run's rows sit on
      */
     private function __construct(
         public string $module,
-        public array $cores,
+        public array $branches,
         public int $mergeRequests,
         public int $readyAuto,
         public int $review,
@@ -43,7 +42,7 @@ final readonly class ModuleSummary
      */
     public static function fromRows(string $module, array $rows): self
     {
-        $cores = [];
+        $branches = [];
         $mrs = [];
         $patches = [];
         $readyAuto = 0;
@@ -57,40 +56,42 @@ final readonly class ModuleSummary
                 $failed = true;
                 continue;
             }
-            if ($row->core !== '-') {
-                // Keyed *and* valued by the core version: a numeric-looking
+            if ($row->branch !== '-') {
+                // Keyed *and* valued by the branch name: a numeric-looking
                 // array key is coerced to int by PHP, and array_keys() would
                 // then hand back list<int> where list<string> is declared.
-                $cores[$row->core] = $row->core;
+                $branches[$row->branch] = $row->branch;
             }
 
-            // Counted per distinct subject, not per row: a merge request
-            // tracked across two core versions is one merge request with two
-            // sets of evidence, and reporting it as two would overstate the
-            // queue by however many cores the module tracks.
-            if ($row->mergeRequest !== null) {
-                $mrs[$row->mergeRequest->iid] = true;
+            // Counted per distinct subject, not per row. Rows are no longer
+            // multiplied by core, but an issue backported to two branches is
+            // still two rows over one set of merge requests.
+            foreach ($row->mergeRequests as $mergeRequest) {
+                if ($mergeRequest->state !== 'merged') {
+                    $mrs[$mergeRequest->iid] = true;
+                }
             }
-            if ($row->contribution !== null) {
-                $patches[$row->contribution->issue->nid] = true;
+            if ($row->issueNid !== null && $row->patchCount > 0) {
+                $patches[$row->issueNid] = true;
             }
 
-            // Verdicts and evidence *are* per (subject x core): the same branch
-            // can be green on 10 and red on 11, and that is the whole point of
-            // tracking both.
             $status = $row->verdict?->status;
             $readyAuto += $status === GateStatus::ReadyAuto ? 1 : 0;
             $review += $status === GateStatus::Review ? 1 : 0;
             $blocked += $status === GateStatus::Blocked ? 1 : 0;
 
-            if (\in_array($row->localCell(), ['–', 'stale'], true)) {
+            // A row counts as unchecked when *any* applicable core lacks
+            // fresh evidence. Stricter than the cell it summarises, and
+            // deliberately: the number exists to say how much work stands
+            // between the queue and a verdict.
+            if ($row->local->anyUnchecked() || $row->local->anyStale()) {
                 ++$unchecked;
             }
         }
 
         return new self(
             $module,
-            array_values($cores),
+            array_values($branches),
             \count($mrs),
             $readyAuto,
             $review,
@@ -102,7 +103,7 @@ final readonly class ModuleSummary
     }
 
     /**
-     * The overview row's cells: MODULE, CORES, MRS, PATCH ISSUES, READY,
+     * The overview row's cells: MODULE, BRANCHES, MRS, PATCH ISSUES, READY,
      * CI FAILED, UNCHECKED, CACHED. The cache age is the caller's — it comes
      * from the snapshot, not from the rows.
      *
@@ -130,7 +131,7 @@ final readonly class ModuleSummary
 
         return [
             $this->module,
-            $this->cores === [] ? '–' : implode(',', $this->cores),
+            $this->branches === [] ? '–' : implode(',', $this->branches),
             (string) $this->mergeRequests,
             (string) $this->patchIssues,
             self::count($this->readyAuto),

@@ -18,19 +18,21 @@ use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\ModuleSnapshot;
 use Upkeep\Dashboard\ModuleSummary;
 use Upkeep\Dashboard\RowFactory;
+use Upkeep\Drupal\CoreCompatibility;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\Issue;
-use Upkeep\Drupal\IssueReference;
 use Upkeep\Drupal\IssueStatus;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
+use Upkeep\Gitlab\Project;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
 
 /**
- * One table of every open MR across all registered modules and tracked core
- * versions: MODULE, MR, ISSUE, CORE, TITLE, CI, LOCAL, STATUS.
+ * One table of everything open across all registered modules, a row per
+ * (issue, module branch): MODULE, ISSUE, VERSION, TITLE, MR, PATCH, CI,
+ * LOCAL, STATUS, NEXT.
  *
  * Remote data (GitLab MRs, drupal.org issues) is cached per module under
  * `<cockpit>/cache/dashboard/`. On repeat runs the cached snapshot is used;
@@ -197,15 +199,18 @@ final class DashboardCommand extends UpkeepCommand
                     $snapshot->project(),
                     $snapshot->mergeRequests(),
                     $versionFilter,
+                    snapshot: $snapshot,
                 ) as $row
             ) {
-                $rows[] = $row;
-            }
-
-            if ($withPatches) {
-                foreach ($rowFactory->patchRows($module, $snapshot, $versionFilter) as $patchRow) {
-                    $rows[] = $patchRow;
+                // --no-patches keeps the merge-request-only view the dashboard
+                // had before patch contributions were rows. It is now a filter
+                // over one row set rather than a second one left out: a row
+                // carrying both a patch and a merge request is a merge-request
+                // row that also mentions a patch.
+                if (!$withPatches && $row->mergeRequest === null && $row->moduleFailure === null) {
+                    continue;
                 }
+                $rows[] = $row;
             }
         }
 
@@ -230,7 +235,7 @@ final class DashboardCommand extends UpkeepCommand
         }
 
         if ($detailed) {
-            $this->renderTable($output, $rows, $snapshots, $output->isVerbose());
+            self::renderTable($output, $rows, $output->isVerbose());
             self::renderFooter($output, $rows, $snapshots);
             self::renderDetailHints($output, $rows, $output->isVerbose());
 
@@ -274,14 +279,14 @@ final class DashboardCommand extends UpkeepCommand
 
         ColumnTable::render(
             $output,
-            ['MODULE', 'CORES', 'MRS', 'PATCH ISSUES', 'READY', 'CI FAILED', 'UNCHECKED', 'CACHED'],
+            ['MODULE', 'BRANCHES', 'MRS', 'PATCH ISSUES', 'READY', 'CI FAILED', 'UNCHECKED', 'CACHED'],
             $cells,
             self::colorOverviewCells(...),
         );
     }
 
     /**
-     * @param list<string> $cells [MODULE, CORES, MRS, PATCH ISSUES, READY, CI FAILED, UNCHECKED, CACHED]
+     * @param list<string> $cells [MODULE, BRANCHES, MRS, PATCH ISSUES, READY, CI FAILED, UNCHECKED, CACHED]
      * @return list<string>
      */
     private static function colorOverviewCells(array $cells): array
@@ -367,68 +372,27 @@ final class DashboardCommand extends UpkeepCommand
     }
 
     /**
-     * @param list<DashboardRow>            $rows
-     * @param array<string, ModuleSnapshot> $snapshots
+     * @param list<DashboardRow> $rows
      */
-    private function renderTable(
+    private static function renderTable(
         OutputInterface $output,
         array $rows,
-        array $snapshots,
         bool $verbose = false,
     ): void {
         $cells = [];
         $groups = [];
         foreach ($rows as $row) {
-            $rowCells = $row->toTableCells($verbose);
-            array_splice($rowCells, 2, 0, [$this->issueCell($row, $snapshots)]);
-            $cells[] = $rowCells;
+            $cells[] = $row->toTableCells($verbose);
             $groups[] = $row->module;
         }
 
         ColumnTable::render(
             $output,
-            ['MODULE', 'MR', 'ISSUE', 'CORE', 'TITLE', 'CI', 'LOCAL', 'STATUS', 'NEXT'],
+            ['MODULE', 'ISSUE', 'VERSION', 'TITLE', 'MR', 'PATCH', 'CI', 'LOCAL', 'STATUS', 'NEXT'],
             $cells,
             self::colorCells(...),
             $groups,
         );
-    }
-
-    /**
-     * The ISSUE cell: the linked drupal.org issue number, flagged when the
-     * issue carries a patch newer than the merge request's last update.
-     *
-     * @param array<string, ModuleSnapshot> $snapshots
-     */
-    private function issueCell(DashboardRow $row, array $snapshots): string
-    {
-        if ($row->contribution !== null) {
-            return (string) $row->contribution->issue->nid;
-        }
-        if ($row->mergeRequest === null) {
-            return '–';
-        }
-
-        $mergeRequest = $row->mergeRequest;
-        $nid = IssueReference::extract(
-            $mergeRequest->title,
-            $mergeRequest->sourceBranch,
-            $mergeRequest->description,
-        );
-        if ($nid === null) {
-            return '–';
-        }
-
-        $latestPatch = ($snapshots[$row->module] ?? null)?->issue($nid)?->latestPatch();
-        if ($latestPatch === null || $latestPatch->timestamp <= 0 || $mergeRequest->updatedAt === null) {
-            return (string) $nid;
-        }
-
-        $mrUpdated = strtotime($mergeRequest->updatedAt);
-
-        return $mrUpdated !== false && $latestPatch->timestamp > $mrUpdated
-            ? $nid . ' patch↑'
-            : (string) $nid;
     }
 
     /**
@@ -440,11 +404,13 @@ final class DashboardCommand extends UpkeepCommand
         $mrKeys = [];
         $patchKeys = [];
         foreach ($rows as $row) {
-            if ($row->mergeRequest !== null) {
-                $mrKeys[$row->module . ':' . $row->mergeRequest->iid] = true;
+            foreach ($row->mergeRequests as $mergeRequest) {
+                if ($mergeRequest->state !== 'merged') {
+                    $mrKeys[$row->module . ':' . $mergeRequest->iid] = true;
+                }
             }
-            if ($row->contribution !== null) {
-                $patchKeys[$row->module . ':' . $row->contribution->issue->nid] = true;
+            if ($row->issueNid !== null && $row->patchCount > 0) {
+                $patchKeys[$row->module . ':' . $row->issueNid] = true;
             }
         }
         $moduleNames = array_unique(array_map(static fn (DashboardRow $r): string => $r->module, $rows));
@@ -495,24 +461,30 @@ final class DashboardCommand extends UpkeepCommand
 
         $projectData = $project->toApiArray();
         $mrData = [];
-        $issueNids = [];
+        $branches = $project->defaultBranch !== '' ? [$project->defaultBranch => true] : [];
 
         foreach ($list->all() as $listed) {
             $detail = $client->mergeRequest($project, $listed->iid);
             $mr = $detail instanceof ApiFailure ? $listed : $detail;
             $mrData[] = $mr->toApiArray();
+            $branches[$mr->targetBranch] = true;
+        }
 
-            $nid = IssueReference::extract($mr->title, $mr->sourceBranch, $mr->description);
-            if ($nid !== null) {
-                $issueNids[$nid] = true;
+        // Merged ones too. Without them an issue whose work has already
+        // landed reads exactly like one nobody has touched — and a promoted
+        // patch that was fixed and merged leaves the bot's draft behind,
+        // looking like the only contribution there is.
+        $merged = $client->mergedMergeRequests($project);
+        $mergedData = [];
+        if (!$merged instanceof ApiFailure) {
+            foreach ($merged->all() as $mr) {
+                $mergedData[] = $mr->toApiArray();
+                $branches[$mr->targetBranch] = true;
             }
         }
 
-        $issueData = [];
-        foreach (array_keys($issueNids) as $nid) {
-            $issue = $drupal->issue($nid);
-            $issueData[$nid] = $issue?->toApiArray();
-        }
+        $forkNids = $client->issueForkNids($project);
+        $forkNids = $forkNids instanceof ApiFailure ? [] : $forkNids;
 
         // Every *open* issue, not only the two statuses a contribution sits
         // in. One snapshot serves both questions a maintainer asks — "what is
@@ -530,60 +502,108 @@ final class DashboardCommand extends UpkeepCommand
             new \DateTimeImmutable(),
             $projectData,
             $mrData,
-            $issueData,
             $patchIssueData,
+            $mergedData,
+            $forkNids,
+            self::coreConstraints($client, $project, $module, array_keys($branches)),
         );
     }
 
     /**
-     * @param list<string> $cells [MODULE, MR, ISSUE, CORE, TITLE, CI, LOCAL, STATUS, NEXT]
+     * What each branch declares about core, read from its own info.yml.
+     *
+     * One request per branch a row could sit on, which on a real module is one
+     * or two — measured on pathauto, every open and merged merge request
+     * targets 8.x-1.x. It replaces a far larger fetch: the per-merge-request
+     * issue lookup this used to do cost 155 requests on pathauto alone, plus
+     * an attachment lookup per file on each, for a cell that is now the row's
+     * own identity.
+     *
+     * Every failure is silent and falls back to the tracked cores: a branch
+     * with no info.yml at that path (token's 691078-field-tokens has none), a
+     * closed endpoint, a module whose machine name is not its project path.
+     * Missing evidence about a branch is not evidence that the branch supports
+     * nothing, and a module vanishing from the dashboard is the worst failure
+     * this tool has.
+     *
+     * @param list<string> $branches
+     * @return array<array-key, string> branch => raw constraint
+     */
+    private static function coreConstraints(
+        GitlabClient $client,
+        Project $project,
+        Module $module,
+        array $branches,
+    ): array {
+        $constraints = [];
+        foreach ($branches as $branch) {
+            $info = $client->fileContents($project, $module->name . '.info.yml', $branch);
+            $constraint = $info === null ? null : CoreCompatibility::constraintIn($info);
+            if ($constraint !== null) {
+                $constraints[$branch] = $constraint;
+            }
+        }
+
+        return $constraints;
+    }
+
+    /**
+     * @param list<string> $cells [MODULE, ISSUE, VERSION, TITLE, MR, PATCH, CI, LOCAL, STATUS, NEXT]
      * @return list<string>
      */
     private static function colorCells(array $cells): array
     {
         $fmt = $cells;
 
-        // ISSUE (index 2) — highlight the patch↑ flag
-        if (str_contains($cells[2], 'patch↑')) {
-            $fmt[2] = str_replace('patch↑', '<fg=yellow>patch↑</>', $cells[2]);
+        // MR (index 4) — a landing is the one cell that says the work is done.
+        if (str_contains($cells[4], 'merged')) {
+            $fmt[4] = '<fg=green>' . $cells[4] . '</>';
         }
 
-        // CI (index 5)
-        $fmt[5] = match (true) {
-            str_starts_with($cells[5], 'pass') => '<fg=green>' . $cells[5] . '</>',
-            str_starts_with($cells[5], 'fail') => '<fg=red>' . $cells[5] . '</>',
-            $cells[5] === '–' => '<fg=gray>' . $cells[5] . '</>',
-            default => $cells[5],
+        // PATCH (index 5) — highlight the flag, not the count: the number is
+        // context, the arrow is the claim that the branch is behind the issue.
+        $fmt[5] = str_contains($cells[5], '↑')
+            ? str_replace('↑', '<fg=yellow>↑</>', $cells[5])
+            : ($cells[5] === '–' ? '<fg=gray>–</>' : $cells[5]);
+
+        // CI (index 6)
+        $fmt[6] = match (true) {
+            str_starts_with($cells[6], 'pass') => '<fg=green>' . $cells[6] . '</>',
+            str_starts_with($cells[6], 'fail') => '<fg=red>' . $cells[6] . '</>',
+            $cells[6] === '–' => '<fg=gray>' . $cells[6] . '</>',
+            default => $cells[6],
         };
 
-        // LOCAL (index 6). Unlike CI and STATUS this cell has a closed set of
-        // values — DashboardRow::localCell() returns pass, fail, stale or the
-        // en dash — so "anything else" is the muted case rather than an
-        // unreachable arm left over from a wider vocabulary.
-        $fmt[6] = match ($cells[6]) {
-            'pass' => '<fg=green>' . $cells[6] . '</>',
-            'fail' => '<fg=red>' . $cells[6] . '</>',
-            default => '<fg=gray>' . $cells[6] . '</>',
+        // LOCAL (index 7). The cell now carries the cores it is about —
+        // "pass 10,11", "fail 10", "pass 11 · ? 10" — so it is matched on its
+        // leading word rather than compared whole. A partial pass is amber,
+        // not green: it names a core nobody checked.
+        $fmt[7] = match (true) {
+            str_contains($cells[7], '·') => '<fg=yellow>' . $cells[7] . '</>',
+            str_starts_with($cells[7], 'pass') => '<fg=green>' . $cells[7] . '</>',
+            str_starts_with($cells[7], 'fail') => '<fg=red>' . $cells[7] . '</>',
+            default => '<fg=gray>' . $cells[7] . '</>',
         };
 
-        // STATUS (index 7). Matched on both vocabularies, because -v swaps
+        // STATUS (index 8). Matched on both vocabularies, because -v swaps
         // the phrase for the gate's own tokens and both should read the same
         // way: green means go, red means stopped, amber means your move.
-        $fmt[7] = match (true) {
-            str_starts_with($cells[7], 'READY-AUTO'),
-            str_starts_with($cells[7], 'ready to merge') => '<fg=green>' . $cells[7] . '</>',
-            str_starts_with($cells[7], 'BLOCKED'),
-            str_starts_with($cells[7], 'conflicts'),
-            str_contains($cells[7], 'failed') => '<fg=red>' . $cells[7] . '</>',
-            str_starts_with($cells[7], 'REVIEW'),
-            str_starts_with($cells[7], 'needs'),
-            str_starts_with($cells[7], 'checks are stale') => '<fg=yellow>' . $cells[7] . '</>',
-            default => $cells[7],
+        $fmt[8] = match (true) {
+            str_starts_with($cells[8], 'READY-AUTO'),
+            str_starts_with($cells[8], 'merged'),
+            str_starts_with($cells[8], 'ready to merge') => '<fg=green>' . $cells[8] . '</>',
+            str_starts_with($cells[8], 'BLOCKED'),
+            str_starts_with($cells[8], 'conflicts'),
+            str_contains($cells[8], 'failed') => '<fg=red>' . $cells[8] . '</>',
+            str_starts_with($cells[8], 'REVIEW'),
+            str_starts_with($cells[8], 'needs'),
+            str_starts_with($cells[8], 'checks are stale') => '<fg=yellow>' . $cells[8] . '</>',
+            default => $cells[8],
         };
 
-        // NEXT (index 8) — always a command, and the point of the row, so it
+        // NEXT (index 9) — always a command, and the point of the row, so it
         // is the thing that stands out.
-        $fmt[8] = '<fg=cyan>' . $cells[8] . '</>';
+        $fmt[9] = '<fg=cyan>' . $cells[9] . '</>';
 
         // Written back by index, so the result is repacked into a list:
         // ColumnTable's colouriser contract is list-in, list-out.

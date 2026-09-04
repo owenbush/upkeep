@@ -48,8 +48,7 @@ final class DashboardCacheTest extends TestCase
                     'sha' => 'abc',
                     'web_url' => 'https://example.com/mr/1',
                 ],
-            ],
-            [],
+            ]
         );
     }
 

@@ -41,7 +41,7 @@ final class RowAssemblerTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->resultsDir));
     }
 
-    public function testEveryOpenMergeRequestBecomesARowPerTrackedCoreOrderedByModule(): void
+    public function testEveryOpenMergeRequestBecomesOneRowWhateverCoresAreTracked(): void
     {
         $assembler = $this->assembler([
             self::json(self::projectPayload()),
@@ -52,9 +52,11 @@ final class RowAssemblerTest extends TestCase
         $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['10', '11'])]);
 
         self::assertSame(
-            [['widget', '10'], ['widget', '11']],
-            array_map(static fn ($row): array => [$row->module, $row->core], $rows),
+            [['widget', '1.x']],
+            array_map(static fn ($row): array => [$row->module, $row->branch], $rows),
+            'one row, and the tracked cores are its evidence rather than a multiplier',
         );
+        self::assertSame(['10', '11'], $rows[0]->local->cores());
         self::assertSame(7, $rows[0]->requireMergeRequest()->iid);
         self::assertSame('pass', $rows[0]->ciCell(), 'The detail fetch supplies head_pipeline.');
     }
@@ -66,7 +68,7 @@ final class RowAssemblerTest extends TestCase
         $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['11'])]);
 
         self::assertCount(1, $rows);
-        self::assertSame('-', $rows[0]->core);
+        self::assertSame('-', $rows[0]->branch);
         self::assertSame('n/a (404)', $rows[0]->statusCell());
         self::assertFalse($rows[0]->isReadyAuto());
     }

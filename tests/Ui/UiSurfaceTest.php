@@ -199,7 +199,6 @@ final class UiSurfaceTest extends TestCase
                 'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
                 'diff_refs' => ['base_sha' => 'base', 'head_sha' => 'head'],
             ]],
-            [],
             [[
                 'nid' => 3597808,
                 'title' => 'A patch issue',
@@ -212,7 +211,7 @@ final class UiSurfaceTest extends TestCase
                     'filesize' => '10',
                     'timestamp' => '1705400000',
                 ]]],
-            ]],
+            ]]
         ));
 
         (new ResultsCache($this->cockpit . '/results'))->store(
@@ -228,16 +227,23 @@ final class UiSurfaceTest extends TestCase
         $rows = array_map(self::arr(...), self::arr($module['rows']));
         $summary = self::arr($module['summary']);
 
-        // One MR and one patch issue, each across two tracked cores.
-        self::assertCount(4, $rows);
+        // One merge request and one patch issue: two rows, not two multiplied
+        // by the tracked cores. Core is evidence now, and the page gets the
+        // list alongside the same worst-case cell the terminal prints.
+        self::assertCount(2, $rows);
         self::assertSame(1, $summary['merge_requests']);
         self::assertSame(1, $summary['patch_issues']);
 
-        $patchRows = array_values(array_filter($rows, static fn (array $r): bool => $r['kind'] === 'patch'));
-        self::assertSame(3597808, $patchRows[0]['issue']);
-        self::assertSame('https://www.drupal.org/node/3597808', $patchRows[0]['url']);
-        self::assertSame(1, $patchRows[0]['patches']);
-        self::assertSame('fail', $patchRows[1]['local'], 'the core-11 row carries its cached verdict');
+        $issueRows = array_values(array_filter($rows, static fn (array $r): bool => $r['kind'] === 'issue'));
+        self::assertSame(3597808, $issueRows[0]['issue']);
+        self::assertSame('https://www.drupal.org/node/3597808', $issueRows[0]['url']);
+        self::assertSame(1, $issueRows[0]['patches']);
+        self::assertSame(['10', '11'], $issueRows[0]['cores']);
+        self::assertSame(
+            'fail 11',
+            $issueRows[0]['local'],
+            'checked and red on 11, never checked on 10 — the worst case wins and names its core',
+        );
 
         $mrRows = array_values(array_filter($rows, static fn (array $r): bool => $r['kind'] === 'mr'));
         self::assertSame(7, $mrRows[0]['mr']);
@@ -252,8 +258,7 @@ final class UiSurfaceTest extends TestCase
         (new DashboardCache($this->cockpit . '/cache/dashboard'))->save('widget', new ModuleSnapshot(
             new \DateTimeImmutable(),
             ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
-            [],
-            [],
+            []
         ));
 
         $state = (new StateBuilder(new Cockpit($this->cockpit)))->build();
@@ -285,7 +290,6 @@ final class UiSurfaceTest extends TestCase
                 'web_url' => 'https://git.drupalcode.org/project/widget/-/merge_requests/7',
                 'diff_refs' => ['base_sha' => 'base', 'head_sha' => 'head'],
             ]],
-            [],
             [
                 // Active with nothing on it — invisible under the old scan, and
                 // the row the queue view exists for.
@@ -294,7 +298,7 @@ final class UiSurfaceTest extends TestCase
                 self::issuePayload(3467675, '8', 'A change'),
                 // RTBC with a patch.
                 self::issuePayload(3398583, '14', 'Prevent dot aliases', [['p.patch', 'https://x.test/p.patch']]),
-            ],
+            ]
         ));
 
         $module = self::arr(self::arr((new StateBuilder(new Cockpit($this->cockpit)))->build()['modules'])[0]);
@@ -325,8 +329,7 @@ final class UiSurfaceTest extends TestCase
             new \DateTimeImmutable(),
             ['id' => 42, 'path_with_namespace' => 'project/widget', 'path' => 'widget'],
             [],
-            [],
-            [self::issuePayload(3611658, '1', 'Cache grows unbounded')],
+            [self::issuePayload(3611658, '1', 'Cache grows unbounded')]
         ));
 
         $module = self::arr(self::arr((new StateBuilder(new Cockpit($this->cockpit)))->build()['modules'])[0]);

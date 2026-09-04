@@ -177,8 +177,7 @@ final class CliHarness
         (new DashboardCache($this->cockpit . '/cache/dashboard'))->save($module, new ModuleSnapshot(
             new \DateTimeImmutable(),
             ['id' => 42, 'path_with_namespace' => 'project/' . $module, 'path' => $module],
-            $mrs,
-            [],
+            $mrs
         ));
 
         return $this;

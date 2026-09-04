@@ -32,7 +32,7 @@ final readonly class RowAssembler
 
     /**
      * @param array<string, Module> $modules       the registry's modules
-     * @param ?string               $versionFilter only rows targeting this core major, when given
+     * @param ?string               $versionFilter gather evidence for this core only, when given
      *
      * @return list<DashboardRow> ordered by module name, then MR iid
      */
@@ -51,8 +51,13 @@ final readonly class RowAssembler
     }
 
     /**
-     * Rows for one module: every open MR x every tracked (and not filtered
-     * out) core version.
+     * Rows for one module: one per open merge request.
+     *
+     * No snapshot, so no issues and nothing to group by — every merge request
+     * is its own row here, where the dashboard would gather an issue's onto
+     * one. The *classification* is identical (same gate, same evidence, same
+     * cores), which is the property that matters: the fast lane prompts per
+     * merge request, so a row per merge request is exactly what it wants.
      *
      * @return list<DashboardRow>
      */
