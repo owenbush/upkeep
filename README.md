@@ -51,6 +51,11 @@ broken install. Upkeep checks this on startup and refuses with exit 2, naming
 the missing packages and the directory to run `composer install` in — rather
 than dying partway through a command with a class-not-found trace.
 
+`composer.lock` is committed, so `composer install` gives you the same
+dependency versions CI tested against. Resolution is pinned to PHP 8.2 (the
+lowest version upkeep supports) via `config.platform`, so the tree is the same
+whichever PHP you run it on.
+
 Sanity check:
 
 ```bash
