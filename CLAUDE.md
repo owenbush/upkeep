@@ -40,6 +40,25 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- **phpstan and phpcs run from inside the module, as CI does.**
+  `Adapter\CheckScript`. Both discover their configuration from the *current
+  working directory*, and upkeep ran them from the project root — where the
+  only config is the gitlab_templates default it had just downloaded. A module
+  shipping its own `phpstan.neon` or `phpcs.xml.dist` had its level, baseline,
+  ignores and ruleset silently ignored. CI does the opposite deliberately:
+  `.phpstan-base` opens with `cd $DRUPAL_PROJECT_FOLDER` and fetches the
+  template only in the `else`; `.phpcs-base` opens with `cd $CI_PROJECT_DIR`
+  and looks for `{.,}phpcs.xml{.dist,}` first. Two consequences worth knowing:
+  `--autoload-file` becomes load-bearing once the working directory is not the
+  project root (PHPStan resolves Drupal through the site autoloader and cannot
+  find it from inside the module — CI passes it for the same reason), and the
+  fallback config is written **at the project root, never into the module**.
+  CI writes it beside the code because the container is disposable; here the
+  module directory is a git checkout whose cleanliness the next `applyPatch`
+  or `startWork` refuses on, so two untracked files there would break the tool.
+  One `cd` and one invocation per script, with extras carried in the
+  positional parameters — that is what makes "nothing is written after the cd"
+  a property a test can check at all.
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and
@@ -470,7 +489,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7064/7064), methods (813/813) and classes (157/157), 1464 tests.
+lines (7084/7084), methods (815/815) and classes (158/158), 1476 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

@@ -975,6 +975,24 @@ loudly and still promotes — the commit states the work is not the promoter's
 and points at the issue. Credit on drupal.org is allocated through the
 issue-credit system anyway, which is a browser action and stays yours to do.
 
+### Your module's own phpstan.neon and phpcs.xml.dist are honoured
+
+Both tools discover their configuration from the working directory, and CI
+runs them from **inside the module** — `.phpstan-base` opens with
+`cd $DRUPAL_PROJECT_FOLDER`, `.phpcs-base` with `cd $CI_PROJECT_DIR` — so a
+module that ships its own config gets it used, and the gitlab_templates
+default is only a fallback.
+
+upkeep now does the same. It used to run both from the Drupal project root,
+where the only config present is the template it had just downloaded, so a
+module's own level, baseline, ignores and ruleset were silently ignored and
+the check reported a verdict against rules the project does not use.
+
+The fallback config is kept at the project root rather than written into your
+module: CI drops it beside the code because the container is thrown away, but
+here that directory is your git checkout, and two untracked files in it would
+make the next `patch:apply` or `start` refuse on a dirty working copy.
+
 ### An MR is checked the way CI checks it
 
 GitLab publishes two refs for every merge request:

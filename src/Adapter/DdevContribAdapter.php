@@ -1062,26 +1062,16 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ]),
             CheckType::EsLint, CheckType::StyleLint
                 => $this->runCommandCheck($environment, $check, ['ddev', $check->value]),
+            // Both of these are configured by a file the module may ship, and
+            // both discover it from the working directory — so they run from
+            // inside the module, as CI does, and only fall back to the
+            // gitlab_templates default when the module has none. See
+            // Adapter\\CheckScript.
             CheckType::PhpCs => $this->runCommandCheck($environment, $check, [
-                'ddev', 'exec', 'bash', '-c', implode("\n", [
-                    'set -eu',
-                    'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/'
-                    . 'gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
-                    sprintf(
-                        'phpcs -s --report-full --report-summary --report-source %s --ignore=*/.ddev/*',
-                        self::containerModulePath($environment),
-                    ),
-                ]),
+                'ddev', 'exec', 'bash', '-c', CheckScript::phpCs(self::containerModulePath($environment)),
             ]),
             CheckType::PhpStan => $this->runCommandCheck($environment, $check, [
-                'ddev', 'exec', 'bash', '-c', implode("\n", [
-                    'set -eu',
-                    'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/'
-                    . 'gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
-                    "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
-                    'test -e phpstan-baseline.neon || touch phpstan-baseline.neon',
-                    'phpstan analyze ' . self::containerModulePath($environment),
-                ]),
+                'ddev', 'exec', 'bash', '-c', CheckScript::phpStan(self::containerModulePath($environment)),
             ]),
             CheckType::ModuleInstall => $this->runCommandCheck($environment, $check, [
                 'ddev', 'drush', 'pm:install', $environment->moduleName, '-y',
