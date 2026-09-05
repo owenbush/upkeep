@@ -40,6 +40,30 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- **The base branch is fetched before anything is cut from it.**
+  `Adapter\BaseRefresh` (Update by default, Skip only via `--no-update`) and
+  `Adapter\BaseBranchUpdate`. A module working copy is cloned once and was
+  then never fetched again on any path that cuts a branch, so its `2.0.x`
+  stayed frozen at the day of the clone. That alone would only make a verdict
+  old; what makes it *wrong* is that drupal.org's CI does not check your
+  branch — it checks `refs/merge-requests/<iid>/merge`, your work merged into
+  the **current** tip of the target. Live proof of the cost: a base sixteen
+  months stale, a target since rewritten for Drupal 12 (module file moved to
+  OOP hooks, a `use` import removed), and a patch that only added a function.
+  Git merged it without a conflict; in the merged file the new block was the
+  only remaining reference to the imported class, with no import, so it
+  resolved to the global namespace. Local green, CI red, one line, no
+  explanation, hours lost. So `applyPatch`, `startWork` and `promotePatch` now
+  `git fetch origin <base>` and cut from `FETCH_HEAD` (never `origin/<base>` —
+  a remote-tracking ref is a property of how the clone was configured;
+  FETCH_HEAD is always written). The local base is fast-forwarded when it can
+  be and **never reset**: one carrying local commits is left alone and said
+  so, since discarding somebody's unpushed work to tidy a check is not a trade
+  upkeep makes. A failed fetch is the one place here that **refuses instead of
+  degrading** — every other degraded path produces a visibly reduced answer,
+  while this one produces a verdict indistinguishable from a good one that
+  then gets cached as evidence the fast-lane gate reads. Resuming an existing
+  work branch fetches nothing; the refresh belongs to cutting a new branch.
 - **Publishing goes to an issue fork, never to origin.** On drupal.org a merge
   request always comes from `issue/<machine-name>-<nid>` and is opened *across*
   projects into the canonical one — measured on pathauto, 100 of 100 open MRs
@@ -425,7 +449,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6957/6957), methods (798/798) and classes (155/155), 1442 tests.
+lines (7022/7022), methods (807/807) and classes (157/157), 1457 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

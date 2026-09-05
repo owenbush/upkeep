@@ -6,6 +6,7 @@ namespace Upkeep\Tests\Support;
 
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
+use Upkeep\Adapter\BaseRefresh;
 use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
@@ -38,6 +39,18 @@ final class FakeEngineAdapter implements EngineAdapterInterface
 
     /** @var list<string> the base each work branch was started from */
     public array $startedBases = [];
+
+    /**
+     * The base-refresh mode each branch-cutting call was given, in order.
+     *
+     * Recorded because the default is the whole point: a command that forgets
+     * to pass the flag through silently checks against a stale base, which is
+     * exactly the failure this parameter exists to close and is invisible in
+     * any other assertion.
+     *
+     * @var list<BaseRefresh>
+     */
+    public array $baseRefreshes = [];
 
     /** @var list<string> work branches pushed, in order */
     public array $pushedBranches = [];
@@ -143,23 +156,32 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         $this->appliedMrs[] = $mergeRequest;
     }
 
-    public function applyPatch(Environment $environment, PatchApplication $patch): void
-    {
+    public function applyPatch(
+        Environment $environment,
+        PatchApplication $patch,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): void {
         if ($this->patchFailure !== null) {
             throw $this->patchFailure;
         }
 
         $this->appliedPatches[] = $patch;
+        $this->baseRefreshes[] = $refresh;
     }
 
-    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
-    {
+    public function startWork(
+        Environment $environment,
+        IssueBranch $branch,
+        ?string $baseBranch = null,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): bool {
         if ($this->workFailure !== null) {
             throw $this->workFailure;
         }
 
         $this->startedBranches[] = $branch->name;
         $this->startedBases[] = $baseBranch ?? '(from working copy)';
+        $this->baseRefreshes[] = $refresh;
 
         return $this->resumeWork;
     }
@@ -190,10 +212,13 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         PatchApplication $patch,
         IssueBranch $branch,
         string $commitMessage,
+        BaseRefresh $refresh = BaseRefresh::Update,
     ): string {
         if ($this->promoteFailure !== null) {
             throw $this->promoteFailure;
         }
+
+        $this->baseRefreshes[] = $refresh;
 
         $this->promotions[] = [
             'branch' => $branch->name,

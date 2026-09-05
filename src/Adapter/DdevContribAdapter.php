@@ -181,8 +181,11 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ));
     }
 
-    public function applyPatch(Environment $environment, PatchApplication $patch): void
-    {
+    public function applyPatch(
+        Environment $environment,
+        PatchApplication $patch,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): void {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
         $wcStatus = WorkingCopyStatus::inspect($moduleDir, $this->runner);
@@ -210,7 +213,8 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // Reset the branch from the base on every apply: a re-roll must be
         // tested on its own, not stacked on whatever was applied last time.
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
-        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-B', $branch, $baseBranch]);
+        $cutPoint = $this->refreshBase($moduleDir, $baseBranch, $refresh);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-B', $branch, $cutPoint]);
         $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $baseBranch]);
 
         $this->applyPatchFile($moduleDir, $patch, $baseBranch);
@@ -307,8 +311,12 @@ final class DdevContribAdapter implements EngineAdapterInterface
         throw PatchCheckout::unappliableException($patch, $baseBranch, $stat->output, $check->output);
     }
 
-    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
-    {
+    public function startWork(
+        Environment $environment,
+        IssueBranch $branch,
+        ?string $baseBranch = null,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): bool {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
         $status = WorkingCopyStatus::inspect($moduleDir, $this->runner);
@@ -357,13 +365,59 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
         ($this->log)(sprintf('Starting work branch "%s" off %s ...', $branch->name, $base));
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', $base]);
-        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-b', $branch->name, $base]);
+        $cutPoint = $this->refreshBase($moduleDir, $base, $refresh);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-b', $branch->name, $cutPoint]);
         // Recorded so a later applyMr/applyPatch from this working copy knows
         // what the base was, exactly as those paths record it for each other.
         $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $base]);
         $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch->name);
 
         return false;
+    }
+
+    /**
+     * Bring the base up to date, and return what to cut the new branch from.
+     *
+     * The working copy is cloned once and, before this, was never fetched
+     * again on any path that cuts a branch — so its `2.0.x` stayed frozen at
+     * the day of the clone while drupal.org's moved on. A patch applied to
+     * that is checked against months-old code, and CI, which checks your work
+     * merged into the *current* tip, is checking something else entirely.
+     *
+     * The local base is fast-forwarded when it can be, so the working copy a
+     * maintainer looks at afterwards is not still behind. It is never reset:
+     * a base carrying local commits is left exactly as it is and said so,
+     * because discarding somebody's unpushed work to make a check tidy is not
+     * a trade upkeep gets to make.
+     *
+     * @throws AdapterException when the fetch fails and updating was asked for
+     */
+    private function refreshBase(string $moduleDir, string $baseBranch, BaseRefresh $refresh): string
+    {
+        if ($refresh === BaseRefresh::Skip) {
+            ($this->log)(BaseBranchUpdate::skipped($baseBranch));
+
+            return BaseBranchUpdate::cutPoint($baseBranch, $refresh);
+        }
+
+        $fetch = $this->runner->capture(['git', '-C', $moduleDir, 'fetch', 'origin', $baseBranch]);
+        if ($fetch->exitCode !== 0) {
+            throw BaseBranchUpdate::unreachable($baseBranch, $fetch->output);
+        }
+
+        $behind = (int) trim(
+            $this->runner->run(['git', '-C', $moduleDir, 'rev-list', '--count', 'HEAD..FETCH_HEAD']),
+        );
+        if ($behind > 0) {
+            ($this->log)((string) BaseBranchUpdate::describe($baseBranch, $behind));
+            // Fast-forward only. A base that will not fast-forward has local
+            // commits on it, and those are somebody's.
+            if ($this->runner->tryRun(['git', '-C', $moduleDir, 'merge', '--ff-only', 'FETCH_HEAD']) === null) {
+                ($this->log)(BaseBranchUpdate::diverged($baseBranch));
+            }
+        }
+
+        return BaseBranchUpdate::cutPoint($baseBranch, $refresh);
     }
 
     /**
@@ -410,6 +464,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         PatchApplication $patch,
         IssueBranch $branch,
         string $commitMessage,
+        BaseRefresh $refresh = BaseRefresh::Update,
     ): string {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
@@ -417,7 +472,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // rule. Promoting must not hold a second, subtly different copy of
         // either: the branch this lands on can be the only place the work
         // exists.
-        $this->startWork($environment, $branch);
+        $this->startWork($environment, $branch, null, $refresh);
 
         ($this->log)(sprintf('Applying patch "%s" onto %s ...', $patch->name, $branch->name));
 

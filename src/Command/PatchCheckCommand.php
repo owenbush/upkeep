@@ -80,7 +80,7 @@ final class PatchCheckCommand extends AbstractPatchCommand
         $environment = $adapter->ensureEnv($context->module, $context->coreMajor);
 
         $io->section('Patch');
-        $adapter->applyPatch($environment, $context->application());
+        $adapter->applyPatch($environment, $context->application(), self::baseRefresh($input));
 
         if ($fixture !== null) {
             $io->section('Fixture');

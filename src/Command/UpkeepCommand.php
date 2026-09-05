@@ -13,6 +13,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Upkeep\Adapter\BaseRefresh;
 use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\ProjectsRoot;
 use Upkeep\BaseArtifact\BuildException;
@@ -187,6 +188,34 @@ abstract class UpkeepCommand extends Command
         );
 
         return $this;
+    }
+
+    /**
+     * Opt out of bringing the base branch up to date before cutting from it.
+     *
+     * The default is to update, because not updating is what produced a green
+     * local check and a red pipeline with no visible difference between them:
+     * drupal.org's CI does not test your branch, it tests your branch merged
+     * into the *current* tip of the target, and a working copy is cloned once
+     * and then never fetched again. The flag is for working offline, and for
+     * reproducing a verdict against the tree as it was.
+     */
+    protected function addNoUpdateOption(): static
+    {
+        $this->addOption(
+            'no-update',
+            null,
+            InputOption::VALUE_NONE,
+            'Do not fetch the base branch first; check against the working copy\'s base as it stands',
+        );
+
+        return $this;
+    }
+
+    /** The base-refresh mode this run asked for. */
+    protected static function baseRefresh(InputInterface $input): BaseRefresh
+    {
+        return BaseRefresh::fromNoUpdateFlag($input->getOption('no-update') === true);
     }
 
     // ------------------------------------------------------------- resolution
