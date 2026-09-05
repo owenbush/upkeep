@@ -144,7 +144,11 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // Step back onto the base first: git refuses to fetch into the
         // currently checked-out branch, which mr-<iid> is on a re-apply.
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
-        $this->runner->run(['git', '-C', $moduleDir, 'fetch', 'origin', MrCheckout::fetchRefspec($mergeRequest->iid)]);
+
+        $ref = $this->resolveMergeRequestRef($moduleDir, $mergeRequest->iid);
+        $this->runner->run(
+            ['git', '-C', $moduleDir, 'fetch', 'origin', MrCheckout::fetchRefspec($ref, $mergeRequest->iid)],
+        );
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', MrCheckout::branchName($mergeRequest->iid)]);
         // Record the base so the next applyMr can validate native-base even
         // though the working copy now sits on an mr-* branch.
@@ -160,7 +164,15 @@ final class DdevContribAdapter implements EngineAdapterInterface
         }
 
         $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
-        if ($mergeRequest->headSha !== null && $sha !== $mergeRequest->headSha) {
+        // Only meaningful against the head ref. On the merge ref the checked-out
+        // commit is one GitLab made by merging the branch into the target, so it
+        // is *never* the MR's head SHA and comparing them would warn on every
+        // healthy run.
+        if (
+            $ref === MrCheckout::headRef($mergeRequest->iid)
+            && $mergeRequest->headSha !== null
+            && $sha !== $mergeRequest->headSha
+        ) {
             ($this->log)(sprintf(
                 'Note: checked-out head %s differs from the MR model\'s head %s — the MR may have moved '
                 . 'since it was fetched.',
@@ -373,6 +385,53 @@ final class DdevContribAdapter implements EngineAdapterInterface
         $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch->name);
 
         return false;
+    }
+
+    /**
+     * Which of the merge request's refs to check out.
+     *
+     * Asked rather than assumed, because the two answers mean different
+     * things. `/merge` is the branch merged into the current target tip and is
+     * what CI analyses; `/head` is the branch alone. GitLab publishes no merge
+     * ref for a merge request that conflicts with its target, and falling back
+     * silently would report a branch-only verdict as though it were CI's.
+     *
+     * One extra `ls-remote` per apply, which is a single lightweight round
+     * trip against a command that is about to clone-fetch and provision an
+     * environment.
+     *
+     * @throws AdapterException when the merge request advertises no ref at all
+     */
+    private function resolveMergeRequestRef(string $moduleDir, int $iid): string
+    {
+        $advertised = $this->runner->run([
+            'git', '-C', $moduleDir, 'ls-remote', 'origin',
+            MrCheckout::mergeRef($iid), MrCheckout::headRef($iid),
+        ]);
+
+        $refs = [];
+        foreach (explode("\n", $advertised) as $line) {
+            $parts = preg_split('/\s+/', trim($line)) ?: [];
+            if (\count($parts) === 2) {
+                $refs[] = $parts[1];
+            }
+        }
+
+        $ref = MrCheckout::preferredRef($refs, $iid);
+        if ($ref === null) {
+            throw MrCheckout::noRefsAtAll($iid);
+        }
+
+        if ($ref === MrCheckout::headRef($iid)) {
+            ($this->log)(MrCheckout::noMergeRefWarning($iid));
+        } else {
+            ($this->log)(sprintf(
+                'Checking MR !%d as CI does: the branch merged into the current tip of its target.',
+                $iid,
+            ));
+        }
+
+        return $ref;
     }
 
     /**

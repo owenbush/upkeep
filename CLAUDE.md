@@ -40,6 +40,27 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- **An MR is checked as CI checks it: the merge, not the branch.** GitLab
+  publishes two refs per merge request — `/head` is the contributor's branch,
+  `/merge` is that branch merged into the **current** tip of the target — and
+  CI analyses `/merge`. `applyMr` fetched `/head`, so upkeep and CI were
+  reading different trees on any merge request whose branch had fallen behind.
+  Measured on pathauto: **23 of 25 open merge requests have a merge tree that
+  differs from their head tree**, with branches 7 to 41 commits behind the
+  target. This is not staleness a fetch can fix — an MR branch is one commit
+  of work on top of the target *as it was months ago*, and the tree CI runs
+  exists on neither side until GitLab computes it. Same failure as a patch on
+  a stale base, through the other door. `MrCheckout::preferredRef()` picks the
+  merge ref from what `ls-remote` actually advertises (one lightweight round
+  trip, against a command that is about to provision an environment), and
+  falls back to `/head` **loudly**: GitLab computes no merge ref for a merge
+  request that conflicts with its target, so the fallback is a diagnosis, not
+  a detail. Neither ref at all is a refusal — that is a wrong iid, not a state
+  to guess about. The "head moved since it was fetched" note is now conditional
+  on having used the head ref: a merge commit is never the MR's head SHA, so
+  comparing them would warn on every healthy run. **Cached MR results written
+  before this describe the branch, not the merge** — clear
+  `<cockpit>/results/` once after upgrading.
 - **The base branch is fetched before anything is cut from it.**
   `Adapter\BaseRefresh` (Update by default, Skip only via `--no-update`) and
   `Adapter\BaseBranchUpdate`. A module working copy is cloned once and was
@@ -449,7 +470,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7022/7022), methods (807/807) and classes (157/157), 1457 tests.
+lines (7064/7064), methods (813/813) and classes (157/157), 1464 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

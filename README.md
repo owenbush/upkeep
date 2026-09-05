@@ -975,6 +975,26 @@ loudly and still promotes — the commit states the work is not the promoter's
 and points at the issue. Credit on drupal.org is allocated through the
 issue-credit system anyway, which is a browser action and stays yours to do.
 
+### An MR is checked the way CI checks it
+
+GitLab publishes two refs for every merge request:
+
+- `refs/merge-requests/<iid>/head` — the contributor's branch.
+- `refs/merge-requests/<iid>/merge` — that branch merged into the **current**
+  tip of the target.
+
+**CI analyses the second one**, and so does upkeep. The distinction is not
+academic: an MR branch is a commit or two of work sitting on the target *as it
+was when the branch was cut*, and fetching it gets you the newest version of
+that — not the target's newer commits, which were never pushed to it. Measured
+on pathauto, branches run 7 to 41 commits behind, and **23 of 25 open merge
+requests have a merge tree that differs from their head tree**. Checking the
+branch meant agreeing with CI by luck.
+
+When GitLab publishes no merge ref, it could not merge the branch into its
+target — normally a conflict. upkeep checks the branch alone and says so,
+because a branch-only verdict is not the one CI would give.
+
 ### The base is brought up to date first
 
 Every command that cuts a branch — `patch:apply`, `patch:check`,
