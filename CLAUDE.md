@@ -56,17 +56,25 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   CI writes it beside the code because the container is disposable; here the
   module directory is a git checkout whose cleanliness the next `applyPatch`
   or `startWork` refuses on, so two untracked files there would break the tool.
-  **Every command is a single line**, and that is a hard requirement:
-  `ddev exec` re-joins its arguments into one string for the container shell,
-  so newlines do not survive. A multi-line script arrives as
-  `set -eu ROOT=$(pwd) MODULE=…` — one `set` call that enables `-u` and eats
-  both assignments as positional parameters — and the first `"$MODULE"` after
-  it dies with `MODULE: unbound variable`. That is how it was found, on a real
-  run, after a green suite. So there is no control flow in the shell at all:
-  which config applies is decided in PHP from a `test -f a || test -f b`
-  probe, and guarded steps are braced because `&&` and `||` bind equally
-  left-to-right (ungrouped, a failed download falls into the next step's `||`
-  and analyses against a config nobody fetched).
+  **No shell variable of upkeep's own, no `cd`, one line.** All three are paid
+  for. `ddev exec` re-joins its arguments and hands the result to a shell that
+  expands the string *before* the container's shell runs it, so an assignment
+  and its use in one command cannot work — `ROOT=$(pwd) && … "$ROOT/x"` dies
+  with `ROOT: unbound variable`, as an earlier `MODULE=…` did. Only variables
+  already in the container's environment (`$DDEV_DOCROOT`,
+  `$DRUPAL_PROJECTS_PATH`) survive, which is why the long-standing scripts
+  worked and two rewrites did not. The `cd` went for a different reason: CI
+  runs these from inside the module because there the module repo root *is*
+  where composer put `vendor/`, while under ddev-drupal-contrib `vendor/` is
+  at the project root — so from inside the module every vendor-relative path
+  in a ruleset breaks (`Referenced sniff "./vendor/drupal/coder/…" does not
+  exist`, on a real module). So the working directory stays at the project
+  root and the module's config is *named* rather than discovered. Which one
+  applies is decided in PHP from `test -f` probes run in the tool's own
+  precedence order, and guarded steps are braced because `&&` and `||` bind
+  equally left-to-right. Two tests hold the invariants, because nothing in the
+  suite executes what these build: no variable outside the container's
+  environment, and no `cd`.
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and

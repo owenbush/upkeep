@@ -7,36 +7,35 @@ namespace Upkeep\Adapter;
 /**
  * The command lines for the two checks a module can configure for itself.
  *
- * **Single-line, and that is a hard requirement rather than a style.**
- * `ddev exec` re-joins the arguments it is given into one command string for
- * the container's shell, and newlines do not survive that. A multi-line script
- * arrives as a single line, which turns
+ * **No shell variable of our own, and no `cd`.** Both rules are paid for.
  *
- *     set -eu
- *     ROOT=$(pwd)
- *     MODULE=…
+ * `ddev exec` re-joins its arguments and hands the result to a shell that
+ * expands the string *before* the inner shell runs it, so an assignment and
+ * its use in the same command cannot work: `ROOT=$(pwd) && … "$ROOT/x"`
+ * expands `$ROOT` while the string is being built, where it is unset, and
+ * dies with `ROOT: unbound variable`. The same thing killed an earlier
+ * `MODULE=…`. Only variables already in the container's environment —
+ * `$DDEV_DOCROOT`, `$DRUPAL_PROJECTS_PATH` — survive, because expanding them
+ * early produces the same value. That is why the long-standing scripts worked
+ * and both rewrites did not.
  *
- * into `set -eu ROOT=$(pwd) MODULE=…` — one `set` call that enables `-u` and
- * swallows both assignments as positional parameters. The first `"$MODULE"`
- * after it then dies with `MODULE: unbound variable`, which is exactly how
- * this was found: phpstan and phpcs failed on a real run while the checks that
- * do not go through a script passed. The earlier one-command-per-line scripts
- * survived because no line depended on another; the moment there was state and
- * an `if`, joining broke it.
+ * The `cd` had to go for a different reason. CI runs these from inside the
+ * module because in CI the module repo root *is* where `composer install`
+ * put `vendor/`. Under ddev-drupal-contrib the module is a checkout symlinked
+ * into a site whose `vendor/` lives at the project root, so from inside the
+ * module every vendor-relative path in a ruleset breaks — observed as
+ * `Referenced sniff "./vendor/drupal/coder/coder_sniffer/Drupal" does not
+ * exist` against a real module's own phpcs.xml.dist.
  *
- * So there is no control flow here at all. Which configuration to use is
- * decided in PHP, from a probe the adapter runs first, and what reaches the
- * container is a flat `&&` chain.
+ * So the working directory stays at the project root, where `vendor/` is, and
+ * the module's own configuration is named explicitly instead of discovered.
+ * That is the same shape as verifying it by hand with an explicit config flag,
+ * and it keeps the part that matters: **a module's own configuration is used,
+ * and the gitlab_templates default is only the fallback** — which is the
+ * behaviour CI has and upkeep did not.
  *
- * The behaviour being preserved: both tools discover their configuration from
- * the working directory, and CI runs them from **inside the module** —
- * `.phpstan-base` opens with `cd $DRUPAL_PROJECT_FOLDER`, `.phpcs-base` with
- * `cd $CI_PROJECT_DIR`. So a module's own config wins and the gitlab_templates
- * default is the fallback, as it is in CI.
- *
- * The fallback config stays at the project root and is never written into the
- * module. CI writes it beside the code because the container is thrown away;
- * here the module directory is a git checkout whose cleanliness the next
+ * The fallback config is written at the project root and never into the
+ * module: that directory is a git checkout whose cleanliness the next
  * applyPatch or startWork refuses on.
  */
 final readonly class CheckScript
@@ -50,80 +49,68 @@ final readonly class CheckScript
     public const PHPCS_CONFIGS = ['phpcs.xml', 'phpcs.xml.dist', '.phpcs.xml', '.phpcs.xml.dist'];
 
     /**
-     * A single-line test for "does the module ship any of these?".
+     * A single test for "does the module ship this one?".
      *
-     * Exit status is the whole answer, so there is nothing to parse and no
-     * pipeline to survive joining.
-     *
-     * @param list<string> $names
+     * One command per candidate, run in order, because the *name* is the
+     * answer — it has to be passed to the tool afterwards, and parsing it out
+     * of shell output would put a second fragile thing where this one already
+     * is. Exit status is all that is read.
      */
-    public static function configProbe(string $modulePath, array $names): string
+    public static function configProbe(string $modulePath, string $name): string
     {
-        return implode(' || ', array_map(
-            static fn (string $name): string => sprintf('test -f %s/%s', $modulePath, $name),
-            $names,
-        ));
+        return sprintf('test -f %s/%s', $modulePath, $name);
     }
 
     /**
-     * PHPStan, run from inside the module exactly as `.phpstan-base` does.
+     * PHPStan against the module, with whichever configuration applies.
      *
-     * `--autoload-file` becomes load-bearing the moment the working directory
-     * stops being the project root: PHPStan resolves Drupal's classes through
-     * the site's autoloader and cannot find it from inside the module. CI
-     * passes it for the same reason.
+     * Relative paths inside a neon file resolve against the file's own
+     * directory, so a module's config keeps meaning what it means from here.
      *
-     * @param string $modulePath the module's in-container path, already quoted
-     * @param bool   $ownConfig  whether the module ships its own configuration
+     * @param string  $modulePath the module's in-container path, already quoted
+     * @param ?string $ownConfig  the config the module ships, when it ships one
      */
-    public static function phpStan(string $modulePath, bool $ownConfig): string
+    public static function phpStan(string $modulePath, ?string $ownConfig): string
     {
-        // ROOT is captured before the cd, as its own command in the chain —
-        // never as a trailing word on another, which is what `set -eu` turned
-        // it into.
-        $analyse = sprintf(
-            'ROOT=$(pwd) && cd %s && phpstan analyze . --autoload-file="$ROOT/vendor/autoload.php"',
-            $modulePath,
-        );
-
-        if ($ownConfig) {
-            return $analyse;
+        if ($ownConfig !== null) {
+            return sprintf('phpstan analyze %1$s -c %1$s/%2$s', $modulePath, $ownConfig);
         }
 
         return implode(' && ', [
             // Braced, because `&&` and `||` bind equally and left to right:
-            // ungrouped, a failed download would fall through to the `||` of
-            // the *next* step and end up analysing against a config that was
-            // never fetched.
+            // ungrouped, a failed download falls through to the next step's
+            // `||` and the analysis runs against a config nobody fetched.
             sprintf('{ test -e phpstan.neon || curl -sSOL %s/phpstan.neon; }', self::TEMPLATES),
             "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
             '{ test -e phpstan-baseline.neon || touch phpstan-baseline.neon; }',
-            $analyse . ' -c "$ROOT/phpstan.neon"',
+            sprintf('phpstan analyze %s -c phpstan.neon', $modulePath),
         ]);
     }
 
     /**
-     * PHPCS, run from inside the module exactly as `.phpcs-base` does.
+     * PHPCS against the module, with whichever ruleset applies.
      *
-     * `--basepath=.` so reported paths are module-relative, which is what CI
-     * prints and the only form that means anything to somebody reading a check
-     * result rather than a container filesystem.
+     * `--basepath` is the module, so reported paths are module-relative as
+     * CI's are (`--basepath=$DRUPAL_PROJECT_FOLDER` there) rather than absolute
+     * container paths nobody can act on.
      *
-     * @param string $modulePath the module's in-container path, already quoted
-     * @param bool   $ownConfig  whether the module ships its own ruleset
+     * @param string  $modulePath the module's in-container path, already quoted
+     * @param ?string $ownConfig  the ruleset the module ships, when it ships one
      */
-    public static function phpCs(string $modulePath, bool $ownConfig): string
+    public static function phpCs(string $modulePath, ?string $ownConfig): string
     {
-        $report = "-s --report-full --report-summary --report-source --basepath=. --ignore='*/.ddev/*'";
-        $run = sprintf('ROOT=$(pwd) && cd %s && phpcs %s', $modulePath, $report);
+        $report = sprintf(
+            "-s --report-full --report-summary --report-source --basepath=%s --ignore='*/.ddev/*'",
+            $modulePath,
+        );
 
-        if ($ownConfig) {
-            return $run . ' .';
+        if ($ownConfig !== null) {
+            return sprintf('phpcs %s --standard=%s/%s %s', $report, $modulePath, $ownConfig, $modulePath);
         }
 
         return implode(' && ', [
             sprintf('{ test -e phpcs.xml.dist || curl -sSOL %s/phpcs.xml.dist; }', self::TEMPLATES),
-            $run . ' --standard="$ROOT/phpcs.xml.dist" .',
+            sprintf('phpcs %s --standard=phpcs.xml.dist %s', $report, $modulePath),
         ]);
     }
 }

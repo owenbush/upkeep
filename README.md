@@ -983,10 +983,18 @@ runs them from **inside the module** — `.phpstan-base` opens with
 module that ships its own config gets it used, and the gitlab_templates
 default is only a fallback.
 
-upkeep now does the same. It used to run both from the Drupal project root,
-where the only config present is the template it had just downloaded, so a
-module's own level, baseline, ignores and ruleset were silently ignored and
-the check reported a verdict against rules the project does not use.
+upkeep now does the same — it used to run both with only the template it had
+just downloaded in view, so your level, baseline, ignores and ruleset were
+silently ignored and the check reported a verdict against rules your project
+does not use.
+
+It gets there by *naming* your config rather than by changing directory into
+your module, and that difference matters: in CI the module repo root is where
+`composer install` put `vendor/`, but under ddev-drupal-contrib your module is
+a checkout symlinked into a site whose `vendor/` lives at the project root. Run
+from inside the module, every vendor-relative path in a ruleset breaks —
+`Referenced sniff "./vendor/drupal/coder/coder_sniffer/Drupal" does not exist`.
+So the working directory stays where `vendor/` actually is.
 
 The fallback config is kept at the project root rather than written into your
 module: CI drops it beside the code because the container is thrown away, but
