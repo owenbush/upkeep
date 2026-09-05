@@ -27,128 +27,175 @@ use Upkeep\Adapter\CheckScript;
  */
 final class CheckScriptTest extends TestCase
 {
-    private const MODULE = '"$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/widget';
+    private const MODULE = '"$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/\'widget\'';
 
     /**
-     * @return list<string>
+     * The property everything else here depends on, and the one that was
+     * missing.
+     *
+     * `ddev exec` re-joins its arguments into one command string for the
+     * container's shell, so newlines do not survive. The first version of
+     * these was a multi-line script; it arrived as
+     * `set -eu ROOT=$(pwd) MODULE=…`, one `set` call that turned on `-u` and
+     * swallowed both assignments as positional parameters, and the first
+     * `"$MODULE"` after it died with `MODULE: unbound variable` on a real run.
+     *
+     * A command that fits on one line cannot be mangled that way.
      */
-    private static function lines(string $script): array
+    public function testEveryCommandIsASingleLine(): void
     {
-        return explode("\n", $script);
+        foreach (self::everyCommand() as $label => $command) {
+            self::assertStringNotContainsString("\n", $command, $label . ' must survive being joined onto one line');
+        }
     }
 
-    /** Index of the first line containing $needle, or -1. */
-    private static function at(string $script, string $needle): int
+    /**
+     * And no `set`, which is what ate the assignments. Options belong on the
+     * commands themselves.
+     */
+    public function testNoCommandRebindsTheShellsState(): void
     {
-        foreach (self::lines($script) as $i => $line) {
-            if (str_contains($line, $needle)) {
-                return $i;
-            }
+        foreach (self::everyCommand() as $label => $command) {
+            self::assertDoesNotMatchRegularExpression('/(^|\s)set(\s|$)/', $command, $label);
         }
+    }
 
-        return -1;
+    /**
+     * @return array<string, string>
+     */
+    private static function everyCommand(): array
+    {
+        return [
+            'phpstan probe' => CheckScript::configProbe(self::MODULE, CheckScript::PHPSTAN_CONFIGS),
+            'phpcs probe' => CheckScript::configProbe(self::MODULE, CheckScript::PHPCS_CONFIGS),
+            'phpstan with the module\'s own config' => CheckScript::phpStan(self::MODULE, true),
+            'phpstan falling back' => CheckScript::phpStan(self::MODULE, false),
+            'phpcs with the module\'s own ruleset' => CheckScript::phpCs(self::MODULE, true),
+            'phpcs falling back' => CheckScript::phpCs(self::MODULE, false),
+        ];
+    }
+
+    // ------------------------------------------------------------- the probe
+
+    /**
+     * Exit status is the whole answer, so there is nothing to parse — and the
+     * decision it feeds is made in PHP, where an `if` survives.
+     */
+    public function testTheProbeTestsEveryConfigNameTheToolLooksFor(): void
+    {
+        $script = CheckScript::configProbe(self::MODULE, CheckScript::PHPSTAN_CONFIGS);
+
+        foreach (CheckScript::PHPSTAN_CONFIGS as $name) {
+            self::assertStringContainsString('test -f ' . self::MODULE . '/' . $name, $script);
+        }
+        self::assertSame(2, substr_count($script, '||'), 'three tests, two separators');
+    }
+
+    public function testTheConfigNamesAreTheOnesTheToolsAndCiUse(): void
+    {
+        self::assertSame(
+            ['phpstan.neon', 'phpstan.neon.dist', 'phpstan.dist.neon'],
+            CheckScript::PHPSTAN_CONFIGS,
+            'PHPStan\'s own precedence',
+        );
+        self::assertSame(
+            ['phpcs.xml', 'phpcs.xml.dist', '.phpcs.xml', '.phpcs.xml.dist'],
+            CheckScript::PHPCS_CONFIGS,
+        );
     }
 
     // ----------------------------------------------------------- phpstan
 
     /**
-     * The bug, stated as an assertion: the analysis runs from inside the
-     * module, so PHPStan finds the module's own config the way CI lets it.
+     * The original bug, stated as an assertion: the analysis runs from inside
+     * the module, so PHPStan finds the module's own config the way CI lets it.
      */
     public function testPhpStanRunsFromInsideTheModule(): void
     {
-        $script = CheckScript::phpStan(self::MODULE);
-
-        $cd = self::at($script, 'cd "$MODULE"');
-        $analyze = self::at($script, 'phpstan analyze .');
-
-        self::assertGreaterThan(-1, $cd, 'the analysis must not run from the project root');
-        self::assertGreaterThan($cd, $analyze);
+        foreach ([true, false] as $ownConfig) {
+            $script = CheckScript::phpStan(self::MODULE, $ownConfig);
+            self::assertStringContainsString('cd ' . self::MODULE . ' &&', $script);
+        }
     }
 
-    public function testAModulesOwnPhpStanConfigIsPreferredOverTheTemplate(): void
+    /** With its own config there is nothing to fetch and nothing to point at. */
+    public function testAModulesOwnConfigIsDiscoveredRatherThanPassed(): void
     {
-        $script = CheckScript::phpStan(self::MODULE);
+        $script = CheckScript::phpStan(self::MODULE, true);
 
-        // PHPStan's own precedence, and the order CI tests them in.
-        foreach (['phpstan.neon', 'phpstan.neon.dist', 'phpstan.dist.neon'] as $name) {
-            self::assertStringContainsString('[ -f "$MODULE/' . $name . '" ]', $script);
-        }
-
-        // Discovered, not passed: with the working directory inside the
-        // module, PHPStan picks its own config up unaided — which is exactly
-        // what CI relies on. `-c` is added only in the fallback branch, so the
-        // one invocation carries it only when the else ran.
-        self::assertStringContainsString(
-            'phpstan analyze . --autoload-file="$ROOT/vendor/autoload.php" "$@"',
-            $script,
-        );
-        self::assertGreaterThan(
-            self::at($script, 'else'),
-            self::at($script, '-c "$ROOT/phpstan.neon"'),
-            'the template config is added in the fallback branch only',
-        );
+        self::assertStringNotContainsString('-c ', $script);
+        self::assertStringNotContainsString('curl', $script);
+        self::assertStringEndsWith('phpstan analyze . --autoload-file="$ROOT/vendor/autoload.php"', $script);
     }
 
     /**
      * The autoloader becomes load-bearing the moment the working directory
      * stops being the project root: PHPStan resolves Drupal's classes through
-     * the site's autoloader and can no longer find it from inside the module.
-     * CI passes it for the same reason.
+     * the site's autoloader and cannot find it from inside the module. CI
+     * passes it for the same reason.
      */
-    public function testTheSitesAutoloaderIsPassedExplicitlyOnBothPaths(): void
+    public function testTheSitesAutoloaderIsPassedAndItsRootCapturedBeforeTheCd(): void
     {
-        $script = CheckScript::phpStan(self::MODULE);
+        foreach ([true, false] as $ownConfig) {
+            $script = CheckScript::phpStan(self::MODULE, $ownConfig);
 
-        self::assertStringContainsString('--autoload-file="$ROOT/vendor/autoload.php"', $script);
-        self::assertLessThan(
-            self::at($script, 'cd "$MODULE"'),
-            self::at($script, 'ROOT=$(pwd)'),
-            'the project root has to be captured while it is still the working directory',
-        );
+            self::assertStringContainsString('--autoload-file="$ROOT/vendor/autoload.php"', $script);
+            self::assertLessThan(
+                strpos($script, 'cd ' . self::MODULE),
+                strpos($script, 'ROOT=$(pwd)'),
+                'the project root has to be captured while it still is the working directory',
+            );
+        }
     }
 
-    public function testTheFallbackNamesTheTemplateExplicitlyBecauseTheCwdMoved(): void
+    public function testTheFallbackFetchesTheTemplateAndNamesIt(): void
     {
-        $script = CheckScript::phpStan(self::MODULE);
+        $script = CheckScript::phpStan(self::MODULE, false);
 
-        self::assertStringContainsString('-c "$ROOT/phpstan.neon"', $script);
-        self::assertStringContainsString('BASELINE_PLACEHOLDER', $script, 'the template still needs its sed');
+        self::assertStringContainsString('curl -sSOL', $script);
+        self::assertStringContainsString('BASELINE_PLACEHOLDER', $script);
+        self::assertStringEndsWith('-c "$ROOT/phpstan.neon"', $script);
+    }
+
+    /**
+     * `&&` and `||` bind equally and left to right, so the guarded steps are
+     * braced. Ungrouped, a failed download falls through to the *next* step's
+     * `||` and the analysis runs against a config that was never fetched —
+     * a green check on nothing.
+     */
+    public function testGuardedStepsAreGroupedSoAFailedFetchStopsTheChain(): void
+    {
+        foreach ([CheckScript::phpStan(self::MODULE, false), CheckScript::phpCs(self::MODULE, false)] as $script) {
+            preg_match_all('/\{[^}]*\|\|[^}]*; \}/', $script, $braced);
+            preg_match_all('/\|\|/', $script, $ors);
+
+            self::assertNotSame([], $ors[0]);
+            self::assertCount(
+                \count($ors[0]),
+                $braced[0],
+                'every || in a && chain must be braced or its precedence is wrong',
+            );
+        }
     }
 
     // ------------------------------------------------------------- phpcs
 
-    public function testPhpCsRunsFromInsideTheModule(): void
+    public function testPhpCsRunsFromInsideTheModuleAndReportsRelativePaths(): void
     {
-        $script = CheckScript::phpCs(self::MODULE);
+        foreach ([true, false] as $ownConfig) {
+            $script = CheckScript::phpCs(self::MODULE, $ownConfig);
 
-        $cd = self::at($script, 'cd "$MODULE"');
-        $run = self::at($script, 'phpcs ');
-
-        self::assertGreaterThan(-1, $cd);
-        self::assertGreaterThan($cd, $run);
-    }
-
-    public function testAModulesOwnRulesetIsPreferredOverTheTemplate(): void
-    {
-        $script = CheckScript::phpCs(self::MODULE);
-
-        foreach (['phpcs.xml', 'phpcs.xml.dist', '.phpcs.xml', '.phpcs.xml.dist'] as $name) {
-            self::assertStringContainsString('[ -f "$MODULE/' . $name . '" ]', $script);
+            self::assertStringContainsString('cd ' . self::MODULE . ' &&', $script);
+            self::assertStringContainsString('--basepath=.', $script);
+            self::assertStringContainsString("--ignore='*/.ddev/*'", $script);
+            self::assertStringEndsWith(' .', $script, 'the module itself is what gets scanned');
         }
-
-        self::assertStringContainsString('--standard="$ROOT/phpcs.xml.dist"', $script, 'the fallback');
     }
 
-    /** Module-relative paths, which is what CI prints and what a person can read. */
-    public function testReportPathsAreRelativeToTheModule(): void
+    public function testAModulesOwnRulesetIsDiscoveredRatherThanPassed(): void
     {
-        self::assertStringContainsString('--basepath=.', CheckScript::phpCs(self::MODULE));
-    }
-
-    public function testTheDdevDirectoryStaysOutOfTheResults(): void
-    {
-        self::assertStringContainsString('--ignore=*/.ddev/*', CheckScript::phpCs(self::MODULE));
+        self::assertStringNotContainsString('--standard', CheckScript::phpCs(self::MODULE, true));
+        self::assertStringContainsString('--standard="$ROOT/phpcs.xml.dist"', CheckScript::phpCs(self::MODULE, false));
     }
 
     // ------------------------------------------------- the shared invariant
@@ -161,65 +208,31 @@ final class CheckScriptTest extends TestCase
      * checkout, and two untracked files in it would make the next applyPatch
      * or startWork refuse on a dirty working copy — turning a config fallback
      * into a broken tool.
-     *
-     * So every write happens at the project root, before the cd.
      */
     public function testTheFallbackNeverWritesIntoTheModuleCheckout(): void
     {
-        foreach ([CheckScript::phpStan(self::MODULE), CheckScript::phpCs(self::MODULE)] as $script) {
-            $lines = self::lines($script);
-            $cds = array_keys(array_filter($lines, static fn (string $l): bool => str_contains($l, 'cd "$MODULE"')));
+        foreach ([CheckScript::phpStan(self::MODULE, false), CheckScript::phpCs(self::MODULE, false)] as $script) {
+            $cd = strpos($script, 'cd ' . self::MODULE);
+            self::assertIsInt($cd);
 
-            // Exactly one, so "before the cd" is a statement about the whole
-            // script rather than about whichever branch happens to run.
-            self::assertCount(1, $cds, 'one cd, or this property cannot be checked at all');
-            $cd = $cds[0];
-
-            foreach ($lines as $i => $line) {
-                if (preg_match('/\b(curl|sed -i|touch)\b/', $line) !== 1) {
+            foreach (['curl', 'sed -i', 'touch'] as $write) {
+                $at = strpos($script, $write);
+                if ($at === false) {
                     continue;
                 }
-                self::assertLessThan(
-                    $cd,
-                    $i,
-                    'writes must happen at the project root, never inside the module: ' . trim($line),
-                );
+                self::assertLessThan($cd, $at, $write . ' must run at the project root, never inside the module');
             }
         }
     }
 
     /**
-     * Extra arguments ride the positional parameters, not a string.
-     *
-     * `"$@"` is empty when there are none and stays quoted when there are;
-     * an unquoted `$CONFIG` would split on whitespace in a path.
+     * The module path arrives already shell-quoted and is spliced in whole, so
+     * a module name never reaches the shell unquoted.
      */
-    public function testExtraArgumentsAreCarriedQuoted(): void
+    public function testTheModulePathIsUsedExactlyAsQuoted(): void
     {
-        foreach ([CheckScript::phpStan(self::MODULE), CheckScript::phpCs(self::MODULE)] as $script) {
-            self::assertStringContainsString('set --', $script);
-            self::assertStringContainsString('"$@"', $script);
-        }
-    }
-
-    /** A shell script that stops at the first failure rather than carrying on. */
-    public function testBothScriptsAbortOnTheFirstFailure(): void
-    {
-        self::assertStringStartsWith('set -eu', CheckScript::phpStan(self::MODULE));
-        self::assertStringStartsWith('set -eu', CheckScript::phpCs(self::MODULE));
-    }
-
-    /**
-     * The module path arrives already shell-quoted and is used as a variable
-     * from then on, so a module name is never spliced into a `[ -f ... ]` test
-     * or a cd unquoted.
-     */
-    public function testTheModulePathIsBoundOnceAndUsedAsAVariable(): void
-    {
-        foreach ([CheckScript::phpStan(self::MODULE), CheckScript::phpCs(self::MODULE)] as $script) {
-            self::assertSame(1, substr_count($script, self::MODULE), 'bound exactly once');
-            self::assertStringContainsString('MODULE=' . self::MODULE, $script);
-            self::assertStringContainsString('cd "$MODULE"', $script);
+        foreach (self::everyCommand() as $label => $command) {
+            self::assertStringContainsString(self::MODULE, $command, $label);
         }
     }
 }
