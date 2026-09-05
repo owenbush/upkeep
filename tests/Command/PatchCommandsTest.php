@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Upkeep\Adapter\BaseRefresh;
 use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\CheckResult;
 use Upkeep\Adapter\CheckRunResult;
@@ -184,6 +185,42 @@ final class PatchCommandsTest extends TestCase
         self::assertSame(ExitCode::OK, $exit, $cli->display());
         self::assertSame('2.0.x', $engine->appliedPatches[0]->baseBranch);
         self::assertStringContainsString('Base branch: 2.0.x', $cli->display());
+    }
+
+    /**
+     * The base is brought up to date by default, and `--no-update` is the only
+     * way out of it.
+     *
+     * The default is the fix. A working copy is cloned once and its base then
+     * sits still while drupal.org's moves on, and CI does not test your branch
+     * — it tests your branch merged into the current tip of the target. A
+     * check against a stale base can pass while CI fails, with nothing
+     * anywhere saying the two looked at different code.
+     */
+    public function testTheBaseIsRefreshedByDefaultAndOnlyTheFlagOptsOut(): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]], version: '2.0.0');
+        $this->withDownload();
+        $this->withBranches(['1.0.x', '2.0.x']);
+        $cli = $this->cli()->withEngine($engine);
+
+        self::assertSame(ExitCode::OK, $cli->run('patch:check', 'widget', '3597808', '--version=11'));
+        self::assertSame([BaseRefresh::Update], $engine->baseRefreshes);
+    }
+
+    public function testNoUpdateReachesTheAdapterRatherThanBeingAcceptedAndIgnored(): void
+    {
+        $engine = FakeEngineAdapter::withPatchCheckRun(self::environment(), self::greenRun());
+        $this->withIssue([['3597808-9-fix.patch', 1705400000]], version: '2.0.0');
+        $this->withDownload();
+        $this->withBranches(['1.0.x', '2.0.x']);
+        $cli = $this->cli()->withEngine($engine);
+
+        $exit = $cli->run('patch:check', 'widget', '3597808', '--version=11', '--no-update');
+
+        self::assertSame(ExitCode::OK, $exit, $cli->display());
+        self::assertSame([BaseRefresh::Skip], $engine->baseRefreshes);
     }
 
     /**

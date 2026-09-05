@@ -10,21 +10,107 @@ use Upkeep\Gitlab\MergeRequest;
  * Pure logic behind EngineAdapterInterface::applyMr(): how a merge request
  * maps onto git refs in the module working copy, and the native-base rule.
  *
- * Drupalcode GitLab exposes every MR's head as refs/merge-requests/<iid>/head;
- * the adapter fetches that into a local mr-<iid> branch. Backport testing
- * (running an MR against a base other than the branch it targets) is out of
- * scope for upkeep, so applyMr refuses target/base mismatches up front.
+ * **The ref is the merge, not the head, and that is the whole point.** GitLab
+ * publishes two refs per merge request: `/head` is the contributor's branch,
+ * `/merge` is that branch merged into the *current* tip of the target. CI
+ * analyses `/merge`. upkeep fetched `/head`, so the two were reading different
+ * trees on any merge request whose branch had fallen behind — which is nearly
+ * all of them. Measured on pathauto: of 25 open merge requests, **23 have a
+ * merge tree that differs from their head tree**, and branches run 7 to 41
+ * commits behind the target.
+ *
+ * An MR branch is not stale in the way a fetch fixes. It is one commit of work
+ * on top of the target *as it was months ago*, and the tree CI runs exists on
+ * neither side until GitLab computes it. Fetching the branch harder never
+ * produces it. This is the same failure as applying a patch to a stale base —
+ * a clean merge whose result nobody has ever compiled — arriving by the other
+ * door.
+ *
+ * `/merge` is absent when GitLab cannot compute it, which means the merge
+ * request conflicts with its target. That is worth saying rather than quietly
+ * substituting `/head`, so the fallback is loud.
+ *
+ * Backport testing (running an MR against a base other than the branch it
+ * targets) is out of scope for upkeep, so applyMr refuses target/base
+ * mismatches up front.
  */
 final readonly class MrCheckout
 {
-    /**
-     * The refspec to fetch: force-updating (+) so re-applying an MR that
-     * gained commits since the last fetch updates mr-<iid> instead of
-     * failing non-fast-forward.
-     */
-    public static function fetchRefspec(int $iid): string
+    /** GitLab's ref for the branch merged into the current target tip. */
+    public static function mergeRef(int $iid): string
     {
-        return sprintf('+refs/merge-requests/%d/head:%s', $iid, self::branchName($iid));
+        return sprintf('refs/merge-requests/%d/merge', $iid);
+    }
+
+    /** GitLab's ref for the contributor's branch as it stands. */
+    public static function headRef(int $iid): string
+    {
+        return sprintf('refs/merge-requests/%d/head', $iid);
+    }
+
+    /**
+     * The refspec to fetch, for whichever ref is being used.
+     *
+     * Force-updating (+) so re-applying an MR that moved since the last fetch
+     * updates mr-<iid> instead of failing non-fast-forward. The merge ref
+     * moves for a second reason the head ref does not: GitLab recomputes it
+     * whenever the *target* gains a commit, so a re-check after an unchanged
+     * merge request can still be a different tree — which is exactly the
+     * thing worth re-checking.
+     */
+    public static function fetchRefspec(string $ref, int $iid): string
+    {
+        return sprintf('+%s:%s', $ref, self::branchName($iid));
+    }
+
+    /**
+     * Which ref to check out, given what the remote actually advertises.
+     *
+     * Returns null when the merge request has neither, which is not a state
+     * to guess about: the iid is wrong, or the MR was removed.
+     *
+     * @param list<string> $advertised ref names from `git ls-remote`
+     */
+    public static function preferredRef(array $advertised, int $iid): ?string
+    {
+        foreach ([self::mergeRef($iid), self::headRef($iid)] as $ref) {
+            if (\in_array($ref, $advertised, true)) {
+                return $ref;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What to say when only the head ref exists.
+     *
+     * GitLab computes no merge ref for a merge request that conflicts with its
+     * target, so this is a diagnosis and not a detail: the contribution does
+     * not currently apply, CI has nothing to run either, and whatever is
+     * checked locally is the branch alone.
+     */
+    public static function noMergeRefWarning(int $iid): string
+    {
+        return sprintf(
+            'MR !%d has no merge ref: GitLab could not merge it into its target, which normally means a conflict. '
+            . 'Checking the branch on its own instead — this is not what CI runs, and the result says nothing '
+            . 'about how the work behaves once merged.',
+            $iid,
+        );
+    }
+
+    /**
+     * @throws AdapterException when the merge request advertises no ref at all
+     */
+    public static function noRefsAtAll(int $iid): AdapterException
+    {
+        return new AdapterException(sprintf(
+            'MR !%d publishes no refs on origin — neither %s nor %s. Check the merge request number.',
+            $iid,
+            self::mergeRef($iid),
+            self::headRef($iid),
+        ));
     }
 
     /**

@@ -55,7 +55,11 @@ interface EngineAdapterInterface
      * @throws AdapterException when the working copy is dirty, the base cannot
      *                          be resolved, or the patch does not apply
      */
-    public function applyPatch(Environment $environment, PatchApplication $patch): void;
+    public function applyPatch(
+        Environment $environment,
+        PatchApplication $patch,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): void;
 
     /**
      * Opens the maintainer's own work branch for an issue, creating it off the
@@ -76,7 +80,12 @@ interface EngineAdapterInterface
      * @throws AdapterException when the working copy is dirty or the base
      *                          cannot be checked out
      */
-    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool;
+    public function startWork(
+        Environment $environment,
+        IssueBranch $branch,
+        ?string $baseBranch = null,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): bool;
 
     /**
      * Applies a patch onto the maintainer's own work branch for the issue and
@@ -103,6 +112,7 @@ interface EngineAdapterInterface
         PatchApplication $patch,
         IssueBranch $branch,
         string $commitMessage,
+        BaseRefresh $refresh = BaseRefresh::Update,
     ): string;
 
     /**

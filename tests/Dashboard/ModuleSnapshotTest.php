@@ -286,6 +286,80 @@ final class ModuleSnapshotTest extends TestCase
         self::assertSame([], $older->coreConstraints);
     }
 
+    /**
+     * The revision each merge request's evidence is about survives the cache,
+     * so a dashboard read from disk tells fresh from stale the same way a
+     * fresh fetch does.
+     */
+    public function testMergeRefShasRoundTrip(): void
+    {
+        $original = new ModuleSnapshot(
+            new \DateTimeImmutable('2026-09-05T10:00:00+00:00'),
+            self::projectPayload(),
+            [],
+            [],
+            [],
+            [],
+            [],
+            [7 => str_repeat('a', 40), 12 => str_repeat('b', 40)],
+        );
+
+        $restored = ModuleSnapshot::fromJson($original->toJson());
+
+        self::assertNotNull($restored);
+        self::assertSame([7 => str_repeat('a', 40), 12 => str_repeat('b', 40)], $restored->mergeRefShas);
+    }
+
+    /**
+     * Anything that is not an iid pointing at something SHA-shaped is dropped.
+     *
+     * A cache file is untrusted input, and this value becomes the *revision* a
+     * result is filed under — junk here would key evidence to a string nothing
+     * can ever match, which reads as "never checked" forever.
+     */
+    public function testUnusableMergeRefShasAreDropped(): void
+    {
+        $restored = ModuleSnapshot::fromJson((string) json_encode([
+            'fetched_at' => '2026-09-05T10:00:00+00:00',
+            'project' => self::projectPayload(),
+            'merge_requests' => [],
+            'merge_ref_shas' => [
+                '7' => str_repeat('a', 40),
+                '8' => 'not-a-sha',
+                '9' => 42,
+                'not-an-iid' => str_repeat('c', 40),
+                '10' => str_repeat('Z', 40),
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertNotNull($restored);
+        self::assertSame([7 => str_repeat('a', 40)], $restored->mergeRefShas);
+    }
+
+    /**
+     * A snapshot written before the field existed, or with junk in its place,
+     * reads as "no merge refs known" — every merge request then falls back to
+     * its head SHA, which is the behaviour that release had.
+     */
+    public function testAnAbsentOrUnusableMergeRefSectionReadsAsNoneKnown(): void
+    {
+        foreach ([null, 'nonsense', 42] as $junk) {
+            $payload = [
+                'fetched_at' => '2026-09-05T10:00:00+00:00',
+                'project' => self::projectPayload(),
+                'merge_requests' => [],
+            ];
+            if ($junk !== null) {
+                $payload['merge_ref_shas'] = $junk;
+            }
+
+            $restored = ModuleSnapshot::fromJson((string) json_encode($payload, \JSON_THROW_ON_ERROR));
+
+            self::assertNotNull($restored);
+            self::assertSame([], $restored->mergeRefShas);
+        }
+    }
+
     public function testAgeLabelJustNow(): void
     {
         $snapshot = new ModuleSnapshot(new \DateTimeImmutable(), [], [], []);

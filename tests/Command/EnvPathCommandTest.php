@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Upkeep\Adapter\CheckRunResult;
 use Upkeep\Adapter\EngineAdapterInterface;
+use Upkeep\Adapter\BaseRefresh;
 use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
@@ -56,12 +57,19 @@ final class EnvPathCommandTest extends TestCase
             {
             }
 
-            public function applyPatch(Environment $environment, PatchApplication $patch): void
-            {
+            public function applyPatch(
+                Environment $environment,
+                PatchApplication $patch,
+                BaseRefresh $refresh = BaseRefresh::Update,
+            ): void {
             }
 
-            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
-            {
+            public function startWork(
+                Environment $environment,
+                IssueBranch $branch,
+                ?string $baseBranch = null,
+                BaseRefresh $refresh = BaseRefresh::Update,
+            ): bool {
                 return false;
             }
 
@@ -80,6 +88,7 @@ final class EnvPathCommandTest extends TestCase
                 PatchApplication $patch,
                 IssueBranch $branch,
                 string $commitMessage,
+                BaseRefresh $refresh = BaseRefresh::Update,
             ): string {
                 throw new \BadMethodCallException();
             }
@@ -140,12 +149,19 @@ final class EnvPathCommandTest extends TestCase
             {
             }
 
-            public function applyPatch(Environment $environment, PatchApplication $patch): void
-            {
+            public function applyPatch(
+                Environment $environment,
+                PatchApplication $patch,
+                BaseRefresh $refresh = BaseRefresh::Update,
+            ): void {
             }
 
-            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
-            {
+            public function startWork(
+                Environment $environment,
+                IssueBranch $branch,
+                ?string $baseBranch = null,
+                BaseRefresh $refresh = BaseRefresh::Update,
+            ): bool {
                 return false;
             }
 
@@ -164,6 +180,7 @@ final class EnvPathCommandTest extends TestCase
                 PatchApplication $patch,
                 IssueBranch $branch,
                 string $commitMessage,
+                BaseRefresh $refresh = BaseRefresh::Update,
             ): string {
                 throw new \BadMethodCallException();
             }
@@ -222,12 +239,19 @@ final class EnvPathCommandTest extends TestCase
             {
             }
 
-            public function applyPatch(Environment $environment, PatchApplication $patch): void
-            {
+            public function applyPatch(
+                Environment $environment,
+                PatchApplication $patch,
+                BaseRefresh $refresh = BaseRefresh::Update,
+            ): void {
             }
 
-            public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
-            {
+            public function startWork(
+                Environment $environment,
+                IssueBranch $branch,
+                ?string $baseBranch = null,
+                BaseRefresh $refresh = BaseRefresh::Update,
+            ): bool {
                 return false;
             }
 
@@ -246,6 +270,7 @@ final class EnvPathCommandTest extends TestCase
                 PatchApplication $patch,
                 IssueBranch $branch,
                 string $commitMessage,
+                BaseRefresh $refresh = BaseRefresh::Update,
             ): string {
                 throw new \BadMethodCallException();
             }

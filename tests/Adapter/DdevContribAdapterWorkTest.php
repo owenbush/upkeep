@@ -44,7 +44,10 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
         $resumed = $this->adapter($runner)->startWork($this->environment(), $this->branch());
 
         self::assertFalse($resumed, 'a new branch, not a resumption');
-        self::assertTrue($runner->issued('checkout -b 3223746-fix-the-thing 1.0.x'));
+        // Cut from what origin has, not from a local branch that has been
+        // sitting still since the clone.
+        self::assertTrue($runner->issued('fetch origin 1.0.x'));
+        self::assertTrue($runner->issued('checkout -b 3223746-fix-the-thing FETCH_HEAD'));
         // Recorded so a later applyMr/applyPatch from this working copy knows
         // its origin, exactly as those paths record it for each other.
         self::assertTrue($runner->issued('config upkeep.base-branch 1.0.x'));
@@ -62,7 +65,8 @@ final class DdevContribAdapterWorkTest extends DdevAdapterTestCase
 
         $this->adapter($runner)->startWork($this->environment(), $this->branch(), '2.0.x');
 
-        self::assertTrue($runner->issued('checkout -b 3223746-fix-the-thing 2.0.x'));
+        self::assertTrue($runner->issued('fetch origin 2.0.x'));
+        self::assertTrue($runner->issued('checkout -b 3223746-fix-the-thing FETCH_HEAD'));
     }
 
     /**

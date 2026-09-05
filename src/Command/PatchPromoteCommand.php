@@ -96,7 +96,13 @@ final class PatchPromoteCommand extends AbstractPatchCommand
         $environment = $adapter->ensureEnv($context->module, $context->coreMajor);
 
         $io->section('Promote');
-        $sha = $adapter->promotePatch($environment, $context->application(), $branch, $attribution->message());
+        $sha = $adapter->promotePatch(
+            $environment,
+            $context->application(),
+            $branch,
+            $attribution->message(),
+            self::baseRefresh($input),
+        );
 
         $io->success(sprintf('%s now carries the patch at %s.', $branch->name, substr($sha, 0, 8)));
         $io->writeln($attribution->message());

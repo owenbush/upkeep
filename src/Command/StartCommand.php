@@ -68,7 +68,8 @@ final class StartCommand extends UpkeepCommand
         $this->addModuleArgument()
             ->addTargetCoreOption()
             ->addCockpitOption()
-            ->addProjectsRootOption();
+            ->addProjectsRootOption()
+            ->addNoUpdateOption();
 
         $this->addArgument(
             'issue',
@@ -135,7 +136,12 @@ final class StartCommand extends UpkeepCommand
         // owns that knowledge, and it resolves it the same way applyMr and
         // applyPatch do, so a branch started here and a contribution checked
         // out here share an origin.
-        $resumed = $adapter->startWork($environment, $branch, self::stringOption($input, 'base'));
+        $resumed = $adapter->startWork(
+            $environment,
+            $branch,
+            self::stringOption($input, 'base'),
+            self::baseRefresh($input),
+        );
 
         $io->success(sprintf(
             '%s %s. Write your fix, then: upkeep check %s --working-copy, and upkeep publish %s %d',

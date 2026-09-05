@@ -76,6 +76,21 @@ final readonly class ModuleSnapshot
          * @var array<array-key, string>
          */
         public array $coreConstraints = [],
+        /**
+         * Merge request iid => the SHA of its `/merge` ref.
+         *
+         * The revision each merge request's local evidence is about. upkeep
+         * checks the branch merged into the current tip of its target, and
+         * that tree moves when *either* side does — so a result keyed on the
+         * head SHA alone would read as current after the target gained a
+         * commit. An iid missing here has no merge ref (GitLab could not merge
+         * it, normally a conflict) or comes from a snapshot written before
+         * this existed; both fall back to the head SHA, which is what the
+         * adapter checks out in that case too.
+         *
+         * @var array<array-key, string>
+         */
+        public array $mergeRefShas = [],
     ) {
     }
 
@@ -138,6 +153,7 @@ final readonly class ModuleSnapshot
             'merged_merge_requests' => $this->mergedMrData,
             'fork_nids' => $this->forkNids,
             'core_constraints' => $this->coreConstraints,
+            'merge_ref_shas' => $this->mergeRefShas,
         ], \JSON_THROW_ON_ERROR | \JSON_PRETTY_PRINT);
     }
 
@@ -184,6 +200,7 @@ final readonly class ModuleSnapshot
             \is_array($mergedMrs) ? self::payloadList($mergedMrs) : [],
             self::forkMap($data['fork_nids'] ?? null),
             self::constraintMap($data['core_constraints'] ?? null),
+            self::shaMap($data['merge_ref_shas'] ?? null),
         );
     }
 
@@ -221,6 +238,27 @@ final readonly class ModuleSnapshot
         }
 
         return $payloads;
+    }
+
+    /**
+     * Merge request iid => merge-ref SHA, from an untrusted cache file.
+     *
+     * @return array<array-key, string>
+     */
+    private static function shaMap(mixed $raw): array
+    {
+        if (!\is_array($raw)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($raw as $iid => $sha) {
+            if (is_numeric($iid) && \is_string($sha) && preg_match('/^[0-9a-f]{7,64}$/', $sha) === 1) {
+                $map[(int) $iid] = $sha;
+            }
+        }
+
+        return $map;
     }
 
     /**

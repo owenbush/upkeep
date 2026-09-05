@@ -55,10 +55,17 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
         $moduleDir = $this->projectPath() . '/module';
 
         $standOnBase = array_search('git -C ' . $moduleDir . ' checkout 1.0.x', $lines, true);
-        $resetBranch = array_search('git -C ' . $moduleDir . ' checkout -B patch-3597808 1.0.x', $lines, true);
+        $fetchBase = array_search('git -C ' . $moduleDir . ' fetch origin 1.0.x', $lines, true);
+        // FETCH_HEAD, not the local 1.0.x: the working copy is cloned once and
+        // its base then sits still while drupal.org's moves, and CI checks the
+        // work merged into the *current* tip. Cutting from the local branch is
+        // how a check passes against code months older than the one CI runs.
+        $resetBranch = array_search('git -C ' . $moduleDir . ' checkout -B patch-3597808 FETCH_HEAD', $lines, true);
         self::assertIsInt($standOnBase);
+        self::assertIsInt($fetchBase);
         self::assertIsInt($resetBranch);
-        self::assertLessThan($resetBranch, $standOnBase);
+        self::assertLessThan($fetchBase, $standOnBase);
+        self::assertLessThan($resetBranch, $fetchBase);
 
         self::assertTrue($runner->issued('config upkeep.base-branch 1.0.x'));
         self::assertTrue($runner->issued('apply --index -p1 ' . $this->patchFile));
@@ -138,7 +145,8 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
 
         $this->adapter($runner)->applyPatch($this->environment(), $this->patch());
 
-        self::assertTrue($runner->issued('checkout -B patch-3597808 1.0.x'));
+        self::assertTrue($runner->issued('fetch origin 1.0.x'), 'the recorded base is what gets refreshed');
+        self::assertTrue($runner->issued('checkout -B patch-3597808 FETCH_HEAD'));
     }
 
     /**

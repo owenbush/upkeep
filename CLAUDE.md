@@ -40,6 +40,78 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- **phpstan and phpcs run from inside the module, as CI does.**
+  `Adapter\CheckScript`. Both discover their configuration from the *current
+  working directory*, and upkeep ran them from the project root — where the
+  only config is the gitlab_templates default it had just downloaded. A module
+  shipping its own `phpstan.neon` or `phpcs.xml.dist` had its level, baseline,
+  ignores and ruleset silently ignored. CI does the opposite deliberately:
+  `.phpstan-base` opens with `cd $DRUPAL_PROJECT_FOLDER` and fetches the
+  template only in the `else`; `.phpcs-base` opens with `cd $CI_PROJECT_DIR`
+  and looks for `{.,}phpcs.xml{.dist,}` first. Two consequences worth knowing:
+  `--autoload-file` becomes load-bearing once the working directory is not the
+  project root (PHPStan resolves Drupal through the site autoloader and cannot
+  find it from inside the module — CI passes it for the same reason), and the
+  fallback config is written **at the project root, never into the module**.
+  CI writes it beside the code because the container is disposable; here the
+  module directory is a git checkout whose cleanliness the next `applyPatch`
+  or `startWork` refuses on, so two untracked files there would break the tool.
+  One `cd` and one invocation per script, with extras carried in the
+  positional parameters — that is what makes "nothing is written after the cd"
+  a property a test can check at all.
+- **An MR is checked as CI checks it: the merge, not the branch.** GitLab
+  publishes two refs per merge request — `/head` is the contributor's branch,
+  `/merge` is that branch merged into the **current** tip of the target — and
+  CI analyses `/merge`. `applyMr` fetched `/head`, so upkeep and CI were
+  reading different trees on any merge request whose branch had fallen behind.
+  Measured on pathauto: **23 of 25 open merge requests have a merge tree that
+  differs from their head tree**, with branches 7 to 41 commits behind the
+  target. This is not staleness a fetch can fix — an MR branch is one commit
+  of work on top of the target *as it was months ago*, and the tree CI runs
+  exists on neither side until GitLab computes it. Same failure as a patch on
+  a stale base, through the other door. `MrCheckout::preferredRef()` picks the
+  merge ref from what `ls-remote` actually advertises (one lightweight round
+  trip, against a command that is about to provision an environment), and
+  falls back to `/head` **loudly**: GitLab computes no merge ref for a merge
+  request that conflicts with its target, so the fallback is a diagnosis, not
+  a detail. **Evidence is keyed on the merge ref's SHA**
+  (`Gitlab\MergeRevision`, `ModuleSnapshot::$mergeRefShas`, one
+  `/merge_ref` call per open MR at refresh), because the merge tree moves when
+  *either* side does: keyed on the head SHA a result would still read as
+  current after the **target** gained a commit, which is the same
+  evidence-about-another-tree problem one level down. No merge ref means the
+  head SHA is the revision — the adapter checks the branch there too, so both
+  halves fall back together. `merge --fast-lane` re-reads the merge ref at
+  prompt time for the same reason it re-reads the MR. Neither ref at all is a refusal — that is a wrong iid, not a state
+  to guess about. The "head moved since it was fetched" note is now conditional
+  on having used the head ref: a merge commit is never the MR's head SHA, so
+  comparing them would warn on every healthy run. **Cached MR results written
+  before this describe the branch, not the merge** — clear
+  `<cockpit>/results/` once after upgrading.
+- **The base branch is fetched before anything is cut from it.**
+  `Adapter\BaseRefresh` (Update by default, Skip only via `--no-update`) and
+  `Adapter\BaseBranchUpdate`. A module working copy is cloned once and was
+  then never fetched again on any path that cuts a branch, so its `2.0.x`
+  stayed frozen at the day of the clone. That alone would only make a verdict
+  old; what makes it *wrong* is that drupal.org's CI does not check your
+  branch — it checks `refs/merge-requests/<iid>/merge`, your work merged into
+  the **current** tip of the target. Live proof of the cost: a base sixteen
+  months stale, a target since rewritten for Drupal 12 (module file moved to
+  OOP hooks, a `use` import removed), and a patch that only added a function.
+  Git merged it without a conflict; in the merged file the new block was the
+  only remaining reference to the imported class, with no import, so it
+  resolved to the global namespace. Local green, CI red, one line, no
+  explanation, hours lost. So `applyPatch`, `startWork` and `promotePatch` now
+  `git fetch origin <base>` and cut from `FETCH_HEAD` (never `origin/<base>` —
+  a remote-tracking ref is a property of how the clone was configured;
+  FETCH_HEAD is always written). The local base is fast-forwarded when it can
+  be and **never reset**: one carrying local commits is left alone and said
+  so, since discarding somebody's unpushed work to tidy a check is not a trade
+  upkeep makes. A failed fetch is the one place here that **refuses instead of
+  degrading** — every other degraded path produces a visibly reduced answer,
+  while this one produces a verdict indistinguishable from a good one that
+  then gets cached as evidence the fast-lane gate reads. Resuming an existing
+  work branch fetches nothing; the refresh belongs to cutting a new branch.
 - **Publishing goes to an issue fork, never to origin.** On drupal.org a merge
   request always comes from `issue/<machine-name>-<nid>` and is opened *across*
   projects into the canonical one — measured on pathauto, 100 of 100 open MRs
@@ -425,7 +497,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (6957/6957), methods (798/798) and classes (155/155), 1442 tests.
+lines (7124/7124), methods (818/818) and classes (159/159), 1486 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

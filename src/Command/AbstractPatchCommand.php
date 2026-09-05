@@ -88,6 +88,7 @@ abstract class AbstractPatchCommand extends UpkeepCommand
         );
         $this->addCockpitOption();
         $this->addProjectsRootOption();
+        $this->addNoUpdateOption();
     }
 
     /**

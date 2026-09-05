@@ -185,6 +185,18 @@ abstract class DdevAdapterTestCase extends TestCase
     {
         $line = implode(' ', $command);
 
+        // A healthy remote advertises both of a merge request's refs. `/merge`
+        // is the branch merged into the current target tip — what CI analyses,
+        // and so what applyMr checks out; `/head` is the branch alone. Tests
+        // about the conflicting case (no merge ref) stub this themselves.
+        if (str_contains($line, 'ls-remote') && preg_match('#refs/merge-requests/(\d+)/#', $line, $m) === 1) {
+            return sprintf(
+                "1111111111111111111111111111111111111111\trefs/merge-requests/%1\$s/head\n"
+                . "2222222222222222222222222222222222222222\trefs/merge-requests/%1\$s/merge\n",
+                $m[1],
+            );
+        }
+
         // `cp -a <tree> <project>` seeds the project tree from the base
         // artifact; the seeded tree carries the project composer.json.
         if ($command[0] === 'cp') {

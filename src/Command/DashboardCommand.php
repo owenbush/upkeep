@@ -463,11 +463,21 @@ final class DashboardCommand extends UpkeepCommand
         $mrData = [];
         $branches = $project->defaultBranch !== '' ? [$project->defaultBranch => true] : [];
 
+        $mergeRefShas = [];
         foreach ($list->all() as $listed) {
             $detail = $client->mergeRequest($project, $listed->iid);
             $mr = $detail instanceof ApiFailure ? $listed : $detail;
             $mrData[] = $mr->toApiArray();
             $branches[$mr->targetBranch] = true;
+
+            // What a check of this merge request is actually about: the branch
+            // merged into the current tip of its target, which is the tree CI
+            // analyses and the one upkeep checks out. Keyed on the head SHA
+            // alone, evidence would stay "current" after the *target* moved.
+            $mergeRefSha = $client->mergeRefSha($project, $mr->iid);
+            if ($mergeRefSha !== null) {
+                $mergeRefShas[$mr->iid] = $mergeRefSha;
+            }
         }
 
         // Merged ones too. Without them an issue whose work has already
@@ -506,6 +516,7 @@ final class DashboardCommand extends UpkeepCommand
             $mergedData,
             $forkNids,
             self::coreConstraints($client, $project, $module, array_keys($branches)),
+            $mergeRefShas,
         );
     }
 

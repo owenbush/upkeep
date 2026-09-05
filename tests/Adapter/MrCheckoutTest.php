@@ -11,12 +11,72 @@ use Upkeep\Adapter\MrCheckout;
 #[CoversClass(MrCheckout::class)]
 final class MrCheckoutTest extends TestCase
 {
-    public function testFetchRefspecTargetsTheMergeRequestHeadRef(): void
+    public function testFetchRefspecCarriesWhicheverRefWasChosen(): void
     {
-        // Force-refspec (+...) so re-applying an MR after it gained commits
-        // updates the local branch instead of failing non-fast-forward.
-        self::assertSame('+refs/merge-requests/2/head:mr-2', MrCheckout::fetchRefspec(2));
-        self::assertSame('+refs/merge-requests/147/head:mr-147', MrCheckout::fetchRefspec(147));
+        // Force-refspec (+...) so re-applying an MR after it moved updates the
+        // local branch instead of failing non-fast-forward. The merge ref moves
+        // for a second reason the head ref does not: GitLab recomputes it when
+        // the *target* gains a commit.
+        self::assertSame(
+            '+refs/merge-requests/2/merge:mr-2',
+            MrCheckout::fetchRefspec(MrCheckout::mergeRef(2), 2),
+        );
+        self::assertSame(
+            '+refs/merge-requests/147/head:mr-147',
+            MrCheckout::fetchRefspec(MrCheckout::headRef(147), 147),
+        );
+    }
+
+    /**
+     * The merge ref wins, and that is the correction.
+     *
+     * `/head` is the contributor's branch; `/merge` is that branch merged into
+     * the *current* tip of the target, which is what CI analyses. Measured on
+     * pathauto: 23 of 25 open merge requests have a merge tree that differs
+     * from their head tree, with branches 7 to 41 commits behind. Checking the
+     * head meant agreeing with CI by luck.
+     */
+    public function testTheMergeRefIsPreferredOverTheHeadRef(): void
+    {
+        $both = ['refs/merge-requests/4/head', 'refs/merge-requests/4/merge'];
+
+        self::assertSame('refs/merge-requests/4/merge', MrCheckout::preferredRef($both, 4));
+        self::assertSame('refs/merge-requests/4/merge', MrCheckout::preferredRef(array_reverse($both), 4));
+    }
+
+    /**
+     * No merge ref means GitLab could not merge the branch into its target —
+     * normally a conflict. The branch is still checkable, but the fallback is
+     * announced, because a branch-only verdict is not the one CI would give.
+     */
+    public function testOnlyAHeadRefFallsBackToItAndIsWorthSaying(): void
+    {
+        self::assertSame(
+            'refs/merge-requests/4/head',
+            MrCheckout::preferredRef(['refs/merge-requests/4/head'], 4),
+        );
+
+        $warning = MrCheckout::noMergeRefWarning(4);
+        self::assertStringContainsString('conflict', $warning);
+        self::assertStringContainsString('not what CI runs', $warning);
+    }
+
+    /** Another merge request's refs are not this one's. */
+    public function testRefsBelongingToADifferentMergeRequestAreNotAccepted(): void
+    {
+        self::assertNull(MrCheckout::preferredRef(
+            ['refs/merge-requests/5/merge', 'refs/merge-requests/5/head'],
+            4,
+        ));
+        self::assertNull(MrCheckout::preferredRef([], 4));
+    }
+
+    public function testNoRefsAtAllIsARefusalNamingBoth(): void
+    {
+        $refusal = MrCheckout::noRefsAtAll(4);
+
+        self::assertStringContainsString('refs/merge-requests/4/merge', $refusal->getMessage());
+        self::assertStringContainsString('refs/merge-requests/4/head', $refusal->getMessage());
     }
 
     public function testBranchNameIsDerivedFromTheIid(): void

@@ -59,8 +59,11 @@ final class DdevContribAdapterWorkingCopyTest extends DdevAdapterTestCase
         $lines = $runner->commandLines();
         $moduleDir = $this->projectPath() . '/module';
         $checkoutBase = array_search('git -C ' . $moduleDir . ' checkout 1.0.x', $lines, true);
+        // The *merge* ref, not the head: CI analyses the branch merged into
+        // the current tip of its target, and on pathauto 23 of 25 open merge
+        // requests have a merge tree that differs from their head tree.
         $fetch = array_search(
-            'git -C ' . $moduleDir . ' fetch origin +refs/merge-requests/7/head:mr-7',
+            'git -C ' . $moduleDir . ' fetch origin +refs/merge-requests/7/merge:mr-7',
             $lines,
             true,
         );
@@ -145,8 +148,36 @@ final class DdevContribAdapterWorkingCopyTest extends DdevAdapterTestCase
     }
 
     /**
+     * A merge request GitLab cannot merge publishes no merge ref, so the
+     * branch is checked on its own — and that is announced, because a
+     * branch-only verdict is not the one CI would give. Normally it means the
+     * contribution conflicts with its target.
+     */
+    public function testAConflictingMrFallsBackToItsBranchAndSaysSo(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'rev-parse --abbrev-ref HEAD' => "mr-7\n",
+            'rev-parse HEAD' => "aaaaaaa\n",
+            'ls-remote' => "1111111111111111111111111111111111111111\trefs/merge-requests/7/head\n",
+        ]);
+
+        $this->adapter($runner)->applyMr($this->environment(), self::mergeRequest());
+
+        self::assertTrue($runner->issued('fetch origin +refs/merge-requests/7/head:mr-7'));
+        self::assertTrue($this->loggedContaining('has no merge ref'));
+        self::assertTrue($this->loggedContaining('not what CI runs'));
+    }
+
+    /**
      * A head that moved since the MR was fetched is reported, not refused —
      * the checkout is still valid, it is just newer than the model.
+     *
+     * Only meaningful on the head ref. The merge ref is a commit GitLab made
+     * by merging the branch into its target, so it is never the MR's head SHA
+     * and comparing the two would warn on every healthy run.
      */
     public function testAHeadThatMovedSinceTheMrWasFetchedIsReported(): void
     {
@@ -156,11 +187,45 @@ final class DdevContribAdapterWorkingCopyTest extends DdevAdapterTestCase
             'config --get upkeep.base-branch' => null,
             'rev-parse --abbrev-ref HEAD' => "mr-7\n",
             'rev-parse HEAD' => "bbbbbbb\n",
+            'ls-remote' => "1111111111111111111111111111111111111111\trefs/merge-requests/7/head\n",
         ]);
 
         $this->adapter($runner)->applyMr($this->environment(), self::mergeRequest());
 
         self::assertTrue($this->loggedContaining('differs from the MR model\'s head aaaaaaa'));
+    }
+
+    /** Checking out the merge never warns about the head it is not. */
+    public function testTheMergeRefDoesNotWarnAboutNotBeingTheHeadSha(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'rev-parse --abbrev-ref HEAD' => "mr-7\n",
+            'rev-parse HEAD' => "ccccccc\n",
+        ]);
+
+        $this->adapter($runner)->applyMr($this->environment(), self::mergeRequest());
+
+        self::assertFalse($this->loggedContaining('differs from the MR model'));
+        self::assertTrue($this->loggedContaining('Checking MR !7 as CI does'));
+    }
+
+    /** No refs at all is the merge request number being wrong, not a state to guess about. */
+    public function testAMergeRequestPublishingNoRefsIsRefused(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "1.0.x\n",
+            'config --get upkeep.base-branch' => null,
+            'ls-remote' => '',
+        ]);
+
+        $this->expectException(AdapterException::class);
+        $this->expectExceptionMessage('publishes no refs on origin');
+
+        $this->adapter($runner)->applyMr($this->environment(), self::mergeRequest());
     }
 
     public function testAnMrWithNoRecordedHeadIsAppliedWithoutAHeadComparison(): void

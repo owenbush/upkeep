@@ -975,6 +975,89 @@ loudly and still promotes — the commit states the work is not the promoter's
 and points at the issue. Credit on drupal.org is allocated through the
 issue-credit system anyway, which is a browser action and stays yours to do.
 
+### Your module's own phpstan.neon and phpcs.xml.dist are honoured
+
+Both tools discover their configuration from the working directory, and CI
+runs them from **inside the module** — `.phpstan-base` opens with
+`cd $DRUPAL_PROJECT_FOLDER`, `.phpcs-base` with `cd $CI_PROJECT_DIR` — so a
+module that ships its own config gets it used, and the gitlab_templates
+default is only a fallback.
+
+upkeep now does the same. It used to run both from the Drupal project root,
+where the only config present is the template it had just downloaded, so a
+module's own level, baseline, ignores and ruleset were silently ignored and
+the check reported a verdict against rules the project does not use.
+
+The fallback config is kept at the project root rather than written into your
+module: CI drops it beside the code because the container is thrown away, but
+here that directory is your git checkout, and two untracked files in it would
+make the next `patch:apply` or `start` refuse on a dirty working copy.
+
+### An MR is checked the way CI checks it
+
+GitLab publishes two refs for every merge request:
+
+- `refs/merge-requests/<iid>/head` — the contributor's branch.
+- `refs/merge-requests/<iid>/merge` — that branch merged into the **current**
+  tip of the target.
+
+**CI analyses the second one**, and so does upkeep. The distinction is not
+academic: an MR branch is a commit or two of work sitting on the target *as it
+was when the branch was cut*, and fetching it gets you the newest version of
+that — not the target's newer commits, which were never pushed to it. Measured
+on pathauto, branches run 7 to 41 commits behind, and **23 of 25 open merge
+requests have a merge tree that differs from their head tree**. Checking the
+branch meant agreeing with CI by luck.
+
+When GitLab publishes no merge ref, it could not merge the branch into its
+target — normally a conflict. upkeep checks the branch alone and says so,
+because a branch-only verdict is not the one CI would give.
+
+Local check results are keyed on that merge ref's SHA, not the branch head's.
+The merge tree changes when **either** side moves, so a result keyed on the
+head would still read as current after the target gained a commit — the same
+"evidence about a tree nobody checked" one level down. When a commit lands on
+the target, your cached results for that branch go stale and say so.
+
+### The base is brought up to date first
+
+Every command that cuts a branch — `patch:apply`, `patch:check`,
+`patch:promote`, `start` — fetches the base from origin first and cuts from
+what came back. This is not a convenience; it is the difference between a
+verdict that means something and one that does not.
+
+**drupal.org's CI does not check your branch.** It checks
+`refs/merge-requests/<iid>/merge`: your work merged into the *current* tip of
+the target. A module working copy is cloned once, so its `2.0.x` sits still
+while drupal.org's moves on — and a patch checked on top of a stale base is
+checked against code CI will never run.
+
+That failure is silent, because git has nothing to complain about. A real
+case: a base sixteen months old, a target since rewritten for Drupal 12 (the
+module file moved to OOP hooks and lost a `use` import), and a patch that only
+added a function. The merge was clean. In the merged file the added block was
+the only thing still naming the imported class, with no import left, so it
+resolved to the global namespace. Local check green; CI red on one line, with
+no hint that the two had looked at different code.
+
+When the base has moved you are told how far:
+
+```
+2.0.x was 47 commits behind origin — updated. CI tests your work merged into
+this, so a check against the old tip could have disagreed with it.
+```
+
+The local base is fast-forwarded when it can be, and **never reset**. A base
+carrying your own commits is left exactly as it is, and upkeep says so and
+cuts from origin anyway — because that is what CI merges into, and because
+discarding unpushed work to tidy a check is not a trade it gets to make.
+
+If the fetch fails, upkeep **refuses** (exit 2) rather than checking against
+the stale base. Everywhere else it degrades and says so; here the degraded
+result is a verdict that looks exactly like a good one and gets cached as
+evidence. `--no-update` makes that a choice instead — for working offline, or
+for reproducing a verdict against the tree as it was.
+
 **Nothing is pushed.** `patch:promote` stops at the commit; publishing somebody
 else's work under your account is a step a human types. It is also worth
 running `patch:check` first — a patch that only applies with reduced context is
@@ -1230,12 +1313,12 @@ above describe every invocation Upkeep actually runs.
 | `upkeep issue <module> <mr> [--no-open]` | Show the linked drupal.org issue and open it in the browser |
 | `upkeep needs-work <module> <mr> [--version=N] [--dry-run] [--no-open]` | Post the local check results as a comment on the merge request |
 | `upkeep issues <module> [--status=S] [--unclaimed]` | Every open issue and what has been contributed to it |
-| `upkeep start <module> <issue> [--version=N] [--branch=B] [--base=B]` | Provision and open a work branch for an issue (resumes if it exists) |
+| `upkeep start <module> <issue> [--version=N] [--branch=B] [--base=B] [--no-update]` | Provision and open a work branch for an issue (resumes if it exists) |
 | `upkeep publish <module> <issue> [--title=T] [--target=B] [--draft]` | Push the work branch and open its merge request |
 | `upkeep patches [--module=NAME] [--without-mr]` | drupal.org issues in Needs Review / RTBC carrying patch files, and the state of any MR beside them |
-| `upkeep patch:check <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--fixture=NAME]` | Run one drupal.org patch through the full isolated check flow |
-| `upkeep patch:apply <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest]` | Download and apply a patch, then print the environment path |
-| `upkeep patch:promote <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--branch=NAME]` | Apply a patch onto the issue work branch, credited to its author, ready to `publish` |
+| `upkeep patch:check <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--fixture=NAME] [--no-update]` | Run one drupal.org patch through the full isolated check flow |
+| `upkeep patch:apply <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--no-update]` | Download and apply a patch, then print the environment path |
+| `upkeep patch:promote <module> <issue> [--version=N] [--file=NAME\|--url=URL\|--latest] [--branch=NAME] [--no-update]` | Apply a patch onto the issue work branch, credited to its author, ready to `publish` |
 | `upkeep merge --fast-lane` | Per-MR human-approved merges of READY-AUTO rows only |
 | `upkeep notes <module>` | Paste-ready Markdown release notes since the last tag |
 | `upkeep status [--disk]` | Cockpit state; `--disk` itemizes measured disk usage |

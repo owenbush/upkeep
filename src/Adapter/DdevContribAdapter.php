@@ -144,7 +144,11 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // Step back onto the base first: git refuses to fetch into the
         // currently checked-out branch, which mr-<iid> is on a re-apply.
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
-        $this->runner->run(['git', '-C', $moduleDir, 'fetch', 'origin', MrCheckout::fetchRefspec($mergeRequest->iid)]);
+
+        $ref = $this->resolveMergeRequestRef($moduleDir, $mergeRequest->iid);
+        $this->runner->run(
+            ['git', '-C', $moduleDir, 'fetch', 'origin', MrCheckout::fetchRefspec($ref, $mergeRequest->iid)],
+        );
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', MrCheckout::branchName($mergeRequest->iid)]);
         // Record the base so the next applyMr can validate native-base even
         // though the working copy now sits on an mr-* branch.
@@ -160,7 +164,15 @@ final class DdevContribAdapter implements EngineAdapterInterface
         }
 
         $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
-        if ($mergeRequest->headSha !== null && $sha !== $mergeRequest->headSha) {
+        // Only meaningful against the head ref. On the merge ref the checked-out
+        // commit is one GitLab made by merging the branch into the target, so it
+        // is *never* the MR's head SHA and comparing them would warn on every
+        // healthy run.
+        if (
+            $ref === MrCheckout::headRef($mergeRequest->iid)
+            && $mergeRequest->headSha !== null
+            && $sha !== $mergeRequest->headSha
+        ) {
             ($this->log)(sprintf(
                 'Note: checked-out head %s differs from the MR model\'s head %s — the MR may have moved '
                 . 'since it was fetched.',
@@ -181,8 +193,11 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ));
     }
 
-    public function applyPatch(Environment $environment, PatchApplication $patch): void
-    {
+    public function applyPatch(
+        Environment $environment,
+        PatchApplication $patch,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): void {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
         $wcStatus = WorkingCopyStatus::inspect($moduleDir, $this->runner);
@@ -210,7 +225,8 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // Reset the branch from the base on every apply: a re-roll must be
         // tested on its own, not stacked on whatever was applied last time.
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
-        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-B', $branch, $baseBranch]);
+        $cutPoint = $this->refreshBase($moduleDir, $baseBranch, $refresh);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-B', $branch, $cutPoint]);
         $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $baseBranch]);
 
         $this->applyPatchFile($moduleDir, $patch, $baseBranch);
@@ -307,8 +323,12 @@ final class DdevContribAdapter implements EngineAdapterInterface
         throw PatchCheckout::unappliableException($patch, $baseBranch, $stat->output, $check->output);
     }
 
-    public function startWork(Environment $environment, IssueBranch $branch, ?string $baseBranch = null): bool
-    {
+    public function startWork(
+        Environment $environment,
+        IssueBranch $branch,
+        ?string $baseBranch = null,
+        BaseRefresh $refresh = BaseRefresh::Update,
+    ): bool {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
         $status = WorkingCopyStatus::inspect($moduleDir, $this->runner);
@@ -357,13 +377,106 @@ final class DdevContribAdapter implements EngineAdapterInterface
 
         ($this->log)(sprintf('Starting work branch "%s" off %s ...', $branch->name, $base));
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', $base]);
-        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-b', $branch->name, $base]);
+        $cutPoint = $this->refreshBase($moduleDir, $base, $refresh);
+        $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-b', $branch->name, $cutPoint]);
         // Recorded so a later applyMr/applyPatch from this working copy knows
         // what the base was, exactly as those paths record it for each other.
         $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $base]);
         $this->requireWorkingCopyBranch($environment->projectPath, $environment->moduleName, $branch->name);
 
         return false;
+    }
+
+    /**
+     * Which of the merge request's refs to check out.
+     *
+     * Asked rather than assumed, because the two answers mean different
+     * things. `/merge` is the branch merged into the current target tip and is
+     * what CI analyses; `/head` is the branch alone. GitLab publishes no merge
+     * ref for a merge request that conflicts with its target, and falling back
+     * silently would report a branch-only verdict as though it were CI's.
+     *
+     * One extra `ls-remote` per apply, which is a single lightweight round
+     * trip against a command that is about to clone-fetch and provision an
+     * environment.
+     *
+     * @throws AdapterException when the merge request advertises no ref at all
+     */
+    private function resolveMergeRequestRef(string $moduleDir, int $iid): string
+    {
+        $advertised = $this->runner->run([
+            'git', '-C', $moduleDir, 'ls-remote', 'origin',
+            MrCheckout::mergeRef($iid), MrCheckout::headRef($iid),
+        ]);
+
+        $refs = [];
+        foreach (explode("\n", $advertised) as $line) {
+            $parts = preg_split('/\s+/', trim($line)) ?: [];
+            if (\count($parts) === 2) {
+                $refs[] = $parts[1];
+            }
+        }
+
+        $ref = MrCheckout::preferredRef($refs, $iid);
+        if ($ref === null) {
+            throw MrCheckout::noRefsAtAll($iid);
+        }
+
+        if ($ref === MrCheckout::headRef($iid)) {
+            ($this->log)(MrCheckout::noMergeRefWarning($iid));
+        } else {
+            ($this->log)(sprintf(
+                'Checking MR !%d as CI does: the branch merged into the current tip of its target.',
+                $iid,
+            ));
+        }
+
+        return $ref;
+    }
+
+    /**
+     * Bring the base up to date, and return what to cut the new branch from.
+     *
+     * The working copy is cloned once and, before this, was never fetched
+     * again on any path that cuts a branch — so its `2.0.x` stayed frozen at
+     * the day of the clone while drupal.org's moved on. A patch applied to
+     * that is checked against months-old code, and CI, which checks your work
+     * merged into the *current* tip, is checking something else entirely.
+     *
+     * The local base is fast-forwarded when it can be, so the working copy a
+     * maintainer looks at afterwards is not still behind. It is never reset:
+     * a base carrying local commits is left exactly as it is and said so,
+     * because discarding somebody's unpushed work to make a check tidy is not
+     * a trade upkeep gets to make.
+     *
+     * @throws AdapterException when the fetch fails and updating was asked for
+     */
+    private function refreshBase(string $moduleDir, string $baseBranch, BaseRefresh $refresh): string
+    {
+        if ($refresh === BaseRefresh::Skip) {
+            ($this->log)(BaseBranchUpdate::skipped($baseBranch));
+
+            return BaseBranchUpdate::cutPoint($baseBranch, $refresh);
+        }
+
+        $fetch = $this->runner->capture(['git', '-C', $moduleDir, 'fetch', 'origin', $baseBranch]);
+        if ($fetch->exitCode !== 0) {
+            throw BaseBranchUpdate::unreachable($baseBranch, $fetch->output);
+        }
+
+        $behind = (int) trim(
+            $this->runner->run(['git', '-C', $moduleDir, 'rev-list', '--count', 'HEAD..FETCH_HEAD']),
+        );
+        if ($behind > 0) {
+            ($this->log)((string) BaseBranchUpdate::describe($baseBranch, $behind));
+            // Fast-forward only. A base that will not fast-forward has local
+            // commits on it, and those are somebody's.
+            if ($this->runner->tryRun(['git', '-C', $moduleDir, 'merge', '--ff-only', 'FETCH_HEAD']) === null) {
+                ($this->log)(BaseBranchUpdate::diverged($baseBranch));
+            }
+        }
+
+        return BaseBranchUpdate::cutPoint($baseBranch, $refresh);
     }
 
     /**
@@ -410,6 +523,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         PatchApplication $patch,
         IssueBranch $branch,
         string $commitMessage,
+        BaseRefresh $refresh = BaseRefresh::Update,
     ): string {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
@@ -417,7 +531,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // rule. Promoting must not hold a second, subtly different copy of
         // either: the branch this lands on can be the only place the work
         // exists.
-        $this->startWork($environment, $branch);
+        $this->startWork($environment, $branch, null, $refresh);
 
         ($this->log)(sprintf('Applying patch "%s" onto %s ...', $patch->name, $branch->name));
 
@@ -948,26 +1062,16 @@ final class DdevContribAdapter implements EngineAdapterInterface
             ]),
             CheckType::EsLint, CheckType::StyleLint
                 => $this->runCommandCheck($environment, $check, ['ddev', $check->value]),
+            // Both of these are configured by a file the module may ship, and
+            // both discover it from the working directory — so they run from
+            // inside the module, as CI does, and only fall back to the
+            // gitlab_templates default when the module has none. See
+            // Adapter\\CheckScript.
             CheckType::PhpCs => $this->runCommandCheck($environment, $check, [
-                'ddev', 'exec', 'bash', '-c', implode("\n", [
-                    'set -eu',
-                    'test -e phpcs.xml.dist || curl -sSOL https://git.drupalcode.org/project/'
-                    . 'gitlab_templates/-/raw/default-ref/assets/phpcs.xml.dist',
-                    sprintf(
-                        'phpcs -s --report-full --report-summary --report-source %s --ignore=*/.ddev/*',
-                        self::containerModulePath($environment),
-                    ),
-                ]),
+                'ddev', 'exec', 'bash', '-c', CheckScript::phpCs(self::containerModulePath($environment)),
             ]),
             CheckType::PhpStan => $this->runCommandCheck($environment, $check, [
-                'ddev', 'exec', 'bash', '-c', implode("\n", [
-                    'set -eu',
-                    'test -e phpstan.neon || curl -sSOL https://git.drupalcode.org/project/'
-                    . 'gitlab_templates/-/raw/default-ref/assets/phpstan.neon',
-                    "sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
-                    'test -e phpstan-baseline.neon || touch phpstan-baseline.neon',
-                    'phpstan analyze ' . self::containerModulePath($environment),
-                ]),
+                'ddev', 'exec', 'bash', '-c', CheckScript::phpStan(self::containerModulePath($environment)),
             ]),
             CheckType::ModuleInstall => $this->runCommandCheck($environment, $check, [
                 'ddev', 'drush', 'pm:install', $environment->moduleName, '-y',
