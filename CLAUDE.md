@@ -56,9 +56,17 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   CI writes it beside the code because the container is disposable; here the
   module directory is a git checkout whose cleanliness the next `applyPatch`
   or `startWork` refuses on, so two untracked files there would break the tool.
-  One `cd` and one invocation per script, with extras carried in the
-  positional parameters — that is what makes "nothing is written after the cd"
-  a property a test can check at all.
+  **Every command is a single line**, and that is a hard requirement:
+  `ddev exec` re-joins its arguments into one string for the container shell,
+  so newlines do not survive. A multi-line script arrives as
+  `set -eu ROOT=$(pwd) MODULE=…` — one `set` call that enables `-u` and eats
+  both assignments as positional parameters — and the first `"$MODULE"` after
+  it dies with `MODULE: unbound variable`. That is how it was found, on a real
+  run, after a green suite. So there is no control flow in the shell at all:
+  which config applies is decided in PHP from a `test -f a || test -f b`
+  probe, and guarded steps are braced because `&&` and `||` bind equally
+  left-to-right (ungrouped, a failed download falls into the next step's `||`
+  and analyses against a config nobody fetched).
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and
@@ -497,7 +505,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7124/7124), methods (818/818) and classes (159/159), 1486 tests.
+lines (7127/7127), methods (820/820) and classes (159/159), 1487 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

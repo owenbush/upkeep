@@ -1065,18 +1065,52 @@ final class DdevContribAdapter implements EngineAdapterInterface
             // Both of these are configured by a file the module may ship, and
             // both discover it from the working directory — so they run from
             // inside the module, as CI does, and only fall back to the
-            // gitlab_templates default when the module has none. See
-            // Adapter\\CheckScript.
+            // gitlab_templates default when the module has none. Which one
+            // applies is decided here rather than in the shell: `ddev exec`
+            // joins its arguments into one line, so a script with control flow
+            // does not survive the trip. See Adapter\\CheckScript.
             CheckType::PhpCs => $this->runCommandCheck($environment, $check, [
-                'ddev', 'exec', 'bash', '-c', CheckScript::phpCs(self::containerModulePath($environment)),
+                'ddev', 'exec', 'bash', '-c', CheckScript::phpCs(
+                    self::containerModulePath($environment),
+                    $this->shipsOwnConfig($environment, CheckScript::PHPCS_CONFIGS, 'PHPCS ruleset'),
+                ),
             ]),
             CheckType::PhpStan => $this->runCommandCheck($environment, $check, [
-                'ddev', 'exec', 'bash', '-c', CheckScript::phpStan(self::containerModulePath($environment)),
+                'ddev', 'exec', 'bash', '-c', CheckScript::phpStan(
+                    self::containerModulePath($environment),
+                    $this->shipsOwnConfig($environment, CheckScript::PHPSTAN_CONFIGS, 'PHPStan configuration'),
+                ),
             ]),
             CheckType::ModuleInstall => $this->runCommandCheck($environment, $check, [
                 'ddev', 'drush', 'pm:install', $environment->moduleName, '-y',
             ]),
         };
+    }
+
+    /**
+     * Whether the module ships its own configuration for a check.
+     *
+     * Asked as its own command, because the answer decides which command line
+     * to build and that decision cannot live in the shell: `ddev exec` joins
+     * what it is given into a single line, so an `if` and the variables around
+     * it arrive as one `set` call with the assignments eaten as arguments.
+     * A `test -f a || test -f b` is a single line whose exit status is the
+     * whole answer.
+     *
+     * @param list<string> $names
+     */
+    private function shipsOwnConfig(Environment $environment, array $names, string $what): bool
+    {
+        $probe = $this->runner->tryRun(
+            ['ddev', 'exec', 'bash', '-c', CheckScript::configProbe(self::containerModulePath($environment), $names)],
+            $environment->projectPath,
+        );
+
+        ($this->log)($probe !== null
+            ? sprintf('Using the module\'s own %s, as CI does.', $what)
+            : sprintf('Module ships no %s; using the gitlab_templates default.', $what));
+
+        return $probe !== null;
     }
 
     /**
