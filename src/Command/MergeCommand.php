@@ -11,6 +11,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Dashboard\DashboardRow;
 use Upkeep\Dashboard\LocalEvidence;
+use Upkeep\Gitlab\MergeRevision;
 use Upkeep\Dashboard\RowAssembler;
 use Upkeep\Gate\FastLaneGate;
 use Upkeep\Gate\GateStatus;
@@ -242,11 +243,12 @@ final class MergeCommand extends UpkeepCommand
         foreach ($cores as $core) {
             $byCore[$core] = $cache->latest($row->module, ResultKey::mergeRequest($iid), $core);
         }
-        $verdict = (new FastLaneGate())->classify(
-            $fresh,
-            $cores,
-            LocalEvidence::of($byCore, $fresh->headSha),
-        );
+        // Re-read the merge ref too, not just the MR: the tree that was
+        // checked is the branch merged into the target, so a commit landing on
+        // the *target* between the check and this prompt makes the evidence
+        // about something else — while the head SHA sits perfectly still.
+        $revision = MergeRevision::of($client->fresh()->mergeRefSha($project, $iid), $fresh->headSha);
+        $verdict = (new FastLaneGate())->classify($fresh, $cores, LocalEvidence::of($byCore, $revision));
         if ($verdict->status !== GateStatus::ReadyAuto) {
             $reasons = array_merge($reasons, $verdict->reasons);
         }

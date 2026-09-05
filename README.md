@@ -1013,6 +1013,12 @@ When GitLab publishes no merge ref, it could not merge the branch into its
 target — normally a conflict. upkeep checks the branch alone and says so,
 because a branch-only verdict is not the one CI would give.
 
+Local check results are keyed on that merge ref's SHA, not the branch head's.
+The merge tree changes when **either** side moves, so a result keyed on the
+head would still read as current after the target gained a commit — the same
+"evidence about a tree nobody checked" one level down. When a commit lands on
+the target, your cached results for that branch go stale and say so.
+
 ### The base is brought up to date first
 
 Every command that cuts a branch — `patch:apply`, `patch:check`,

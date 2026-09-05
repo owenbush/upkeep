@@ -712,6 +712,62 @@ final class DashboardCommandTest extends TestCase
         self::assertStringContainsString('upkeep check widget 5 --version=10', $tester->getDisplay());
     }
 
+    /**
+     * A refresh records the revision each merge request's evidence is about:
+     * the SHA of its `/merge` ref, the branch merged into the current tip of
+     * its target.
+     *
+     * That is the tree upkeep checks out and the tree CI analyses, and it
+     * moves when *either* side does — so a cached result keyed on the head SHA
+     * alone would still read as current after the target gained a commit,
+     * which is the whole failure the SHA key exists to prevent.
+     */
+    public function testARefreshRecordsTheMergeRefEachResultWillBeKeyedOn(): void
+    {
+        $mergeSha = str_repeat('e', 40);
+        $mr = self::botMrPayload(['head_pipeline' => self::greenPipeline()]);
+        $client = $this->client([
+            // Ahead of the /merge_requests/5 route, which would otherwise
+            // swallow this URL by substring.
+            '/merge_ref' => self::json(['commit_id' => $mergeSha]),
+            '/merge_requests/5' => self::json($mr),
+            '/merge_requests?' => self::json([$mr]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $snapshot = (new DashboardCache($this->cockpit . '/cache/dashboard'))->load('widget');
+        self::assertNotNull($snapshot);
+        self::assertSame([5 => $mergeSha], $snapshot->mergeRefShas);
+    }
+
+    /**
+     * A merge request GitLab cannot merge publishes no merge ref, and the
+     * refresh records nothing for it — so it falls back to its head SHA,
+     * exactly as the adapter falls back to checking the branch.
+     */
+    public function testAMergeRequestWithNoMergeRefRecordsNothingAndFallsBack(): void
+    {
+        $mr = self::botMrPayload(['head_pipeline' => self::greenPipeline()]);
+        $client = $this->client([
+            '/merge_ref' => self::json(['message' => '400 Bad Request'], 400),
+            '/merge_requests/5' => self::json($mr),
+            '/merge_requests?' => self::json([$mr]),
+            '/projects/project%2Fwidget' => self::json(self::projectPayload()),
+        ]);
+
+        $tester = new CommandTester(new DashboardCommand($client, $this->noDrupalClient()));
+        $tester->execute(['--cockpit' => $this->cockpit, '--all' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $snapshot = (new DashboardCache($this->cockpit . '/cache/dashboard'))->load('widget');
+        self::assertNotNull($snapshot);
+        self::assertSame([], $snapshot->mergeRefShas);
+    }
+
     public function testCachedLocalResultsAlwaysResolvedFresh(): void
     {
         // Cache remote data.

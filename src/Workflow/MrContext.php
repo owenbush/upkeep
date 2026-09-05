@@ -20,6 +20,17 @@ final readonly class MrContext
         public Project $project,
         public MergeRequest $mergeRequest,
         public string $coreMajor,
+        /**
+         * The SHA of the merge request's `/merge` ref — the branch merged into
+         * the current tip of its target.
+         *
+         * What a check of this merge request is actually about, since that is
+         * the tree the adapter checks out and the tree CI analyses. Null when
+         * GitLab publishes no merge ref (the merge request conflicts with its
+         * target), which is the same case the adapter falls back to the branch
+         * on. See Gitlab\MergeRevision.
+         */
+        public ?string $mergeRefSha = null,
     ) {
     }
 }

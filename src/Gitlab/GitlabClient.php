@@ -290,6 +290,36 @@ final class GitlabClient
         ));
     }
 
+    /**
+     * The SHA of `refs/merge-requests/<iid>/merge` — the branch merged into
+     * the current tip of its target.
+     *
+     * The revision an MR's local evidence is actually about, now that upkeep
+     * checks the merge rather than the branch. Keying a cached result on the
+     * head SHA alone would leave it reading as current after the *target*
+     * moved, because the merge tree depends on both sides and the head does
+     * not change when only one of them does.
+     *
+     * Null when GitLab publishes no merge ref — the merge request conflicts
+     * with its target — which is the same condition the adapter falls back to
+     * the branch on, so both sides fall back together.
+     */
+    public function mergeRefSha(Project $project, int $iid): ?string
+    {
+        $data = $this->get(
+            $this->apiBase . '/projects/' . $project->id . '/merge_requests/' . $iid . '/merge_ref',
+            $this->mergeRequestBrowserUrl($project, $iid),
+        );
+
+        if ($data instanceof ApiFailure) {
+            return null;
+        }
+
+        $sha = (new ApiPayload($data))->stringOrNull('commit_id');
+
+        return $sha === '' ? null : $sha;
+    }
+
     public function mergeRequest(Project $project, int $iid): MergeRequest|ApiFailure
     {
         $data = $this->get(

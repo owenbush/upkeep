@@ -53,7 +53,15 @@ final readonly class MrContextResolver
             ));
         }
 
-        return new MrContext($module, $project, $this->fetchOpenMr($module, $project, $iid), $coreMajor);
+        $mergeRequest = $this->fetchOpenMr($module, $project, $iid);
+
+        return new MrContext(
+            $module,
+            $project,
+            $mergeRequest,
+            $coreMajor,
+            $this->client->mergeRefSha($project, $iid),
+        );
     }
 
     /**

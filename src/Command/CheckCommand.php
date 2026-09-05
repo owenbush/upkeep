@@ -19,6 +19,7 @@ use Upkeep\Workflow\WorkflowException;
 use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
 use Upkeep\Workflow\ExitCode;
+use Upkeep\Gitlab\MergeRevision;
 use Upkeep\Workflow\MrContext;
 
 /**
@@ -275,11 +276,14 @@ final class CheckCommand extends AbstractMrCommand
         MrContext $context,
         CheckRunResult $run,
     ): void {
-        $sha = $context->mergeRequest->headSha;
+        // The merge, not the branch: that is the tree that was checked, and it
+        // moves when *either* side does. Keyed on the head SHA alone, this
+        // entry would still read as current after the target gained a commit.
+        $sha = MergeRevision::of($context->mergeRefSha, $context->mergeRequest->headSha);
         if ($sha === null) {
             $io->warning(
-                'The MR has no head SHA; results were NOT cached (the dashboard could never tell fresh from '
-                . 'stale).',
+                'The MR has no merge-ref or head SHA; results were NOT cached (the dashboard could never tell '
+                . 'fresh from stale).',
             );
 
             return;

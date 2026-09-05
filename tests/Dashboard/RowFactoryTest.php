@@ -125,6 +125,97 @@ final class RowFactoryTest extends TestCase
         self::assertSame('pass 11 · ? 10', $rows[0]->localCell());
     }
 
+    /**
+     * The behaviour the merge ref exists for.
+     *
+     * upkeep checks the branch merged into the current tip of its target, so a
+     * result is about *that* tree — and it stops being about it when either
+     * side moves. Evidence is therefore keyed on the merge ref's SHA. A result
+     * filed under the merge SHA reads as current; the same result filed under
+     * the head SHA does not, because the head sits perfectly still while the
+     * target gains commits underneath it.
+     */
+    public function testEvidenceIsKeyedOnTheMergeRefNotTheHead(): void
+    {
+        $mergeSha = str_repeat('c', 40);
+        $snapshot = self::snapshotWithMergeRef(4, $mergeSha);
+
+        $this->storeLocalAt(4, $mergeSha);
+        $onTheMerge = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [self::mergeRequest(4)],
+            null,
+            [],
+            $snapshot,
+        );
+        self::assertSame('pass 11', $onTheMerge[0]->localCell());
+
+        // The same green run, filed the way it used to be.
+        $this->tearDown();
+        $this->setUp();
+        $this->storeLocalAt(4, self::HEAD_SHA);
+        $onTheHead = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [self::mergeRequest(4)],
+            null,
+            [],
+            $snapshot,
+        );
+        self::assertSame(
+            'stale 11',
+            $onTheHead[0]->localCell(),
+            'evidence about the branch is not evidence about the merge',
+        );
+    }
+
+    /**
+     * No merge ref means GitLab could not merge the branch into its target,
+     * and the adapter checks the branch alone. The revision follows it, or the
+     * key would never match what was checked.
+     */
+    public function testWithoutAMergeRefTheHeadShaIsStillTheRevision(): void
+    {
+        $this->storeLocalAt(4, self::HEAD_SHA);
+
+        $rows = $this->factory()->rows(
+            self::module(['11']),
+            self::project(),
+            [self::mergeRequest(4)],
+            null,
+            [],
+            self::snapshotWithMergeRef(4, null),
+        );
+
+        self::assertSame('pass 11', $rows[0]->localCell());
+    }
+
+    private static function snapshotWithMergeRef(int $iid, ?string $sha): ModuleSnapshot
+    {
+        return new ModuleSnapshot(
+            new \DateTimeImmutable(),
+            ['id' => 1, 'path' => 'widget', 'path_with_namespace' => 'project/widget', 'name' => 'Widget'],
+            [],
+            [],
+            [],
+            [],
+            [],
+            $sha === null ? [] : [$iid => $sha],
+        );
+    }
+
+    private function storeLocalAt(int $iid, string $sha): void
+    {
+        (new ResultsCache($this->resultsDir))->store(
+            'widget',
+            ResultKey::mergeRequest($iid),
+            '11',
+            $sha,
+            new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0)]),
+        );
+    }
+
     private function factory(): RowFactory
     {
         return new RowFactory(new ResultsCache($this->resultsDir));

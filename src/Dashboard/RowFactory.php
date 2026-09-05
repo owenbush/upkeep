@@ -11,6 +11,7 @@ use Upkeep\Drupal\IssueVersion;
 use Upkeep\Gate\FastLaneGate;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\MergeRequest;
+use Upkeep\Gitlab\MergeRevision;
 use Upkeep\Gitlab\Project;
 use Upkeep\Patches\Contribution;
 use Upkeep\Results\ResultKey;
@@ -90,6 +91,7 @@ final readonly class RowFactory
 
         $branches = self::knownBranches($project, [...$mergeRequests, ...$merged]);
         $constraints = $snapshot === null ? [] : $snapshot->coreConstraints;
+        $mergeShas = $snapshot === null ? [] : $snapshot->mergeRefShas;
 
         $rows = [];
         $claimed = [];
@@ -104,6 +106,7 @@ final readonly class RowFactory
                 $branches,
                 $cores,
                 $constraints,
+                $mergeShas,
                 $ciFailures,
             );
             foreach ($issueRows as $row) {
@@ -115,7 +118,15 @@ final readonly class RowFactory
             if (isset($claimed[$mergeRequest->iid])) {
                 continue;
             }
-            $rows[] = $this->unlinkedRow($module, $project, $mergeRequest, $cores, $constraints, $ciFailures);
+            $rows[] = $this->unlinkedRow(
+                $module,
+                $project,
+                $mergeRequest,
+                $cores,
+                $constraints,
+                $mergeShas,
+                $ciFailures,
+            );
         }
 
         return $rows;
@@ -160,6 +171,7 @@ final readonly class RowFactory
      * @param list<string>             $branches    the project's known branch names
      * @param list<string>               $cores       tracked cores, before narrowing
      * @param array<array-key, string>   $constraints branch => core_version_requirement
+     * @param array<array-key, string>   $mergeShas   merge request iid => merge-ref SHA
      * @param array<int, ApiFailure>     $ciFailures
      *
      * @return list<DashboardRow>
@@ -171,6 +183,7 @@ final readonly class RowFactory
         array $branches,
         array $cores,
         array $constraints,
+        array $mergeShas,
         array $ciFailures,
     ): array {
         /** @var array<array-key, list<MergeRequest>> $byBranch */
@@ -218,7 +231,7 @@ final readonly class RowFactory
                 $module->name,
                 ResultKey::mergeRequest($representative->iid),
                 $applicable,
-                $representative->headSha,
+                MergeRevision::of($mergeShas[$representative->iid] ?? null, $representative->headSha),
             );
 
             $rows[] = DashboardRow::forIssue(
@@ -246,6 +259,7 @@ final readonly class RowFactory
      *
      * @param list<string>             $cores
      * @param array<array-key, string> $constraints
+     * @param array<array-key, string> $mergeShas
      * @param array<int, ApiFailure>   $ciFailures
      */
     private function unlinkedRow(
@@ -254,6 +268,7 @@ final readonly class RowFactory
         MergeRequest $mergeRequest,
         array $cores,
         array $constraints,
+        array $mergeShas,
         array $ciFailures,
     ): DashboardRow {
         $applicable = self::applicable($cores, $constraints, $mergeRequest->targetBranch);
@@ -261,7 +276,7 @@ final readonly class RowFactory
             $module->name,
             ResultKey::mergeRequest($mergeRequest->iid),
             $applicable,
-            $mergeRequest->headSha,
+            MergeRevision::of($mergeShas[$mergeRequest->iid] ?? null, $mergeRequest->headSha),
         );
 
         return DashboardRow::forUnlinkedMergeRequest(

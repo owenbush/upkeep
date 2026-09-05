@@ -74,7 +74,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   trip, against a command that is about to provision an environment), and
   falls back to `/head` **loudly**: GitLab computes no merge ref for a merge
   request that conflicts with its target, so the fallback is a diagnosis, not
-  a detail. Neither ref at all is a refusal — that is a wrong iid, not a state
+  a detail. **Evidence is keyed on the merge ref's SHA**
+  (`Gitlab\MergeRevision`, `ModuleSnapshot::$mergeRefShas`, one
+  `/merge_ref` call per open MR at refresh), because the merge tree moves when
+  *either* side does: keyed on the head SHA a result would still read as
+  current after the **target** gained a commit, which is the same
+  evidence-about-another-tree problem one level down. No merge ref means the
+  head SHA is the revision — the adapter checks the branch there too, so both
+  halves fall back together. `merge --fast-lane` re-reads the merge ref at
+  prompt time for the same reason it re-reads the MR. Neither ref at all is a refusal — that is a wrong iid, not a state
   to guess about. The "head moved since it was fetched" note is now conditional
   on having used the head ref: a merge commit is never the MR's head SHA, so
   comparing them would warn on every healthy run. **Cached MR results written
@@ -489,7 +497,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7084/7084), methods (815/815) and classes (158/158), 1476 tests.
+lines (7124/7124), methods (818/818) and classes (159/159), 1486 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
