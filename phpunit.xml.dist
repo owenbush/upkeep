@@ -5,10 +5,29 @@
          colors="true"
          cacheDirectory=".phpunit.cache"
          failOnRisky="true"
-         failOnWarning="true">
+         failOnWarning="true"
+         defaultTestSuite="unit">
+  <!--
+    Two suites, and only "unit" runs by default.
+
+    The unit suite is the one the four gates are about: fast, offline, no
+    docker, and held to 100% line coverage. The integration suite crosses the
+    container boundary. It is the only place anything actually executes what
+    the adapter builds, so it needs ddev and cannot run everywhere. Running
+    both by default would make `vendor/bin/phpunit` fail on any machine
+    without docker, and drag a partial-coverage run through the threshold
+    extension.
+
+    Integration is run explicitly:
+      vendor/bin/phpunit  - -testsuite=integration  - -no-coverage
+  -->
   <testsuites>
     <testsuite name="unit">
       <directory>tests</directory>
+      <exclude>tests/Integration</exclude>
+    </testsuite>
+    <testsuite name="integration">
+      <directory>tests/Integration</directory>
     </testsuite>
   </testsuites>
   <source>

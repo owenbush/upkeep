@@ -473,9 +473,36 @@ and 8.4). Run all four before calling a change done:
 ```bash
 composer lint      # phpcs — PSR-12 over src/, bin/, tests/
 composer analyse   # phpstan analyse --no-progress — level max
-vendor/bin/phpunit # the suite, with the 100% line-coverage floor enforced
+vendor/bin/phpunit # the unit suite, with the 100% line-coverage floor enforced
 ./bin/upkeep list  # the binary still boots
 ```
+
+**There is a fifth suite, and it is not one of the gates.**
+`vendor/bin/phpunit` runs the `unit` suite only (`defaultTestSuite`); the
+`integration` suite crosses the container boundary and needs docker, so it
+runs explicitly:
+
+```bash
+tests/Integration/fixture/setup.sh /tmp/contract        # a bare ddev project
+UPKEEP_DDEV_PROJECT=/tmp/contract \
+  vendor/bin/phpunit --testsuite=integration --no-coverage
+```
+
+It exists because the four gates are structurally blind to a whole class of
+failure: **three bugs shipped past a fully green suite in two days**, all of
+them at the point where a built string meets a real container — a command that
+could not survive `ddev exec`, a `cd` copied from CI whose precondition
+ddev-drupal-contrib does not meet, and a dependency the path-repository layout
+never installs. Unit tests inspect what the adapter builds; nothing in them
+executes it. These do. The fixture is deliberately *not* a Drupal site: every
+fact under test is about the layout, and a bare ddev project starts in about a
+minute where installing Drupal takes fifteen — which is the half that makes
+container CI flaky and then ignored. `.github/workflows/integration.yml` runs
+both jobs per PR, and fails if the contract tests skip themselves, because a
+job that goes green having executed nothing is the hole this closes.
+Integration tests are excluded from the coverage floor: they exercise a
+fraction of `src/` by design, and running them under the threshold extension
+would either fail the build or force the floor down.
 
 **Run `composer install` after pulling.** Adding a dependency is a one-line
 change to composer.json that leaves every existing checkout broken until it

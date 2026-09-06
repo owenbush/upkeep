@@ -1,0 +1,88 @@
+name: Integration
+
+# The container boundary, which the unit suite is structurally unable to see.
+#
+# Three bugs shipped past a fully green suite in two days, every one of them
+# here: a command that could not survive `ddev exec`, a `cd` that copied a CI
+# precondition ddev-drupal-contrib does not meet, and a dependency the path-
+# repository layout never installs. Unit tests inspect the strings the adapter
+# builds; nothing in them runs a container, so none of the three was visible.
+#
+# Deliberately not a Drupal site. Every fact under test is about the *layout*,
+# and a bare ddev project starts in about a minute where installing Drupal
+# takes fifteen — which is the half that makes container CI slow, flaky and
+# eventually ignored.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Composer's own behaviour: no docker, seconds, never flaky.
+  composer-layout:
+    name: Path repository layout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: A path dependency's require-dev is not installed
+        run: vendor/bin/phpunit --testsuite=integration --no-coverage --filter PathRepositoryLayoutTest
+
+  # What ddev exec does to a command, and what the layout does to a ruleset.
+  adapter-contract:
+    name: ddev exec contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: Set up ddev
+        uses: ddev/github-action-setup-ddev@v1
+        with:
+          autostart: false
+
+      - name: Build the layout fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/contract"
+          tests/Integration/fixture/setup.sh "$RUNNER_TEMP/contract"
+
+      # Run once, then read the same log. A skipped contract test is the
+      # failure mode that matters here: the job would go green having executed
+      # nothing, which is exactly the hole this workflow exists to close.
+      - name: Contract tests
+        env:
+          UPKEEP_DDEV_PROJECT: ${{ runner.temp }}/contract
+        run: |
+          vendor/bin/phpunit --testsuite=integration --no-coverage \
+            --filter DdevExecContractTest --log-junit "$RUNNER_TEMP/junit.xml"
+
+          if grep -q '<skipped' "$RUNNER_TEMP/junit.xml"; then
+            echo '::error::Contract tests skipped themselves — the ddev fixture was not usable.'
+            grep -o 'message="[^"]*"' "$RUNNER_TEMP/junit.xml" | head -5
+            exit 1
+          fi
+
+      - name: ddev logs on failure
+        if: failure()
+        run: ddev logs --tail=100 || true
