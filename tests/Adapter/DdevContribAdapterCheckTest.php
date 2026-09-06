@@ -112,6 +112,45 @@ final class DdevContribAdapterCheckTest extends DdevAdapterTestCase
         self::assertTrue($runner->issued("'widget'\\''; rm -rf /'"));
     }
 
+    /**
+     * A module shipping its own configuration gets it named on the command
+     * line, in the tool's own precedence order.
+     *
+     * The probe is what decides, because the decision cannot live in the
+     * shell: `ddev exec` expands the command string before the container runs
+     * it, so neither an `if` nor a variable to hold the answer survives.
+     */
+    public function testAModulesOwnConfigurationIsProbedForAndThenNamed(): void
+    {
+        // The two candidates whose names start "phpstan.neon" are absent, so
+        // the third — last in PHPStan's own precedence — is what must be used.
+        $runner = $this->engine(['/phpstan.neon' => null]);
+
+        $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpStan]);
+
+        self::assertTrue($runner->issued('-c "$DDEV_DOCROOT/$DRUPAL_PROJECTS_PATH"/\'widget\'/phpstan.dist.neon'));
+        self::assertTrue($this->loggedContaining("Using the module's own PHPStan configuration (phpstan.dist.neon)"));
+        self::assertFalse($runner->issued('curl'), 'nothing to download when the module has its own');
+    }
+
+    /**
+     * A module with none of them falls back to the gitlab_templates default,
+     * fetched into the *project root* — never into the module, which is a git
+     * checkout the next applyPatch or startWork refuses to work on if dirty.
+     */
+    public function testAModuleWithNoConfigurationOfItsOwnFallsBackToTheTemplate(): void
+    {
+        $runner = $this->engine(['test -f ' => null]);
+
+        $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpStan, CheckType::PhpCs]);
+
+        self::assertTrue($runner->issued('curl -sSOL'));
+        self::assertTrue($runner->issued('-c phpstan.neon'), 'the template at the project root');
+        self::assertTrue($runner->issued('--standard=phpcs.xml.dist'));
+        self::assertTrue($this->loggedContaining('Module ships no PHPStan configuration'));
+        self::assertTrue($this->loggedContaining('Module ships no PHPCS ruleset'));
+    }
+
     public function testTheToolchainIsProvisionedOnlyWhenAToolchainCheckIsRequested(): void
     {
         // No binaries in vendor/bin: the gate must install the toolchain.

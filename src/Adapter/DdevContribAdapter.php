@@ -1072,13 +1072,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
             CheckType::PhpCs => $this->runCommandCheck($environment, $check, [
                 'ddev', 'exec', 'bash', '-c', CheckScript::phpCs(
                     self::containerModulePath($environment),
-                    $this->shipsOwnConfig($environment, CheckScript::PHPCS_CONFIGS, 'PHPCS ruleset'),
+                    $this->ownConfig($environment, CheckScript::PHPCS_CONFIGS, 'PHPCS ruleset'),
                 ),
             ]),
             CheckType::PhpStan => $this->runCommandCheck($environment, $check, [
                 'ddev', 'exec', 'bash', '-c', CheckScript::phpStan(
                     self::containerModulePath($environment),
-                    $this->shipsOwnConfig($environment, CheckScript::PHPSTAN_CONFIGS, 'PHPStan configuration'),
+                    $this->ownConfig($environment, CheckScript::PHPSTAN_CONFIGS, 'PHPStan configuration'),
                 ),
             ]),
             CheckType::ModuleInstall => $this->runCommandCheck($environment, $check, [
@@ -1088,29 +1088,36 @@ final class DdevContribAdapter implements EngineAdapterInterface
     }
 
     /**
-     * Whether the module ships its own configuration for a check.
+     * The configuration file the module ships for a check, if it ships one.
      *
-     * Asked as its own command, because the answer decides which command line
-     * to build and that decision cannot live in the shell: `ddev exec` joins
-     * what it is given into a single line, so an `if` and the variables around
-     * it arrive as one `set` call with the assignments eaten as arguments.
-     * A `test -f a || test -f b` is a single line whose exit status is the
-     * whole answer.
+     * Probed one candidate at a time rather than decided in the shell. The
+     * decision needs a *name* — it is passed to the tool afterwards — and
+     * neither an `if` nor a variable to hold it survives `ddev exec`, which
+     * expands the command string before the container's shell runs it.
      *
-     * @param list<string> $names
+     * @param list<string> $names in the tool's own precedence order
      */
-    private function shipsOwnConfig(Environment $environment, array $names, string $what): bool
+    private function ownConfig(Environment $environment, array $names, string $what): ?string
     {
-        $probe = $this->runner->tryRun(
-            ['ddev', 'exec', 'bash', '-c', CheckScript::configProbe(self::containerModulePath($environment), $names)],
-            $environment->projectPath,
-        );
+        foreach ($names as $name) {
+            $found = $this->runner->tryRun(
+                [
+                    'ddev', 'exec', 'bash', '-c',
+                    CheckScript::configProbe(self::containerModulePath($environment), $name),
+                ],
+                $environment->projectPath,
+            );
 
-        ($this->log)($probe !== null
-            ? sprintf('Using the module\'s own %s, as CI does.', $what)
-            : sprintf('Module ships no %s; using the gitlab_templates default.', $what));
+            if ($found !== null) {
+                ($this->log)(sprintf('Using the module\'s own %s (%s), as CI does.', $what, $name));
 
-        return $probe !== null;
+                return $name;
+            }
+        }
+
+        ($this->log)(sprintf('Module ships no %s; using the gitlab_templates default.', $what));
+
+        return null;
     }
 
     /**
