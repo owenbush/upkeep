@@ -1001,6 +1001,15 @@ module: CI drops it beside the code because the container is thrown away, but
 here that directory is your git checkout, and two untracked files in it would
 make the next `patch:apply` or `start` refuse on a dirty working copy.
 
+Your module's own `require-dev` is installed alongside the check toolchain,
+because a ruleset that references `./vendor/phpcompatibility/…` needs the
+package your module requires and the site does not. CI has it because
+`composer install` runs in your module's repository; here your module is a
+path repository of the site, and composer never installs a path dependency's
+dev requirements. If any of them cannot be installed the run carries on with a
+warning — a version conflict in a linting dependency should not take down your
+tests.
+
 ### An MR is checked the way CI checks it
 
 GitLab publishes two refs for every merge request:

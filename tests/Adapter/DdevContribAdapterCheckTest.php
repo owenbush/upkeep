@@ -151,6 +151,59 @@ final class DdevContribAdapterCheckTest extends DdevAdapterTestCase
         self::assertTrue($this->loggedContaining('Module ships no PHPCS ruleset'));
     }
 
+    /**
+     * A module working copy with a composer.json, as a real checkout has.
+     *
+     * @param array<string, string> $requireDev
+     */
+    private static function writeModuleManifest(string $projectPath, array $requireDev): void
+    {
+        $dir = $projectPath . '/module';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0o700, true);
+        }
+        file_put_contents($dir . '/composer.json', (string) json_encode(['require-dev' => $requireDev]));
+    }
+
+    /**
+     * Provisioning installs the module's own dev dependencies too.
+     *
+     * Honouring a module's configuration means honouring what it references,
+     * and those are the module's packages. field_visibility_conditions'
+     * ruleset points at `./vendor/phpcompatibility/php-compatibility/…`, which
+     * its composer.json requires and the site does not: CI has it because
+     * `composer install` runs in the module repository, while here the module
+     * is a path repository whose require-dev composer never installs.
+     */
+    public function testTheModulesOwnDevDependenciesAreInstalledWithTheToolchain(): void
+    {
+        self::writeModuleManifest($this->projectPath(), ['phpcompatibility/php-compatibility' => '^9.3']);
+
+        $runner = $this->captureRunner();
+        $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpCs]);
+
+        self::assertTrue($runner->issued('phpcompatibility/php-compatibility'));
+        self::assertTrue($this->loggedContaining('Installing the module\'s own dev dependencies'));
+    }
+
+    /**
+     * If they cannot be installed the run carries on with a warning.
+     *
+     * A version conflict in a *linting* dependency must not take down phpunit,
+     * the install check and the smoke test — and phpcs names a missing sniff
+     * itself, clearly, if it comes to that.
+     */
+    public function testAFailedDevDependencyInstallWarnsRatherThanEndingTheRun(): void
+    {
+        self::writeModuleManifest($this->projectPath(), ['phpcompatibility/php-compatibility' => '^9.3']);
+
+        $runner = $this->engine(['phpcompatibility/php-compatibility' => null]);
+        $result = $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpCs]);
+
+        self::assertTrue($this->loggedContaining('Could not install the module\'s own dev dependencies'));
+        self::assertCount(1, $result->results, 'the checks still ran');
+    }
+
     public function testTheToolchainIsProvisionedOnlyWhenAToolchainCheckIsRequested(): void
     {
         // No binaries in vendor/bin: the gate must install the toolchain.

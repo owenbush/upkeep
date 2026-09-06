@@ -74,7 +74,18 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   precedence order, and guarded steps are braced because `&&` and `||` bind
   equally left-to-right. Two tests hold the invariants, because nothing in the
   suite executes what these build: no variable outside the container's
-  environment, and no `cd`.
+  environment, and no `cd`. **And using a module's configuration means
+  installing what it references**: `Adapter\ModuleDevRequirements` reads the
+  module's own `require-dev` and provisions it alongside the toolchain,
+  because those configurations point at the *module's* packages —
+  field_visibility_conditions' ruleset references
+  `./vendor/phpcompatibility/php-compatibility/…`, which its composer.json
+  requires and the site does not. CI has it because `composer install` runs in
+  the module repository; here the module is a path repository, and **composer
+  never installs a path dependency's require-dev**. A failed install warns
+  rather than refusing: a version conflict in a linting dependency must not
+  take down phpunit, the install check and the smoke test, and phpcs names a
+  missing sniff itself.
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and
@@ -513,7 +524,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7127/7127), methods (820/820) and classes (159/159), 1487 tests.
+lines (7162/7162), methods (823/823) and classes (160/160), 1495 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
