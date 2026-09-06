@@ -8,13 +8,14 @@ name: Full check
 # workflow deliberately uses a bare ddev project because everything it asserts
 # is about the layout rather than about Drupal.
 #
-# **No credential, and nothing is written anywhere.** Both commands are
-# read-only against public data — `check --working-copy` touches no GitLab
-# client at all, and the patch surface is GitLab-free by design and degrades
-# to null without a token. No merge request is opened, no branch is pushed, no
-# issue status is changed. `publish` is the only command that writes, and its
-# git half is covered offline against a local bare repository in
-# tests/Integration/PublishPushTest.php.
+# **No credential, and nothing is written anywhere.** Every command here is
+# read-only against public data: `check --working-copy` touches no GitLab
+# client at all, the patch surface is GitLab-free by design, and `check <mr>`
+# reads drupalcode anonymously — public projects serve their merge requests,
+# refs and forks without a token. No merge request is opened, no branch is
+# pushed, no issue status is changed. `publish` is the only command that
+# writes, and its git half is covered offline against a local bare repository
+# in tests/Integration/PublishPushTest.php.
 #
 # Nightly and non-blocking on purpose. Building base artifacts is composer
 # create-project plus a Drupal install plus a database dump — ten minutes or
@@ -136,6 +137,22 @@ jobs:
           # instead would make this red whenever somebody re-rolls.
           if [ "$status" -eq 2 ]; then
             echo '::error::patch:check could not run (exit 2).'
+            exit 1
+          fi
+
+      # The MR path, which needed a credential until reading anonymously
+      # became possible. drupalcode serves a public project's merge requests,
+      # refs and forks without one, so this exercises the fetch, the merge-ref
+      # choice and the checkout with no secret in the workflow at all.
+      - name: check <mr> reads drupalcode anonymously
+        run: |
+          set +e
+          ./bin/upkeep check "$MODULE" 4 --version="$CORE" --cockpit="$COCKPIT"
+          status=$?
+          set -e
+          echo "exit=$status"
+          if [ "$status" -eq 2 ]; then
+            echo '::error::check <mr> could not run anonymously (exit 2).'
             exit 1
           fi
 

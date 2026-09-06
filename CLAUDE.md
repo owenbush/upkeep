@@ -185,6 +185,22 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
 - `src/Cockpit/` — cockpit directory + `registry.yml` module registry.
+- **Reading needs no credential.** git.drupalcode.org serves a public
+  project's merge requests, refs, forks and raw files anonymously — measured
+  across upkeep's whole read surface — so requiring a token to *look* was a
+  restriction upkeep imposed rather than one GitLab does. `GitlabClient`'s
+  token is nullable and the header is **omitted** when absent, never sent
+  empty: GitLab reads a present-but-empty PRIVATE-TOKEN as a bad credential
+  and answers 401. `GitlabClientFactory::readOnly()` always returns a client
+  and notes the degraded mode once, naming what it costs — a private project
+  answers an anonymous read with **404, not 401**, because GitLab hides
+  existence, so a module you can see while signed in reads as missing. Writes
+  (`merge`, `postNote`, `createMergeRequest`) refuse **in the client**, before
+  any request, so no command can reach one down this path by forgetting to
+  check. Which commands may take it is declared, not inferred:
+  `AbstractMrCommand::readsOnly()` defaults to false and `check`/`review`
+  override it, pinned by `CommandSurfaceTest` — a future write command that
+  forgets gets the strict path.
 - `src/Gitlab/` — git.drupalcode.org API client, token resolution
   (`UPKEEP_GITLAB_TOKEN` env, else `~/.config/upkeep/drupal-pat`), MR/pipeline
   models, and the sealed `Gitlab\ApiFailure` taxonomy (`Unauthorized` 401,
@@ -572,7 +588,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7170/7170), methods (824/824) and classes (160/160), 1497 tests.
+lines (7198/7198), methods (832/832) and classes (160/160), 1508 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

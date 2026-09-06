@@ -57,6 +57,53 @@ final readonly class GitlabClientFactory
     }
 
     /**
+     * A client for commands that only read.
+     *
+     * git.drupalcode.org serves every public project's merge requests, refs,
+     * forks and raw files without a credential, so requiring one to *look* was
+     * a restriction upkeep imposed rather than one GitLab does. Reading
+     * anonymously is now the documented degraded mode: it always returns a
+     * client, and notes what is lost when there is no token.
+     *
+     * What is lost is real and worth saying. A private project answers an
+     * anonymous read with 404 rather than 401 — GitLab hides existence — so a
+     * module you can see while signed in reads as missing; and rate limits are
+     * tighter. Writing is refused by the client itself, so no command can
+     * reach a merge or a comment down this path by forgetting to check.
+     *
+     * @param callable(string): void $report receives the degraded-mode note
+     */
+    public static function readOnly(TokenResolver $resolver, callable $report): GitlabClient
+    {
+        $token = $resolver->resolve();
+        if ($token !== null) {
+            return new GitlabClient(HttpClient::create(), $token);
+        }
+
+        $report(self::anonymousReadMessage($resolver));
+
+        return new GitlabClient(HttpClient::create());
+    }
+
+    /**
+     * Said once, in one wording, like the missing-token guidance it replaces
+     * for read-only commands. It never contains token material.
+     */
+    public static function anonymousReadMessage(TokenResolver $resolver): string
+    {
+        return sprintf(
+            'No GitLab token configured, so this is reading git.drupalcode.org anonymously. Public projects '
+            . 'answer fine; a private one will read as "not found" rather than "not allowed", and rate limits '
+            . 'are tighter. Configure a token in %s to read as yourself — and to merge, comment or publish, '
+            . 'which anonymous access cannot do at all.',
+            // The resolver's own sources, not the defaults: a run pointed at a
+            // different env var or config file must be told about that one, or
+            // the guidance sends somebody to edit a file nothing reads.
+            $resolver->describeSources(),
+        );
+    }
+
+    /**
      * The one place a resolved token becomes a live client, so "how do we talk
      * to GitLab" is decided once. $report receives the shared missing-token
      * guidance and decides how loud it is: `patches` reports it as a warning

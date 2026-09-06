@@ -16,6 +16,7 @@ use Upkeep\Gitlab\MergeRequestList;
 use Upkeep\Gitlab\NotFound;
 use Upkeep\Gitlab\Pipeline;
 use Upkeep\Gitlab\PipelineStatus;
+use Upkeep\Gitlab\Unauthorized;
 use Upkeep\Gitlab\Project;
 use Upkeep\Gitlab\RateLimited;
 use Upkeep\Gitlab\RequestRejected;
@@ -50,6 +51,33 @@ final class GitlabClientTest extends TestCase
         return new GitlabClient(
             new MockHttpClient($factory),
             self::TOKEN,
+            'https://git.drupalcode.org/api/v4',
+            'https://git.drupalcode.org',
+        );
+    }
+
+    /**
+     * The same harness with no credential, for the read path that needs none.
+     *
+     * @param list<MockResponse> $responses
+     */
+    private function anonymousClient(array $responses): GitlabClient
+    {
+        $this->requests = [];
+        $queue = $responses;
+        $factory = function (string $method, string $url, array $options) use (&$queue): MockResponse {
+            $this->requests[] = ['method' => $method, 'url' => $url, 'options' => $options];
+            $response = array_shift($queue);
+            if ($response === null) {
+                $this->fail('Unexpected extra HTTP request: ' . $method . ' ' . $url);
+            }
+
+            return $response;
+        };
+
+        return new GitlabClient(
+            new MockHttpClient($factory),
+            null,
             'https://git.drupalcode.org/api/v4',
             'https://git.drupalcode.org',
         );
@@ -822,5 +850,92 @@ final class GitlabClientTest extends TestCase
 
             throw new \RuntimeException('connection reset');
         })())];
+    }
+
+    // ------------------------------------------------------- anonymous reads
+
+    /**
+     * No credential means no header at all — not an empty one.
+     *
+     * GitLab reads a present-but-empty PRIVATE-TOKEN as a bad credential and
+     * answers 401, which would make anonymous reading fail everywhere while
+     * looking like a token problem. Omitting the header is an ordinary public
+     * read.
+     */
+    public function testAnAnonymousClientSendsNoPrivateTokenHeader(): void
+    {
+        $client = $this->anonymousClient([self::json(self::projectPayload())]);
+
+        $client->project('project/widget');
+
+        foreach ($this->requestHeaders(0) as $header) {
+            self::assertStringNotContainsStringIgnoringCase('private-token', $header);
+        }
+    }
+
+    /** And a credential still travels when there is one. */
+    public function testAnAuthenticatedClientStillSendsIt(): void
+    {
+        $client = $this->client([self::json(self::projectPayload())]);
+
+        $client->project('project/widget');
+
+        $sent = implode("\n", $this->requestHeaders(0));
+        self::assertStringContainsStringIgnoringCase('private-token', $sent);
+    }
+
+    /**
+     * Reading is what anonymous access is for, and it works: a public
+     * project's merge requests come back like any other.
+     */
+    public function testAnAnonymousClientReadsAPublicProjectNormally(): void
+    {
+        $client = $this->anonymousClient([self::json(self::projectPayload())]);
+
+        $project = $client->project('project/conditions_helper');
+
+        self::assertInstanceOf(Project::class, $project);
+        self::assertSame('project/conditions_helper', $project->pathWithNamespace);
+    }
+
+    /**
+     * Every write refuses before making a request.
+     *
+     * Structural rather than per-command: a command handed an anonymous client
+     * cannot reach a merge or a comment by forgetting to check, and the answer
+     * is the same typed failure as the rest of the surface instead of a 401
+     * from four frames down. The harness fails the test on any unexpected
+     * request, so "no request was made" is asserted by construction.
+     */
+    public function testEveryWriteRefusesWithoutACredentialAndWithoutAsking(): void
+    {
+        $project = Project::fromApi(self::projectPayload());
+
+        $writes = [
+            'merge' => fn (GitlabClient $c): mixed => $c->merge($project, 4),
+            'postNote' => fn (GitlabClient $c): mixed => $c->postNote($project, 4, 'hello'),
+            'createMergeRequest' => fn (GitlabClient $c): mixed => $c->createMergeRequest(
+                $project,
+                'source',
+                '2.0.x',
+                'Title',
+            ),
+        ];
+
+        foreach ($writes as $name => $write) {
+            // No responses queued at all: any HTTP call fails the test.
+            $result = $write($this->anonymousClient([]));
+
+            self::assertInstanceOf(Unauthorized::class, $result, $name);
+            self::assertSame('401', $result->shortCode(), $name);
+            self::assertStringContainsString('token', $result->message, $name);
+        }
+    }
+
+    /** isAnonymous() is the discriminator commands and tests key on. */
+    public function testTheClientSaysWhetherItHasACredential(): void
+    {
+        self::assertTrue($this->anonymousClient([])->isAnonymous());
+        self::assertFalse($this->client([])->isAnonymous());
     }
 }

@@ -25,6 +25,12 @@ use Upkeep\Workflow\ExitCode;
 )]
 final class ReviewCommand extends AbstractMrCommand
 {
+    /** Fetches a merge request and checks it out; changes nothing on GitLab. */
+    protected function readsOnly(): bool
+    {
+        return true;
+    }
+
     protected function configure(): void
     {
         $this->configureMrSurface();

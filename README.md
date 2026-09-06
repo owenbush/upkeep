@@ -64,6 +64,16 @@ upkeep list --raw
 
 ## GitLab token (PAT)
 
+**A token is for writing, not for looking.** `dashboard`, `check` and `review`
+read git.drupalcode.org anonymously when none is configured — public projects
+serve their merge requests, refs and forks without one — and say so once.
+Merging, commenting (`needs-work`) and `publish` need a real credential and
+refuse without it. Two things anonymous reading costs: a *private* project
+answers with "not found" rather than "not allowed", because GitLab hides
+existence, so a module you can see while signed in reads as missing; and rate
+limits are tighter.
+
+
 Upkeep talks to the Drupal.org GitLab instance (git.drupalcode.org) for MR
 listings, pipeline status, and fast-lane merges.
 
