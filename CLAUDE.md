@@ -85,7 +85,12 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   never installs a path dependency's require-dev**. A failed install warns
   rather than refusing: a version conflict in a linting dependency must not
   take down phpunit, the install check and the smoke test, and phpcs names a
-  missing sniff itself.
+  missing sniff itself. **It runs whether or not the toolchain is already
+  there.** The toolchain gate returns early once phpunit/phpstan/phpcs are in
+  vendor/bin, and putting this inside that block made it do nothing on every
+  *existing* environment — which is every environment after the first. The
+  packages are gated on their own absence from `vendor/` instead, so a reused
+  environment costs a directory test rather than a composer round trip.
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and
@@ -551,7 +556,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7162/7162), methods (823/823) and classes (160/160), 1495 tests.
+lines (7170/7170), methods (824/824) and classes (160/160), 1497 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
