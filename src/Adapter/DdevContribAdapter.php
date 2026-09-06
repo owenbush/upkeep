@@ -1038,6 +1038,47 @@ final class DdevContribAdapter implements EngineAdapterInterface
             'ddev', 'composer', 'require', '--dev', '--with-all-dependencies', '--no-interaction',
             ...$packages,
         ], $environment->projectPath);
+
+        $this->installModuleDevRequirements($environment);
+    }
+
+    /**
+     * The module's own dev dependencies, installed into the site.
+     *
+     * Honouring a module's phpcs and phpstan configuration means honouring
+     * what that configuration references, and those are the *module's*
+     * packages: field_visibility_conditions' ruleset points at
+     * `./vendor/phpcompatibility/php-compatibility/…`, which its composer.json
+     * requires and the site does not. CI has them because `composer install`
+     * runs in the module repository; here the module is a path repository, and
+     * composer never installs a path dependency's require-dev.
+     *
+     * Failure is a warning, not a refusal. A version conflict here would
+     * otherwise take down phpunit, the install check and the smoke test over a
+     * linting dependency — and phpcs names the missing sniff itself, clearly,
+     * if it comes to that.
+     */
+    private function installModuleDevRequirements(Environment $environment): void
+    {
+        $packages = ModuleDevRequirements::of($environment->projectPath . '/' . self::MODULE_DIR);
+        if ($packages === []) {
+            return;
+        }
+
+        ($this->log)(sprintf(
+            'Installing the module\'s own dev dependencies (%s), which its phpcs and phpstan '
+            . 'configuration may reference ...',
+            implode(', ', $packages),
+        ));
+
+        $installed = $this->runner->tryRun([
+            'ddev', 'composer', 'require', '--dev', '--with-all-dependencies', '--no-interaction',
+            ...$packages,
+        ], $environment->projectPath);
+
+        if ($installed === null) {
+            ($this->log)(ModuleDevRequirements::unavailable($packages));
+        }
     }
 
     /**
