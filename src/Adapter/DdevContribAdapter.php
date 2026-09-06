@@ -1021,7 +1021,15 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 break;
             }
         }
+
         if ($allPresent) {
+            // The toolchain is here, but the *module's* dev dependencies may
+            // not be: an environment provisioned before it declared one, or
+            // before upkeep installed them at all, has the binaries and not
+            // the packages. Falling out here is what made the first version of
+            // this fix do nothing on every existing environment.
+            $this->installModuleDevRequirements($environment);
+
             return;
         }
 
@@ -1043,6 +1051,24 @@ final class DdevContribAdapter implements EngineAdapterInterface
     }
 
     /**
+     * Which of the module's dev dependencies are not in the site's vendor tree.
+     *
+     * A directory test on the host, so a reused environment costs nothing to
+     * re-verify and a `composer require` only happens when something is
+     * genuinely absent.
+     *
+     * @param list<string> $packages
+     * @return list<string>
+     */
+    private static function notInstalled(string $projectPath, array $packages): array
+    {
+        return array_values(array_filter(
+            $packages,
+            static fn (string $package): bool => !is_dir($projectPath . '/vendor/' . $package),
+        ));
+    }
+
+    /**
      * The module's own dev dependencies, installed into the site.
      *
      * Honouring a module's phpcs and phpstan configuration means honouring
@@ -1060,7 +1086,10 @@ final class DdevContribAdapter implements EngineAdapterInterface
      */
     private function installModuleDevRequirements(Environment $environment): void
     {
-        $packages = ModuleDevRequirements::of($environment->projectPath . '/' . self::MODULE_DIR);
+        $packages = self::notInstalled(
+            $environment->projectPath,
+            ModuleDevRequirements::of($environment->projectPath . '/' . self::MODULE_DIR),
+        );
         if ($packages === []) {
             return;
         }

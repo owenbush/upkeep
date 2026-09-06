@@ -187,6 +187,60 @@ final class DdevContribAdapterCheckTest extends DdevAdapterTestCase
     }
 
     /**
+     * The case the first version of this fix missed entirely.
+     *
+     * The toolchain gate returns early when phpunit, phpstan and phpcs are
+     * already in vendor/bin — and the dev-dependency install sat inside that
+     * block, so on every *existing* environment it did nothing at all. The
+     * user's environment was reused, the packages stayed absent, and phpcs
+     * failed on the same missing sniff as before the fix.
+     *
+     * A reused environment is the common case, not the edge one: it is what
+     * every second and subsequent check runs against.
+     */
+    public function testAReusedEnvironmentStillGetsTheModulesDevDependencies(): void
+    {
+        self::writeModuleManifest($this->projectPath(), ['phpcompatibility/php-compatibility' => '^9.3']);
+        self::writeToolchainBinaries($this->projectPath());
+
+        $runner = $this->captureRunner();
+        $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpCs]);
+
+        self::assertFalse($runner->issued('drupal/core-dev'), 'the toolchain itself is already there');
+        self::assertTrue($runner->issued('phpcompatibility/php-compatibility'), 'its dev dependencies are not');
+    }
+
+    /**
+     * And nothing is reinstalled once it is there. A `composer require` on
+     * every check would put a network round trip in front of a command whose
+     * whole point is to be quick on an environment that already exists.
+     */
+    public function testDevDependenciesAlreadyPresentAreNotRequestedAgain(): void
+    {
+        self::writeModuleManifest($this->projectPath(), ['phpcompatibility/php-compatibility' => '^9.3']);
+        self::writeToolchainBinaries($this->projectPath());
+        mkdir($this->projectPath() . '/vendor/phpcompatibility/php-compatibility', 0o700, true);
+
+        $runner = $this->captureRunner();
+        $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpCs]);
+
+        self::assertFalse($runner->issued('composer require'));
+        self::assertFalse($this->loggedContaining('Installing the module\'s own dev dependencies'));
+    }
+
+    /** vendor/bin binaries as a previously provisioned environment has them. */
+    private static function writeToolchainBinaries(string $projectPath): void
+    {
+        $dir = $projectPath . '/vendor/bin';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0o700, true);
+        }
+        foreach (['phpunit', 'phpstan', 'phpcs'] as $binary) {
+            file_put_contents($dir . '/' . $binary, "#!/bin/sh\n");
+        }
+    }
+
+    /**
      * If they cannot be installed the run carries on with a warning.
      *
      * A version conflict in a *linting* dependency must not take down phpunit,
