@@ -503,8 +503,24 @@ executes it. These do. The fixture is deliberately *not* a Drupal site: every
 fact under test is about the layout, and a bare ddev project starts in about a
 minute where installing Drupal takes fifteen — which is the half that makes
 container CI flaky and then ignored. `.github/workflows/integration.yml` runs
-both jobs per PR, and fails if the contract tests skip themselves, because a
-job that goes green having executed nothing is the hole this closes.
+the docker and no-docker jobs per PR, and fails if the contract tests skip
+themselves, because a job that goes green having executed nothing is the hole
+this closes.
+
+**`.github/workflows/full-check.yml` is the nightly tier**: it provisions a
+real Drupal site and runs `check --working-copy` twice (the second run is the
+reused-environment path, which is where the toolchain gate silently skipped
+work) and `patch:check` against a real patch. It needs **no credential and
+writes nothing** — `check --working-copy` touches no GitLab client at all, and
+the patch surface is GitLab-free by design and degrades to null without a
+token, so no merge request is opened and no branch pushed. `publish` is the
+only command that writes, and its git half is covered offline in
+`tests/Integration/PublishPushTest.php` against a `file://` bare repository —
+including the `pre-receive hook declined` a fresh issue fork gives you, which
+a hook reproduces on demand and the real thing does not. What the nightly
+asserts is the **exit-code contract, not the verdict**: 0 and 1 both mean
+upkeep worked, and only 2 fails the job. Pinning an outcome would turn a
+re-rolled patch into a red build.
 Integration tests are excluded from the coverage floor: they exercise a
 fraction of `src/` by design, and running them under the threshold extension
 would either fail the build or force the floor down.

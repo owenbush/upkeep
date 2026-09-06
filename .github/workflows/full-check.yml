@@ -1,0 +1,151 @@
+name: Full check
+
+# The commands that have never run against a real environment.
+#
+# `check --working-copy` and `patch:check` provision a Drupal site, start a
+# container and run the whole check suite through it. Nothing else in this
+# repository does that: the unit suite fakes the engine, and the Integration
+# workflow deliberately uses a bare ddev project because everything it asserts
+# is about the layout rather than about Drupal.
+#
+# **No credential, and nothing is written anywhere.** Both commands are
+# read-only against public data — `check --working-copy` touches no GitLab
+# client at all, and the patch surface is GitLab-free by design and degrades
+# to null without a token. No merge request is opened, no branch is pushed, no
+# issue status is changed. `publish` is the only command that writes, and its
+# git half is covered offline against a local bare repository in
+# tests/Integration/PublishPushTest.php.
+#
+# Nightly and non-blocking on purpose. Building base artifacts is composer
+# create-project plus a Drupal install plus a database dump — ten minutes or
+# so, and by far the likeliest thing here to fail for reasons that are not
+# upkeep's. A slow job that blocks merges gets switched off; a nightly one
+# that reports honestly gets read.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      core:
+        description: 'Drupal core major to build and check against'
+        default: '11'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  full-check:
+    name: Provision and check for real
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Every path upkeep is given has to canonicalise under $HOME: the tree is
+      # bind-mounted into the docker VM, and PathGuard refuses anything outside
+      # it rather than letting the environment fail to start later.
+      COCKPIT: ${{ github.workspace }}/cockpit
+      CORE: ${{ inputs.core || '11' }}
+      MODULE: field_visibility_conditions
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: Set up ddev
+        uses: ddev/github-action-setup-ddev@v1
+        with:
+          autostart: false
+
+      - name: Scaffold a cockpit
+        run: |
+          ./bin/upkeep init "$COCKPIT"
+          cat > "$COCKPIT/registry.yml" <<YAML
+          modules:
+            $MODULE:
+              project: project/$MODULE
+              core_versions: ["$CORE"]
+          YAML
+          ./bin/upkeep modules --cockpit="$COCKPIT"
+
+      # The expensive step, and the one worth caching: a resolved base tree
+      # plus a clean-install database dump, per core version. Keyed on the
+      # engine add-on version as well as the core major, because a new add-on
+      # is a different tree.
+      - name: Cache base artifacts
+        id: artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COCKPIT }}/base-artifacts
+          key: base-artifacts-${{ env.CORE }}-${{ hashFiles('src/Adapter/EngineAddOn.php') }}
+
+      - name: Build base artifacts
+        if: steps.artifacts.outputs.cache-hit != 'true'
+        run: ./bin/upkeep base-artifacts:build --version="$CORE" --cockpit="$COCKPIT"
+
+      - name: Base artifacts are there
+        run: ./bin/upkeep base-artifacts:status --cockpit="$COCKPIT"
+
+      # The contract is what is asserted, not the verdict. 0 means every check
+      # passed and 1 means a check failed — both are upkeep working. Only 2
+      # says upkeep could not do the job, and that is the failure this job
+      # exists to catch.
+      - name: check --working-copy provisions and runs the suite
+        run: |
+          set +e
+          ./bin/upkeep check "$MODULE" --working-copy --version="$CORE" --cockpit="$COCKPIT"
+          status=$?
+          set -e
+          echo "exit=$status"
+          if [ "$status" -eq 2 ]; then
+            echo '::error::check --working-copy could not run (exit 2).'
+            exit 1
+          fi
+
+      - name: The environment is reusable, and still has what it needs
+        run: |
+          set +e
+          ./bin/upkeep check "$MODULE" --working-copy --version="$CORE" --cockpit="$COCKPIT"
+          status=$?
+          set -e
+          echo "exit=$status"
+          # The second run is the one that found a real bug: the toolchain gate
+          # returns early on a reused environment, and everything hung off that
+          # branch silently stopped happening.
+          if [ "$status" -eq 2 ]; then
+            echo '::error::A reused environment could not be checked (exit 2).'
+            exit 1
+          fi
+
+      - name: patch:check downloads, applies and checks a real patch
+        run: |
+          set +e
+          ./bin/upkeep patch:check "$MODULE" 3559057 --latest --version="$CORE" --cockpit="$COCKPIT"
+          status=$?
+          set -e
+          echo "exit=$status"
+          # An issue whose patch no longer applies is a true verdict, not a
+          # broken tool, so only exit 2 fails the job. Pinning the outcome
+          # instead would make this red whenever somebody re-rolls.
+          if [ "$status" -eq 2 ]; then
+            echo '::error::patch:check could not run (exit 2).'
+            exit 1
+          fi
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          ./bin/upkeep status --cockpit="$COCKPIT" || true
+          ddev list || true
+          ddev logs --tail=100 || true
+
+      - name: Tear the environments down
+        if: always()
+        run: ./bin/upkeep prune --projects --yes --cockpit="$COCKPIT" || ddev poweroff || true
