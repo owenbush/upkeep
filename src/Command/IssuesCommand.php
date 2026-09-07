@@ -13,6 +13,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
 use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\DashboardRow;
+use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\IssueStatus;
 use Upkeep\Patches\Contribution;
@@ -127,7 +128,12 @@ final class IssuesCommand extends UpkeepCommand
 
         self::renderTable($output, $contributions);
         $output->writeln('');
-        $output->writeln(self::summary($contributions, $snapshot === null));
+        $output->writeln(self::summary(
+            $contributions,
+            $snapshot === null,
+            $module->name,
+            ModuleResolution::isRegistered($this->modules($cockpit), $module->name),
+        ));
 
         return ExitCode::OK;
     }
@@ -243,9 +249,17 @@ final class IssuesCommand extends UpkeepCommand
 
     /**
      * @param list<Contribution> $contributions
+     * @param bool               $watched whether the dashboard surveys this
+     *                                    module, which decides whether the
+     *                                    suggestion below is one it would
+     *                                    accept
      */
-    private static function summary(array $contributions, bool $withoutSnapshot): string
-    {
+    private static function summary(
+        array $contributions,
+        bool $withoutSnapshot,
+        string $module,
+        bool $watched,
+    ): string {
         $unclaimed = \count(array_filter(
             $contributions,
             static fn (Contribution $c): bool => $c->kind() === ContributionKind::Nothing,
@@ -261,8 +275,15 @@ final class IssuesCommand extends UpkeepCommand
             sprintf('%d unclaimed', $unclaimed),
         ];
         if ($withoutSnapshot) {
-            // Said rather than left to look like "no merge requests exist".
-            $segments[] = 'no cached MRs — run `upkeep dashboard --refresh=<module>` to fill the CONTRIBUTION column';
+            // Said rather than left to look like "no merge requests exist" —
+            // and the suggestion has to be one that works for *this* module.
+            // The dashboard surveys the watchlist, so pointing an unwatched
+            // module at `--refresh` would send somebody to a command that
+            // refuses them.
+            $segments[] = $watched
+                ? 'no cached MRs — run `upkeep dashboard --refresh=' . $module . '` to fill the CONTRIBUTION column'
+                : 'no cached MRs — ' . $module . ' is not on the dashboard\'s watchlist, so the CONTRIBUTION '
+                    . 'column stays empty; `upkeep modules:add` to watch it';
         }
 
         return '<fg=gray>' . implode(' · ', $segments) . "</>\n"

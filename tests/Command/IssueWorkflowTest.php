@@ -201,6 +201,28 @@ final class IssueWorkflowTest extends TestCase
 
         self::assertStringContainsString('#1001', $cli->display());
         self::assertStringContainsString('no cached MRs', $cli->display());
+        self::assertStringContainsString('--refresh=widget', $cli->display(), 'a command it will accept');
+    }
+
+    /**
+     * And an *unwatched* module is not sent to a command that would refuse it.
+     *
+     * `issues paragraphs` works now — the registry is a watchlist, not a gate
+     * — but the dashboard still surveys the watchlist, so telling somebody to
+     * run `dashboard --refresh=paragraphs` would hand them a refusal. Reported
+     * from a real run against an unregistered module.
+     */
+    public function testAnUnwatchedModuleIsNotToldToRefreshADashboardThatRefusesIt(): void
+    {
+        mkdir($this->cli()->cockpit . '/base-artifacts/11', 0o755, true);
+        $cli = $this->withIssues([self::issue(1001, '8')]);
+
+        $cli->run('issues', 'paragraphs');
+
+        self::assertStringContainsString('no cached MRs', $cli->display());
+        self::assertStringNotContainsString('--refresh=paragraphs', $cli->display());
+        self::assertStringContainsString('watchlist', $cli->display());
+        self::assertStringContainsString('modules:add', $cli->display(), 'the command that would help');
     }
 
     public function testAnUnregisteredModuleIsRefused(): void

@@ -92,8 +92,12 @@ built base artifacts for 11. The set of cores you can actually test on is a
 fact about your disk, and `ArtifactLayout::versionsOnDisk()` already answers
 it.
 
-So: **newest core with artifacts**, and when there are none at all, refuse with
-the command that fixes it:
+So: **newest core with artifacts** — which means reversing what
+`ArtifactLayout::versionsOnDisk()` returns, since it sorts ascending and
+`selectCoreVersion()` takes `core_versions[0]`. Missing that on the first pass
+made `env:path paragraphs` answer for Drupal 10 on a machine with 11 built.
+
+When there are no artifacts at all, refuse with the command that fixes it:
 
 ```
 No base artifacts to check against. Build one first:

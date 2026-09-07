@@ -197,7 +197,10 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `prune`, the UI) keep iterating the watchlist and `requireModule()` stays
   strict for narrowing into it. A registry entry always wins where there is
   one: a maintainer's `core_versions` is a deliberate statement and outranks
-  anything inferred. What is **not** dropped is the refusal — a name that
+  anything inferred. A derived module's cores are **newest first**, because
+  `selectCoreVersion()` documents `core_versions[0]` as the default and
+  `versionsOnDisk()` sorts ascending — passed through unchanged, asking about
+  an unregistered module answered for the *oldest* core built on the machine. What is **not** dropped is the refusal — a name that
   cannot be a Drupal machine name is refused outright, and a derived name that
   404s is offered the watched name it nearly matched
   (`ModuleResolution::projectFailure()`, shared by the two places that report
@@ -606,7 +609,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7240/7240), methods (838/838) and classes (161/161), 1523 tests.
+lines (7248/7248), methods (838/838) and classes (161/161), 1525 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

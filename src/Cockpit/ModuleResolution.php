@@ -38,7 +38,8 @@ final readonly class ModuleResolution
      * statement about what they support and outranks anything inferred.
      *
      * @param array<string, Module> $registered
-     * @param list<string>          $coresOnDisk base artifact versions, ascending
+     * @param list<string>          $coresOnDisk base artifact versions, ascending as
+     *                                           ArtifactLayout returns them
      *
      * @throws RegistryException when the name cannot be a module at all
      */
@@ -65,7 +66,14 @@ final readonly class ModuleResolution
             ));
         }
 
-        return new Module($name, self::projectFor($name), $coresOnDisk);
+        // Newest first, because the first entry *is* the default:
+        // selectCoreVersion() documents `core_versions[0]` as what a run picks
+        // when --version is absent, and versionsOnDisk() sorts ascending. Left
+        // as it came off the disk, asking about an unregistered module would
+        // silently answer for the oldest core built on this machine — which is
+        // the least interesting question you could ask about whether a module
+        // still works.
+        return new Module($name, self::projectFor($name), array_reverse($coresOnDisk));
     }
 
     /**

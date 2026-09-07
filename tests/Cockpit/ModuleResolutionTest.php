@@ -55,7 +55,24 @@ final class ModuleResolutionTest extends TestCase
 
         self::assertSame('field_visibility_conditions', $module->name);
         self::assertSame('project/field_visibility_conditions', $module->project);
-        self::assertSame(['10', '11'], $module->coreVersions, 'what this machine can actually run');
+        self::assertSame(['11', '10'], $module->coreVersions, 'what this machine can actually run');
+    }
+
+    /**
+     * Newest first, because the first entry *is* the default.
+     *
+     * `selectCoreVersion()` documents `core_versions[0]` as what a run picks
+     * without `--version`, and `ArtifactLayout::versionsOnDisk()` sorts
+     * ascending — so passing it through unchanged made an unregistered module
+     * answer for the *oldest* core built on the machine. Reported from a real
+     * cockpit: `env:path paragraphs` said "on Drupal 10" with 11 also built.
+     */
+    public function testTheDefaultCoreIsTheNewestBuiltNotTheOldest(): void
+    {
+        $module = ModuleResolution::resolve(self::registry(), 'paragraphs', ['10', '11', '12']);
+
+        self::assertSame(['12', '11', '10'], $module->coreVersions);
+        self::assertSame('12', $module->coreVersions[0], 'what selectCoreVersion() will pick');
     }
 
     /**
