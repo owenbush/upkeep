@@ -119,7 +119,8 @@ abstract class AbstractPatchCommand extends UpkeepCommand
     protected function resolveContext(InputInterface $input, SymfonyStyle $io): PatchContext
     {
         $cockpit = $this->cockpit($input);
-        $module = MrContextResolver::requireModule(
+        $module = $this->resolveModule(
+            $cockpit,
             $this->modules($cockpit),
             self::stringArgument($input, 'module'),
         );

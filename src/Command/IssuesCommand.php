@@ -87,7 +87,8 @@ final class IssuesCommand extends UpkeepCommand
     protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
         $cockpit = $this->cockpit($input);
-        $module = MrContextResolver::requireModule(
+        $module = $this->resolveModule(
+            $cockpit,
             $this->modules($cockpit),
             self::stringArgument($input, 'module'),
         );

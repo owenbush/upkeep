@@ -45,8 +45,9 @@ final class IssueCommand extends UpkeepCommand
 
     protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
-        $modules = $this->modules($this->cockpit($input));
-        $module = self::requireModule($modules, self::stringArgument($input, 'module'));
+        $cockpit = $this->cockpit($input);
+        $modules = $this->modules($cockpit);
+        $module = $this->resolveModule($cockpit, $modules, self::stringArgument($input, 'module'));
         $iid = self::mrIid($input);
 
         $gitlab = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);

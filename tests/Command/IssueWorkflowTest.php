@@ -208,7 +208,10 @@ final class IssueWorkflowTest extends TestCase
         $cli = $this->cli();
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $cli->run('issues', 'nope'));
-        self::assertStringContainsString('not registered', $cli->display());
+        // The registry is a watchlist now, so being absent from it is not the
+        // refusal — having nothing built to run against is. See
+        // docs/any-module.md.
+        self::assertStringContainsString('no base artifacts', $cli->display());
     }
 
     // ---------------------------------------------------------------- start
@@ -909,6 +912,50 @@ final class IssueWorkflowTest extends TestCase
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
         self::assertStringContainsString('Cannot resolve the GitLab project', $cli->display());
+    }
+
+    /**
+     * The typo help, at the only point it is knowable.
+     *
+     * The registry stopped gating which modules can be worked on, so an
+     * unheard-of name is now an ordinary request rather than a refusal. It
+     * becomes a *typo* only once drupal.org says there is nothing at
+     * `project/<name>` — and then the near-miss against a watched module is
+     * exactly the thing the old "not registered" refusal used to catch. See
+     * docs/any-module.md §5.
+     */
+    public function testADerivedModuleThatDoesNotExistIsOfferedTheNameItNearlyMatched(): void
+    {
+        mkdir($this->cli()->cockpit . '/base-artifacts/11', 0o755, true);
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()
+            ->withEngine(FakeEngineAdapter::withEnvironment(self::environment()))
+            ->withGitlab($this->gitlab(['/projects/' => self::json(['message' => 'gone'], 404)]));
+
+        $exit = $cli->run('publish', 'widgte', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('Cannot resolve the GitLab project', $cli->display());
+        self::assertStringContainsString('Did you mean "widget"?', $cli->display());
+    }
+
+    /**
+     * And a module that is simply not watched gets no suggestion. Offering one
+     * would imply the name is wrong when the project may genuinely not exist,
+     * which is a worse answer than none.
+     */
+    public function testAnUnrelatedDerivedModuleIsNotAccusedOfBeingATypo(): void
+    {
+        mkdir($this->cli()->cockpit . '/base-artifacts/11', 0o755, true);
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()
+            ->withEngine(FakeEngineAdapter::withEnvironment(self::environment()))
+            ->withGitlab($this->gitlab(['/projects/' => self::json(['message' => 'gone'], 404)]));
+
+        $exit = $cli->run('publish', 'paragraphs', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringNotContainsString('Did you mean', $cli->display());
     }
 
     public function testPublishingReportsWhenTheBranchesMergeRequestsCannotBeListed(): void

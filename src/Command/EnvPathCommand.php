@@ -41,7 +41,7 @@ final class EnvPathCommand extends UpkeepCommand
     {
         $cockpit = $this->cockpit($input);
         $name = self::stringArgument($input, 'module');
-        $module = self::requireModule($this->modules($cockpit), $name);
+        $module = $this->resolveModule($cockpit, $this->modules($cockpit), $name);
         $coreMajor = self::targetCore($input, $module);
 
         $adapter = $this->engines->create(

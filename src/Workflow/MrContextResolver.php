@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Workflow;
 
 use Upkeep\Cockpit\Module;
+use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\MergeRequest;
@@ -45,12 +46,7 @@ final readonly class MrContextResolver
 
         $project = $this->client->project($module->project);
         if ($project instanceof ApiFailure) {
-            throw new WorkflowException(sprintf(
-                'Cannot resolve the GitLab project for module "%s" (%s): %s',
-                $module->name,
-                $module->project,
-                $project->message,
-            ));
+            throw new WorkflowException(ModuleResolution::projectFailure($this->modules, $module, $project->message));
         }
 
         $mergeRequest = $this->fetchOpenMr($module, $project, $iid);

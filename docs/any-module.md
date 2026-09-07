@@ -1,7 +1,7 @@
 # Plan — the registry as a watchlist, not a gate
 
-*Status: proposed. Nothing below is built. Written to be disagreed with before
-1,508 tests move.*
+*Status: step 1 built. Written to be disagreed with before 1,508 tests moved;
+§6 records what has landed and what has not.*
 
 Drupal core is **out of scope here** and gets its own design: it needs a second
 engine adapter, not a registry change. See §7.
@@ -161,10 +161,25 @@ deliberate statement about what they support and outranks a guess.
 
 Each step independently green and shippable.
 
-1. **Derived modules.** `resolveModule()` and the typo refusal. No behaviour
-   change for registered modules; unregistered ones stop being refused.
-2. **Core selection.** Newest-on-disk default, the no-artifacts refusal, and
-   the branch-disagreement refusal of §3.2.
+1. ~~**Derived modules.**~~ **Done.** `Cockpit\ModuleResolution` plus
+   `UpkeepCommand::resolveModule()`, wired into every subject command. A
+   registry entry still wins; an unregistered name is derived; a name that
+   cannot be a machine name is refused outright; and the near-miss suggestion
+   moved to the *project failure*, which is the only point it is knowable.
+
+   Two things came out differently from the plan. `issues` turned out to be a
+   subject command, not a survey one — it takes a required module argument and
+   reads that module's queue from drupal.org, so there was never a reason to
+   require registration. And the two places that report an unresolvable
+   project worded it differently; they now share one message, which was worth
+   doing while the hint needed a home.
+
+   Step 2's core selection came with it, because a derived module has no
+   `core_versions` and is unusable without one. The disk is the source (§3.1);
+   the branch-disagreement refusal of §3.2 is **not** built and is still to
+   come.
+2. **The branch-disagreement refusal** of §3.2 — the half of core selection
+   that needs the branch, and so a separate insertion point.
 3. **Prune without the registry.** Reverse `ProjectName`, so ad-hoc
    environments are discoverable and collectable.
 4. **Docs and the survey/subject split**, stated once in README and CLAUDE.md

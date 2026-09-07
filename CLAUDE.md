@@ -185,6 +185,24 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
 - `src/Cockpit/` — cockpit directory + `registry.yml` module registry.
+  **The registry is a watchlist, not a gate** (`docs/any-module.md`). It was
+  doing two jobs — how to find a module and which cores to test it on, *and*
+  which modules the surveys cover — and the first is now derivable:
+  `project/<name>` is drupal.org's convention (`PruneExecutor` already assumed
+  it) and the usable cores are the ones `ArtifactLayout::versionsOnDisk()`
+  finds. So `Cockpit\ModuleResolution` gives **subject** commands (`check`,
+  `review`, `dev`, `exec`, `env:path`, `issue`, `issues`, `needs-work`,
+  `patch:*`, `start`, `publish`) any module, registered or not, while
+  **survey** commands (`dashboard`, `patches`, `notes`, `modules`, `status`,
+  `prune`, the UI) keep iterating the watchlist and `requireModule()` stays
+  strict for narrowing into it. A registry entry always wins where there is
+  one: a maintainer's `core_versions` is a deliberate statement and outranks
+  anything inferred. What is **not** dropped is the refusal — a name that
+  cannot be a Drupal machine name is refused outright, and a derived name that
+  404s is offered the watched name it nearly matched
+  (`ModuleResolution::projectFailure()`, shared by the two places that report
+  it). That hint lives at the *failure*, not at resolution: until drupal.org
+  says there is nothing there, an unheard-of name is an ordinary request.
 - **Reading needs no credential.** git.drupalcode.org serves a public
   project's merge requests, refs, forks and raw files anonymously — measured
   across upkeep's whole read surface — so requiring a token to *look* was a
@@ -588,7 +606,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7198/7198), methods (832/832) and classes (160/160), 1508 tests.
+lines (7240/7240), methods (838/838) and classes (161/161), 1523 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
