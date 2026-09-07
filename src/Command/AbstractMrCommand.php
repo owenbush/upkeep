@@ -95,10 +95,35 @@ abstract class AbstractMrCommand extends UpkeepCommand
     private function clientFromToken(SymfonyStyle $io): GitlabClient
     {
         $tokens = GitlabClientFactory::resolver($io);
+
+        // A command that only looks does not need a credential: drupalcode
+        // serves public projects' merge requests and refs anonymously, and
+        // requiring a token to read was upkeep's restriction rather than
+        // GitLab's. Writes stay credentialed, and the client refuses them
+        // structurally when there is none.
+        if ($this->readsOnly()) {
+            return GitlabClientFactory::readOnly($tokens, static function (string $note) use ($io): void {
+                $io->note($note);
+            });
+        }
+
         $client = GitlabClientFactory::authenticated($tokens, static function (): void {
         });
 
         return $client ?? throw new WorkflowException(GitlabClientFactory::missingTokenMessage($tokens));
+    }
+
+    /**
+     * Whether this command only reads.
+     *
+     * Declared rather than inferred, and defaulting to false: a command that
+     * writes and forgets to say so gets the strict path, which refuses early
+     * with the token guidance. The other way round would let a write reach
+     * GitLab with no credential and fail four frames down.
+     */
+    protected function readsOnly(): bool
+    {
+        return false;
     }
 
     /**

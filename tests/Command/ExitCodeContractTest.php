@@ -116,8 +116,6 @@ final class ExitCodeContractTest extends TestCase
         yield 'issue' => [['issue', 'widget', '5']];
         yield 'needs-work' => [['needs-work', 'widget', '5']];
         yield 'modules:add' => [['modules:add']];
-        yield 'check' => [['check', 'widget', '5']];
-        yield 'review' => [['review', 'widget', '5']];
     }
 
     /** @param list<string> $argv */
@@ -129,6 +127,30 @@ final class ExitCodeContractTest extends TestCase
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $cli->run(...$argv), $cli->display());
         self::assertStringContainsString('No GitLab token found', $cli->display());
+    }
+
+    /**
+     * `check` and `review` are deliberately absent from that list now.
+     *
+     * They only look, and drupalcode serves a public project's merge requests
+     * and refs anonymously, so requiring a credential to read was upkeep's
+     * restriction rather than GitLab's. They are covered where they can be
+     * without a network call: GitlabClientFactoryTest for the degraded-mode
+     * note, GitlabClientTest for the header and the refused writes, and
+     * CommandSurfaceTest for which commands may take that path at all.
+     *
+     * Asserting it here would mean running a command that no longer
+     * short-circuits, which is a live request to git.drupalcode.org from the
+     * offline suite.
+     */
+    public function testReadOnlyCommandsAreNotOnTheCredentialList(): void
+    {
+        $needing = array_keys(iterator_to_array(self::commandsNeedingACredential()));
+
+        self::assertNotContains('check', $needing);
+        self::assertNotContains('review', $needing);
+        self::assertContains('merge', $needing, 'merging still needs one');
+        self::assertContains('needs-work', $needing, 'so does commenting');
     }
 
     /**

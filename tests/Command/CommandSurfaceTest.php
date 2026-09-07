@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Command;
 
 use PHPUnit\Framework\TestCase;
+use Upkeep\Adapter\Environment;
 use Symfony\Component\Console\Command\Command;
 use Upkeep\Adapter\VolumeProbe;
 use Upkeep\Command\ApiProbeCommand;
@@ -78,6 +79,38 @@ final class CommandSurfaceTest extends TestCase
      * added to `bin/upkeep` and not to the harness would otherwise be a
      * command no end-to-end test could ever reach.
      */
+    /**
+     * Which merge-request commands may read without a credential.
+     *
+     * A policy, pinned as one. drupalcode serves a public project's merge
+     * requests and refs anonymously, so `check` and `review` — which fetch a
+     * branch and check it out, and change nothing — no longer demand a token.
+     * Anything that writes must not join them by inheriting a default, so the
+     * default is strict and each read-only command says so for itself.
+     *
+     * If a future command extends AbstractMrCommand to write, this test is
+     * where the decision gets made rather than discovered.
+     */
+    public function testOnlyTheReadOnlyMergeRequestCommandsSkipTheCredential(): void
+    {
+        $engines = new StubEngineAdapterFactory(FakeEngineAdapter::withEnvironment(new Environment(
+            'widget',
+            '11',
+            'upkeep-widget-d11',
+            sys_get_temp_dir() . '/upkeep-surface-unused',
+            'https://localhost',
+            true,
+        )));
+
+        $readsOnly = [];
+        foreach ([new CheckCommand($engines), new ReviewCommand($engines)] as $command) {
+            $method = new \ReflectionMethod($command, 'readsOnly');
+            $readsOnly[(string) $command->getName()] = (bool) $method->invoke($command);
+        }
+
+        self::assertSame(['check' => true, 'review' => true], $readsOnly);
+    }
+
     /**
      * The dependency check runs before anything is constructed.
      *

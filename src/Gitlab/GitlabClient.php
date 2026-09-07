@@ -60,7 +60,16 @@ final class GitlabClient
 
     public function __construct(
         private readonly HttpClientInterface $http,
-        #[\SensitiveParameter] private readonly string $token,
+        /**
+         * The maintainer's Git-access PAT, or null to read anonymously.
+         *
+         * git.drupalcode.org serves every public project's merge requests,
+         * refs, forks and raw files without one — measured across this
+         * project's whole read surface — so a credential is a requirement of
+         * *writing*, not of looking. Null omits the header entirely rather
+         * than sending an empty one, which GitLab answers with a 401.
+         */
+        #[\SensitiveParameter] private readonly ?string $token = null,
         private readonly string $apiBase = 'https://git.drupalcode.org/api/v4',
         private readonly string $browserBase = 'https://git.drupalcode.org',
     ) {
@@ -143,7 +152,7 @@ final class GitlabClient
 
         try {
             $response = $this->http->request('GET', $url, [
-                'headers' => ['PRIVATE-TOKEN' => $this->token],
+                'headers' => $this->headers(),
                 'timeout' => self::IDLE_TIMEOUT,
                 'max_duration' => self::MAX_DURATION,
             ]);
@@ -304,6 +313,37 @@ final class GitlabClient
      * with its target — which is the same condition the adapter falls back to
      * the branch on, so both sides fall back together.
      */
+    /** Whether this client is reading without a credential. */
+    public function isAnonymous(): bool
+    {
+        return $this->token === null || $this->token === '';
+    }
+
+    /**
+     * An empty header array when anonymous, rather than an empty PRIVATE-TOKEN
+     * — GitLab reads a present-but-empty credential as a bad one and answers
+     * 401, where no header at all is an ordinary public read.
+     *
+     * @return array<string, string>
+     */
+    private function headers(): array
+    {
+        return $this->isAnonymous() ? [] : ['PRIVATE-TOKEN' => (string) $this->token];
+    }
+
+    /**
+     * The refusal every write shares when there is no credential.
+     *
+     * Structural, so a command cannot reach a write with an anonymous client
+     * by forgetting to check: the answer is the same typed failure the rest of
+     * the surface returns, and it says what to configure rather than letting
+     * GitLab answer 401 from four frames down.
+     */
+    private function anonymousWriteRefusal(string $browserUrl): ApiFailure
+    {
+        return new Unauthorized($browserUrl);
+    }
+
     public function mergeRefSha(Project $project, int $iid): ?string
     {
         $data = $this->get(
@@ -502,6 +542,10 @@ final class GitlabClient
         string $description = '',
         ?Project $into = null,
     ): MergeRequest|ApiFailure {
+        if ($this->isAnonymous()) {
+            return $this->anonymousWriteRefusal(($into ?? $project)->webUrl . '/-/merge_requests');
+        }
+
         $payload = [
             'source_branch' => $sourceBranch,
             'target_branch' => $targetBranch,
@@ -574,6 +618,10 @@ final class GitlabClient
      */
     public function postNote(Project $project, int $iid, string $body): true|ApiFailure
     {
+        if ($this->isAnonymous()) {
+            return $this->anonymousWriteRefusal($this->mergeRequestBrowserUrl($project, $iid));
+        }
+
         $data = $this->request(
             'POST',
             $this->apiBase . '/projects/' . $project->id . '/merge_requests/' . $iid . '/notes',
@@ -600,6 +648,10 @@ final class GitlabClient
      */
     public function merge(Project $project, int $iid, ?string $expectedHeadSha = null): MergeRequest|ApiFailure
     {
+        if ($this->isAnonymous()) {
+            return $this->anonymousWriteRefusal($this->mergeRequestBrowserUrl($project, $iid));
+        }
+
         $data = $this->request(
             'PUT',
             $this->apiBase . '/projects/' . $project->id . '/merge_requests/' . $iid . '/merge',
@@ -704,7 +756,7 @@ final class GitlabClient
     {
         try {
             $response = $this->http->request($method, $url, $extraOptions + [
-                'headers' => ['PRIVATE-TOKEN' => $this->token],
+                'headers' => $this->headers(),
                 // Symfony's `timeout` is the *idle* timeout — the gap allowed
                 // between chunks — so on its own it bounds nothing: a response
                 // trickling a byte just inside it stays alive indefinitely.

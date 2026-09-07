@@ -52,6 +52,12 @@ use Upkeep\Workflow\MrContext;
 )]
 final class CheckCommand extends AbstractMrCommand
 {
+    /** Fetches a merge request and checks it out; changes nothing on GitLab. */
+    protected function readsOnly(): bool
+    {
+        return true;
+    }
+
     protected function configure(): void
     {
         $this->setHelp(<<<'HELP'

@@ -185,6 +185,22 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
 - `src/Cockpit/` — cockpit directory + `registry.yml` module registry.
+- **Reading needs no credential.** git.drupalcode.org serves a public
+  project's merge requests, refs, forks and raw files anonymously — measured
+  across upkeep's whole read surface — so requiring a token to *look* was a
+  restriction upkeep imposed rather than one GitLab does. `GitlabClient`'s
+  token is nullable and the header is **omitted** when absent, never sent
+  empty: GitLab reads a present-but-empty PRIVATE-TOKEN as a bad credential
+  and answers 401. `GitlabClientFactory::readOnly()` always returns a client
+  and notes the degraded mode once, naming what it costs — a private project
+  answers an anonymous read with **404, not 401**, because GitLab hides
+  existence, so a module you can see while signed in reads as missing. Writes
+  (`merge`, `postNote`, `createMergeRequest`) refuse **in the client**, before
+  any request, so no command can reach one down this path by forgetting to
+  check. Which commands may take it is declared, not inferred:
+  `AbstractMrCommand::readsOnly()` defaults to false and `check`/`review`
+  override it, pinned by `CommandSurfaceTest` — a future write command that
+  forgets gets the strict path.
 - `src/Gitlab/` — git.drupalcode.org API client, token resolution
   (`UPKEEP_GITLAB_TOKEN` env, else `~/.config/upkeep/drupal-pat`), MR/pipeline
   models, and the sealed `Gitlab\ApiFailure` taxonomy (`Unauthorized` 401,
@@ -503,8 +519,24 @@ executes it. These do. The fixture is deliberately *not* a Drupal site: every
 fact under test is about the layout, and a bare ddev project starts in about a
 minute where installing Drupal takes fifteen — which is the half that makes
 container CI flaky and then ignored. `.github/workflows/integration.yml` runs
-both jobs per PR, and fails if the contract tests skip themselves, because a
-job that goes green having executed nothing is the hole this closes.
+the docker and no-docker jobs per PR, and fails if the contract tests skip
+themselves, because a job that goes green having executed nothing is the hole
+this closes.
+
+**`.github/workflows/full-check.yml` is the nightly tier**: it provisions a
+real Drupal site and runs `check --working-copy` twice (the second run is the
+reused-environment path, which is where the toolchain gate silently skipped
+work) and `patch:check` against a real patch. It needs **no credential and
+writes nothing** — `check --working-copy` touches no GitLab client at all, and
+the patch surface is GitLab-free by design and degrades to null without a
+token, so no merge request is opened and no branch pushed. `publish` is the
+only command that writes, and its git half is covered offline in
+`tests/Integration/PublishPushTest.php` against a `file://` bare repository —
+including the `pre-receive hook declined` a fresh issue fork gives you, which
+a hook reproduces on demand and the real thing does not. What the nightly
+asserts is the **exit-code contract, not the verdict**: 0 and 1 both mean
+upkeep worked, and only 2 fails the job. Pinning an outcome would turn a
+re-rolled patch into a red build.
 Integration tests are excluded from the coverage floor: they exercise a
 fraction of `src/` by design, and running them under the threshold extension
 would either fail the build or force the floor down.
@@ -556,7 +588,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7170/7170), methods (824/824) and classes (160/160), 1497 tests.
+lines (7198/7198), methods (832/832) and classes (160/160), 1508 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

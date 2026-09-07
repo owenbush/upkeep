@@ -22,9 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Composer's own behaviour: no docker, seconds, never flaky.
-  composer-layout:
-    name: Path repository layout
+  # No docker: composer's own behaviour, and git's. Seconds, never flaky.
+  offline-contracts:
+    name: Layout and push contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +38,15 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --no-progress
 
-      - name: A path dependency's require-dev is not installed
-        run: vendor/bin/phpunit --testsuite=integration --no-coverage --filter PathRepositoryLayoutTest
+      # PathRepositoryLayout: composer does not install a path dependency's
+      # require-dev, which is why a module ruleset referencing ./vendor/ found
+      # nothing. PublishPush: a real `git push` to a real repository, including
+      # the pre-receive refusal a fresh drupal.org issue fork gives you and
+      # which cannot be provoked on demand against the real thing.
+      - name: Layout and push contracts
+        run: |
+          vendor/bin/phpunit --testsuite=integration --no-coverage \
+            --filter 'PathRepositoryLayoutTest|PublishPushTest'
 
   # What ddev exec does to a command, and what the layout does to a ruleset.
   adapter-contract:
