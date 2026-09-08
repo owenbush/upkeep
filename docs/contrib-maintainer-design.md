@@ -429,9 +429,9 @@ gadget            3    12     Automated D12 compat       ok    ok     READY-AUTO
 **Fixtures (in-project ddev commands):**
 
 ```
-ddev fixture-create <name>    # export current DB -> portable dump (sanitized if module repo)
-ddev fixture-load <name>      # materialize dump -> snapshot -> restore
-ddev fixture-list
+ddev upkeep-fixture-create <name>   # export current DB -> portable dump (sanitized if module repo)
+ddev upkeep-fixture-load <name>     # materialize dump -> snapshot -> restore
+ddev upkeep-fixture-list
 ```
 
 **Maintenance / prune (disk control):**

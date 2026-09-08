@@ -311,14 +311,14 @@ final class DdevContribAdapterWorkingCopyTest extends DdevAdapterTestCase
             'The add-on probe is the marker file, so a second load must not reinstall it.',
         );
         // A literal, deliberately, and not FixtureAddOn::LOAD_COMMAND — a test
-        // that follows the constant follows a change to it and stays green.
-        // This is the command the published add-on actually provides, and
-        // upkeep named a different one for long enough that `--fixture` cannot
-        // ever have worked. tests/Integration/FixtureAddOnContractTest checks
-        // the same name against the add-on itself.
+        // that follows the constant follows a change to it and stays green,
+        // which is how upkeep came to invoke a command the add-on does not
+        // publish. This is the name owenbush/ddev-upkeep installs;
+        // tests/Integration/FixtureAddOnContractTest is what checks that
+        // claim against the add-on rather than restating it.
         self::assertSame(
             2,
-            substr_count(implode("\n", $runner->commandLines()), 'ddev fixture-load baseline'),
+            substr_count(implode("\n", $runner->commandLines()), 'ddev upkeep-fixture-load baseline'),
         );
     }
 

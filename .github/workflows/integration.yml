@@ -48,6 +48,35 @@ jobs:
           vendor/bin/phpunit --testsuite=integration --no-coverage \
             --filter 'PathRepositoryLayoutTest|PublishPushTest'
 
+      # That the fixture command upkeep invokes is one the add-on publishes.
+      # They disagreed for as long as `--fixture` has existed, and no test
+      # here could have noticed: the engine fake records whatever string it is
+      # handed, and the marker fixture is built from the same constant under
+      # test, so both halves agreed with each other and with nothing real.
+      #
+      # Needs a token because both repositories are private while upkeep is
+      # unreleased, and the job's own GITHUB_TOKEN cannot read the other one.
+      # A missing secret is reported rather than passed over: a contract test
+      # that quietly does not run is the shape of the bug it exists to catch.
+      - name: Fixture add-on contract
+        env:
+          UPKEEP_GITHUB_TOKEN: ${{ secrets.ADDON_READ_TOKEN }}
+        run: |
+          if [ -z "${UPKEEP_GITHUB_TOKEN}" ]; then
+            echo '::warning::ADDON_READ_TOKEN is not set, so the fixture add-on contract was not checked.'
+            echo 'Add a repository secret with read access to owenbush/ddev-upkeep to enable it.'
+            exit 0
+          fi
+
+          vendor/bin/phpunit --testsuite=integration --no-coverage \
+            --filter FixtureAddOnContractTest --log-junit "$RUNNER_TEMP/addon.xml"
+
+          if grep -q '<skipped' "$RUNNER_TEMP/addon.xml"; then
+            echo '::error::The add-on contract test skipped itself despite a token being present.'
+            grep -o 'message="[^"]*"' "$RUNNER_TEMP/addon.xml" | head -3
+            exit 1
+          fi
+
   # What ddev exec does to a command, and what the layout does to a ruleset.
   adapter-contract:
     name: ddev exec contract

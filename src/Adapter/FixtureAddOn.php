@@ -12,14 +12,21 @@ namespace Upkeep\Adapter;
  * of the layout.
  *
  * The command name is declared once, here, and both the invocation and the
- * installed-probe are built from it. They disagreed: the adapter ran
- * `ddev upkeep-fixture-load` while the add-on has always published
- * `ddev fixture-load` — its README, its bats tests and its recorded
- * end-to-end run all use the short name, and the prefix appears there only on
- * snapshot names and environment variables. So `--fixture` could not have
- * worked, and the probe looked for a file that is never installed, which
- * re-fetched the add-on on every single call. Two strings for one fact, in
- * two repositories, with nothing comparing them.
+ * installed-probe are built from it. They used to be two strings and they
+ * disagreed: the adapter ran `ddev upkeep-fixture-load` while the add-on
+ * published `ddev fixture-load`, so `--fixture` could not have worked and the
+ * probe looked for a file that is never installed, re-fetching the add-on on
+ * every single call. One fact, two strings, two repositories, nothing
+ * comparing them.
+ *
+ * The name it settled on is the namespaced one, because ddev gives every
+ * add-on's host commands one flat namespace per project and `fixture-load`
+ * claims ground this add-on has no business claiming. That rename is
+ * owenbush/ddev-upkeep#1, and it has to be on that repository's main branch
+ * before this is released: the probe looks for the command *file*, so a
+ * mismatch reinstalls the add-on on every call and then fails on an unknown
+ * command. tests/Integration/FixtureAddOnContractTest is what says whether
+ * they agree.
  */
 final readonly class FixtureAddOn
 {
@@ -36,7 +43,7 @@ final readonly class FixtureAddOn
      * The host command the add-on publishes for loading a fixture, as it is
      * invoked and as it is named on disk.
      */
-    public const LOAD_COMMAND = 'fixture-load';
+    public const LOAD_COMMAND = 'upkeep-fixture-load';
 
     /**
      * A file the add-on installs into <project>/.ddev/ — its presence is the

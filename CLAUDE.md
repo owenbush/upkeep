@@ -11,8 +11,8 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   to name a concrete engine. It builds one `Adapter\DdevContribAdapterFactory`
   and injects it into the commands that need an environment.
 - **The fixture add-on's command names are one constant, checked against the
-  add-on itself.** `Adapter\FixtureAddOn::LOAD_COMMAND` is `fixture-load`, and
-  `MARKER` is derived from it (ddev names a host command after the file it came
+  add-on itself.** `Adapter\FixtureAddOn::LOAD_COMMAND` is
+  `upkeep-fixture-load`, and `MARKER` is derived from it (ddev names a host command after the file it came
   from). They used to be two independent strings and they disagreed: the
   adapter ran `ddev upkeep-fixture-load` while owenbush/ddev-upkeep has always
   published `fixture-load` — its README, bats tests and recorded end-to-end run
@@ -26,7 +26,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `tests/Integration/FixtureAddOnContractTest` reads the add-on's own
   `install.yaml` and compares. It takes a local checkout via
   `UPKEEP_ADDON_SOURCE` first and an authenticated API read otherwise, because
-  both repositories are private while upkeep is unreleased.
+  both repositories are private while upkeep is unreleased — which is also why
+  its CI step needs an `ADDON_READ_TOKEN` secret and warns loudly instead of
+  passing silently when there is none. The commands are **namespaced**
+  (`upkeep-fixture-*`) because ddev gives every add-on's host commands one flat
+  namespace per project, so a name as general as `fixture-load` claims ground
+  this add-on has no business claiming. That rename lands in the add-on first:
+  the probe looks for the command *file*, so upkeep expecting a name the
+  installed add-on does not publish reinstalls it on every call and then fails.
 - `src/Adapter/` — the engine adapter: everything ddev / ddev-drupal-contrib
   specific (provisioning, MR checkout, patch application, check execution,
   teardown, the ddev-upkeep fixture add-on). Engine pinned:
