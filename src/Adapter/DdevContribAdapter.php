@@ -1006,12 +1006,42 @@ final class DdevContribAdapter implements EngineAdapterInterface
     private function ensureFixtureAddOn(Environment|string $environmentOrPath): void
     {
         $projectPath = $environmentOrPath instanceof Environment ? $environmentOrPath->projectPath : $environmentOrPath;
-        if (is_file($projectPath . '/.ddev/' . FixtureAddOn::MARKER)) {
+        $stampPath = $projectPath . '/.ddev/' . FixtureAddOn::STAMP;
+        $expected = FixtureAddOn::expectedStamp();
+
+        // Both, not either. The marker says the add-on's commands are there;
+        // the stamp says they are the ones this upkeep expects. Probing only
+        // the marker was fine while nothing was published — there was no other
+        // version to be holding — and would now let an environment keep an old
+        // release for ever, since a command file's presence says nothing about
+        // which release wrote it.
+        if (
+            is_file($projectPath . '/.ddev/' . FixtureAddOn::MARKER)
+            && is_file($stampPath)
+            && trim((string) file_get_contents($stampPath)) === $expected
+        ) {
             return;
         }
 
-        ($this->log)(sprintf('Installing fixture add-on from %s ...', FixtureAddOn::source()));
-        $this->runner->run(['ddev', 'add-on', 'get', FixtureAddOn::source()], $projectPath);
+        ($this->log)(sprintf(
+            'Installing fixture add-on %s ...',
+            FixtureAddOn::isOverridden() ? FixtureAddOn::source() : FixtureAddOn::NAME . ' ' . FixtureAddOn::VERSION,
+        ));
+        $this->runner->run(['ddev', 'add-on', 'get', ...FixtureAddOn::installArguments()], $projectPath);
+
+        // Written after the install, never before: a stamp that outlived a
+        // failed install would make the next run skip the retry.
+        //
+        // The directory is the add-on's own, so it normally exists by now —
+        // but only because the install just put a file in it, which is a fact
+        // about the add-on's contents rather than about this code. Created
+        // rather than assumed; silenced because a directory that cannot be
+        // made is reported as the write failing, naming the path.
+        $stampDir = \dirname($stampPath);
+        if (!is_dir($stampDir)) {
+            @mkdir($stampDir, 0755, true);
+        }
+        FileWriter::write($stampPath, $expected . "\n", FileWriter::MODE_SHARED);
     }
 
     /**
