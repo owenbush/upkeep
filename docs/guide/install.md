@@ -24,27 +24,59 @@ What upkeep needs, how to install it from a clone, and how to get tab completion
 
 ## Install
 
-Until the first release is published to Packagist, install from a clone:
-
 ```bash
-composer install
+composer global require owenbush/upkeep
 ```
 
-then put `bin/upkeep` on your `PATH` (or call it by path). Once published,
-the intended install is `composer global require owenbush/upkeep`.
+That is the whole thing. Composer puts the `upkeep` binary in its global bin
+directory, which is `~/.composer/vendor/bin` or `~/.config/composer/vendor/bin`
+depending on your setup — `composer global config bin-dir --absolute` prints
+yours.
+
+If `upkeep` is not found afterwards, that directory is not on your `PATH`. Add
+it once and every globally installed PHP tool works the same way:
+
+```bash
+export PATH="$(composer global config bin-dir --absolute):$PATH"
+```
+
+To update: `composer global update owenbush/upkeep`.
+
+### What you get, and what you do not
+
+A global install resolves upkeep's dependencies fresh against your PHP, rather
+than using the `composer.lock` in this repository. So the tree you run is not
+byte-for-byte the one CI ran. That is normal for a CLI tool, and it is checked
+rather than assumed: CI resolves the same way on the lowest and highest
+supported PHP — 8.2 gets Symfony 7.x, 8.4 gets Symfony 8.x — and runs every
+gate against both.
+
+Global installs share one dependency tree, so a tool with a narrow constraint
+can conflict with another. upkeep's are deliberately wide
+(`symfony/* ^7.2 || ^8.0`), which makes it the one that bends rather than the
+one that breaks.
+
+### Or from a clone
+
+For working on upkeep itself:
+
+```bash
+git clone https://github.com/owenbush/upkeep.git
+cd upkeep && composer install
+```
 
 **Re-run `composer install` after every `git pull`.** A pull can bring a new
 dependency with it, and a `vendor/` older than the code it sits beside is a
-broken install. Upkeep checks this on startup and refuses with exit 2, naming
-the missing packages and the directory to run `composer install` in — rather
-than dying partway through a command with a class-not-found trace.
+broken install. Upkeep checks this on startup and refuses with exit 2 rather
+than dying partway through a command with a class-not-found trace — naming the
+missing packages, and the right recovery for how you installed it.
 
-`composer.lock` is committed, so `composer install` gives you the same
-dependency versions CI tested against. Resolution is pinned to PHP 8.2 (the
-lowest version upkeep supports) via `config.platform`, so the tree is the same
-whichever PHP you run it on.
+A clone *does* use the committed `composer.lock`, so it gives you the exact
+versions CI tested. Resolution is pinned to PHP 8.2 via `config.platform`, so
+that tree is the same whichever PHP you run it on. Both of those apply to
+installing upkeep; neither reaches someone who requires it as a dependency.
 
-Sanity check:
+Sanity check, however you installed:
 
 ```bash
 upkeep list --raw
