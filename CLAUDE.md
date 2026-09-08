@@ -689,7 +689,15 @@ were on Symfony 8.1 while CI's 8.2 leg resolved 7.x, so the four gates were
 being run against a dependency tree no user had. Pinned to the lowest
 supported version, everyone installs the same tree. The `|| ^8.0` half of the
 Symfony constraints is therefore never exercised by `composer install`; only
-an explicit `composer update` on PHP 8.4 reaches it.
+an explicit `composer update` on PHP 8.4 reaches it — **which is what a
+Packagist user gets**, since a consumer resolves against their own platform and
+ignores both this lock and this `config.platform`. So CI has a second job,
+`resolved`, that unsets the platform pin, deletes the lock and resolves on 8.2
+and 8.4 before running the same gates. It is blocking: a red build there means
+users are getting a tree that does not work, and the escape hatch is narrowing
+the constraint to what is supported rather than keeping a warning nobody reads.
+Measured when it was added: PHP 8.4 resolves Symfony 8.1.6, and every gate
+passes on it.
 
 `composer lint:fix` (phpcbf) fixes what phpcs can fix automatically. CI also
 runs `composer validate --strict` before installing, so touching
