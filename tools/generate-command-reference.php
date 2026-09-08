@@ -53,6 +53,7 @@ $md .= globalOptions($globalDefinitions);
 foreach ($commands as $command) {
     $md .= renderCommand($command, $global);
 }
+$md = normalise($md, $root);
 
 if ($check) {
     $current = is_file($target) ? (string) file_get_contents($target) : '';
@@ -66,6 +67,41 @@ if ($check) {
 
 file_put_contents($target, $md);
 printf("Wrote %s (%d commands, %d lines).\n", $target, \count($commands), substr_count($md, "\n"));
+
+/**
+ * Removes this machine from the output.
+ *
+ * Two things the CLI reports are properties of where it is installed, not of
+ * what it does: `--scratch-dir` defaults under `$HOME`, and the completion
+ * command's help quotes the binary by absolute path. Left alone they make the
+ * generated file differ per checkout, which the CI gate then reports as drift
+ * on every pull request — as it did on the first one.
+ *
+ * The guard is the point: an absolute path that survives is a new source of
+ * per-machine output, and failing here is better than failing in CI for
+ * everyone who did not introduce it.
+ */
+function normalise(string $md, string $root): string
+{
+    $md = str_replace($root . '/bin/upkeep', 'upkeep', $md);
+
+    if (str_contains($md, $root)) {
+        $offending = array_values(array_filter(
+            explode("\n", $md),
+            static fn (string $line): bool => str_contains($line, $root),
+        ));
+        fwrite(STDERR, sprintf(
+            "The reference still names this checkout, so it would differ on every machine:\n  %s\n"
+            . "Normalise it in normalise(), or stop the command reporting an absolute path.\n",
+            implode("\n  ", $offending),
+        ));
+        exit(1);
+    }
+
+    $home = getenv('HOME');
+
+    return $home === false || $home === '' ? $md : str_replace($home, '~', $md);
+}
 
 /**
  * @param list<array<string, mixed>> $commands

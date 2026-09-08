@@ -88,7 +88,7 @@ upkeep base-artifacts:build [--version VERSION] [--force] [--stability STABILITY
 | `--version=VERSION` | Drupal core major version to build artifacts for (e.g. 11) |
 | `--force` | Deliberately rebuild over an existing artifact set |
 | `--stability=STABILITY` | Lowest release stability to accept (dev, alpha, beta, RC, stable). Needed while a core major is still in alpha or beta, which is when compatibility work happens |
-| `--scratch-dir=SCRATCH-DIR` | Directory for the throwaway site-install project (must be a path your Docker provider mounts, e.g. under your home directory) Default: `/home/owen.guest/.upkeep/scratch`. |
+| `--scratch-dir=SCRATCH-DIR` | Directory for the throwaway site-install project (must be a path your Docker provider mounts, e.g. under your home directory) Default: `~/.upkeep/scratch`. |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 
 ## `upkeep base-artifacts:status`
@@ -163,13 +163,13 @@ Static installation -------------------
 Dump the script to a global completion file and restart your shell:
 
 ```
-/home/owen.guest/github.com/owenbush/upkeep/bin/upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep
+upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep
 ```
 
 Or dump the script to a local file and source it:
 
 ```
-/home/owen.guest/github.com/owenbush/upkeep/bin/upkeep completion bash > completion.sh
+upkeep completion bash > completion.sh
 ```
 
 ```
@@ -187,7 +187,7 @@ Dynamic installation --------------------
 Add this to the end of your shell configuration file (e.g. "~/.bashrc"):
 
 ```
-eval "$(/home/owen.guest/github.com/owenbush/upkeep/bin/upkeep completion bash)"
+eval "$(upkeep completion bash)"
 ```
 
 **Arguments**
