@@ -310,9 +310,15 @@ final class DdevContribAdapterWorkingCopyTest extends DdevAdapterTestCase
             substr_count(implode("\n", $runner->commandLines()), 'add-on get ' . FixtureAddOn::source()),
             'The add-on probe is the marker file, so a second load must not reinstall it.',
         );
+        // A literal, deliberately, and not FixtureAddOn::LOAD_COMMAND — a test
+        // that follows the constant follows a change to it and stays green.
+        // This is the command the published add-on actually provides, and
+        // upkeep named a different one for long enough that `--fixture` cannot
+        // ever have worked. tests/Integration/FixtureAddOnContractTest checks
+        // the same name against the add-on itself.
         self::assertSame(
             2,
-            substr_count(implode("\n", $runner->commandLines()), 'ddev upkeep-fixture-load baseline'),
+            substr_count(implode("\n", $runner->commandLines()), 'ddev fixture-load baseline'),
         );
     }
 

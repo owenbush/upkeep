@@ -10,6 +10,23 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   registers every command and is the only file outside `src/Adapter/` allowed
   to name a concrete engine. It builds one `Adapter\DdevContribAdapterFactory`
   and injects it into the commands that need an environment.
+- **The fixture add-on's command names are one constant, checked against the
+  add-on itself.** `Adapter\FixtureAddOn::LOAD_COMMAND` is `fixture-load`, and
+  `MARKER` is derived from it (ddev names a host command after the file it came
+  from). They used to be two independent strings and they disagreed: the
+  adapter ran `ddev upkeep-fixture-load` while owenbush/ddev-upkeep has always
+  published `fixture-load` — its README, bats tests and recorded end-to-end run
+  all use the short name, and the `upkeep-` prefix appears there only on
+  snapshot names and environment variables. So **`--fixture=NAME` could never
+  have worked**, and the installed-probe looked for a file that is never
+  written, re-fetching the add-on on every call. The unit suite was green and
+  could not have been otherwise — the engine fake records whatever string it is
+  handed, and the marker fixture is built from the same constant under test, so
+  both halves agreed with each other and with nothing real.
+  `tests/Integration/FixtureAddOnContractTest` reads the add-on's own
+  `install.yaml` and compares. It takes a local checkout via
+  `UPKEEP_ADDON_SOURCE` first and an authenticated API read otherwise, because
+  both repositories are private while upkeep is unreleased.
 - `src/Adapter/` — the engine adapter: everything ddev / ddev-drupal-contrib
   specific (provisioning, MR checkout, patch application, check execution,
   teardown, the ddev-upkeep fixture add-on). Engine pinned:
