@@ -54,6 +54,36 @@ final class BaseArtifactBuilderTest extends TestCase
         );
     }
 
+    /**
+     * Staging directories currently on disk. Empty is the invariant: a build
+     * either finishes and moves in, or cleans up after itself.
+     *
+     * @return list<string>
+     */
+    private function stagingDirectories(): array
+    {
+        $found = glob($this->layout->baseArtifactsDir . '/.building-d*', GLOB_ONLYDIR);
+
+        return $found === false ? [] : $found;
+    }
+
+    private function logged(string $fragment): bool
+    {
+        return str_contains(implode("\n", $this->log), $fragment);
+    }
+
+    /**
+     * Runs $hook part-way through a build — after the tree is resolved and
+     * before the finished set is moved into place, which is the only window in
+     * which a staged set and a live set both exist.
+     *
+     * @param \Closure(): void $hook
+     */
+    private function midBuild(\Closure $hook): void
+    {
+        $this->runner->after('ddev delete', $hook);
+    }
+
     private function logger(): \Closure
     {
         return function (string $line): void {
@@ -185,16 +215,149 @@ final class BaseArtifactBuilderTest extends TestCase
         $builder->build('11', false);
     }
 
-    public function testForceDiscardsThePreviousArtifactSetBeforeRebuilding(): void
+    /**
+     * A rebuild replaces the previous set, and the previous set survives right
+     * up to the moment the new one is complete.
+     *
+     * It used to be removed first, so the build resolved into the empty
+     * directory it had just cleared — and a resolve that failed left the core
+     * with nothing. The expensive, failure-prone part now happens beside the
+     * live set; only a rename touches it.
+     */
+    public function testForceReplacesThePreviousArtifactSetWithoutRemovingItFirst(): void
     {
         mkdir($this->layout->treePath('11'), 0o700, true);
         file_put_contents($this->layout->treePath('11') . '/stale', 'from the previous build');
 
         $this->builder()->build('11', true);
 
-        self::assertSame('rm -rf', $this->runner->summaries()[0]);
-        self::assertSame($this->layout->versionDir('11'), $this->runner->commands()[0][2]);
-        self::assertFileDoesNotExist($this->layout->treePath('11') . '/stale');
+        self::assertSame(
+            'composer create-project',
+            $this->runner->summaries()[0],
+            'the build starts by resolving, not by deleting',
+        );
+        self::assertFileDoesNotExist($this->layout->treePath('11') . '/stale', 'the old set is gone afterwards');
+        self::assertFileExists($this->layout->metaPath('11'), 'and the new one is in place');
+    }
+
+    /**
+     * The point of the whole arrangement: a rebuild that fails leaves the
+     * previous artifacts exactly where they were.
+     *
+     * Before, `--force` removed them and *then* resolved, so a network blip
+     * during a routine "pick up the newer alpha" rebuild took the core out
+     * entirely — every environment for it unusable until a build succeeded,
+     * with the previous set unrecoverable.
+     */
+    public function testAFailedRebuildLeavesThePreviousArtifactSetIntact(): void
+    {
+        mkdir($this->layout->treePath('11'), 0o700, true);
+        file_put_contents($this->layout->treePath('11') . '/stale', 'from the previous build');
+        $this->runner->failOn('composer create-project', 'could not find a matching version');
+
+        try {
+            $this->builder()->build('11', true);
+            self::fail('Expected a BuildException.');
+        } catch (BuildException $e) {
+            self::assertStringContainsString('could not find a matching version', $e->getMessage());
+        }
+
+        self::assertStringEqualsFile(
+            $this->layout->treePath('11') . '/stale',
+            'from the previous build',
+            'the previous artifacts are untouched',
+        );
+        self::assertTrue(
+            $this->logged('are untouched'),
+            'and the run says so, because the alternative reading is that everything is gone',
+        );
+        self::assertSame([], $this->stagingDirectories(), 'the staged build is cleaned up');
+    }
+
+    /**
+     * A build in progress must not read as a core anybody can be offered: it
+     * would be handed out as a usable version by `base-artifacts:status`, by
+     * prune, and by the core inference an unregistered module relies on.
+     */
+    public function testABuildInProgressIsInvisibleToEveryListing(): void
+    {
+        $seen = ['not run'];
+        $this->midBuild(function () use (&$seen): void {
+            $seen = $this->layout->versionsOnDisk();
+        });
+
+        $this->builder()->build('11', false);
+
+        self::assertSame([], $seen, 'mid-build, nothing is listed');
+        self::assertSame(['11'], $this->layout->versionsOnDisk(), 'and afterwards the finished set is');
+    }
+
+    /**
+     * A build killed outright leaves a multi-gigabyte staging tree that
+     * nothing else collects — prune protects the whole base-artifacts
+     * directory, and the leading-dot name keeps it out of every listing. The
+     * next build for that core is the next moment anyone is demonstrably not
+     * relying on it.
+     */
+    public function testAStagingDirectoryLeftByAKilledBuildIsCollectedByTheNextOne(): void
+    {
+        $abandoned = $this->layout->baseArtifactsDir . '/.building-d11-deadbeef';
+        mkdir($abandoned . '/11/tree', 0o700, true);
+
+        $this->builder()->build('11', false);
+
+        self::assertDirectoryDoesNotExist($abandoned);
+        self::assertTrue($this->logged('interrupted build'));
+        self::assertSame([], $this->stagingDirectories());
+    }
+
+    /**
+     * The new set is built, and the old one cannot be moved out of the way.
+     * Nothing is destroyed and the message says where both are, because the
+     * expensive half of the work is finished and throwing it away over a
+     * permissions problem would be the worst outcome available.
+     */
+    public function testAnUnmovableExistingSetFailsWithBothPathsNamed(): void
+    {
+        mkdir($this->layout->versionDir('11'), 0o700, true);
+        $this->midBuild(function (): void {
+            chmod($this->layout->baseArtifactsDir, 0o500);
+        });
+
+        try {
+            $this->builder()->build('11', true);
+            self::fail('Expected a BuildException.');
+        } catch (BuildException $e) {
+            self::assertStringContainsString('could not be moved aside', $e->getMessage());
+            self::assertStringContainsString('is untouched', $e->getMessage());
+            self::assertStringContainsString('.building-d11-', $e->getMessage(), 'where the new set is');
+        } finally {
+            chmod($this->layout->baseArtifactsDir, 0o700);
+        }
+
+        self::assertDirectoryExists($this->layout->versionDir('11'));
+    }
+
+    /**
+     * And the same when there was nothing to replace: the finished set could
+     * not take its name. Told where it is rather than deleted.
+     */
+    public function testAFinishedSetThatCannotTakeItsPlaceIsKeptAndNamed(): void
+    {
+        $this->midBuild(function (): void {
+            chmod($this->layout->baseArtifactsDir, 0o500);
+        });
+
+        try {
+            $this->builder()->build('11', false);
+            self::fail('Expected a BuildException.');
+        } catch (BuildException $e) {
+            self::assertStringContainsString('could not be moved to', $e->getMessage());
+            self::assertStringContainsString('Nothing has been deleted', $e->getMessage());
+            self::assertStringContainsString('Move the finished set into place by hand', $e->getMessage());
+        } finally {
+            chmod($this->layout->baseArtifactsDir, 0o700);
+        }
     }
 
     public function testAFailedStepRemovesThePartialArtifactSetSoItsPresenceStillMeansComplete(): void
@@ -209,6 +372,7 @@ final class BaseArtifactBuilderTest extends TestCase
         }
 
         self::assertDirectoryDoesNotExist($this->layout->versionDir('11'));
+        self::assertSame([], $this->stagingDirectories(), 'and nothing staged is left behind');
     }
 
     public function testAFailureInsideTheThrowawayInstallStillTearsTheEngineProjectDown(): void
@@ -258,7 +422,7 @@ final class BaseArtifactBuilderTest extends TestCase
         );
 
         $this->expectException(BuildException::class);
-        $this->expectExceptionMessageMatches('/Could not create artifact directory/');
+        $this->expectExceptionMessageMatches('/Could not create artifact staging directory/');
 
         $builder->build('11', false);
     }

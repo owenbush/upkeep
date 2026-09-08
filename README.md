@@ -322,7 +322,10 @@ base installs its check toolchain at the same stability, read from what was
 actually built.
 
 Re-running for an existing core version requires `--force` (a deliberate
-rebuild), and picks up the newest release your constraint admits. You do
+rebuild), and picks up the newest release your constraint admits. **The
+existing set survives until the new one is complete** — the rebuild resolves
+into a staging directory beside it and swaps at the end, so a rebuild that
+fails costs you the attempt and nothing else. You do
 **not** need to raise the stability as the major matures — a composer
 stability is a minimum, and `12.0.0-alpha1 < 12.0.0-beta1 < 12.0.0-rc1 <
 12.0.0`, so `--stability=alpha` walks itself forward to the stable release. A
@@ -335,8 +338,8 @@ See what you have:
 upkeep base-artifacts:status
 ```
 
-**The full lifecycle — including what a forced rebuild destroys before it
-starts, and why re-provisioning refuses over uncommitted work — is
+**The full lifecycle — the staged rebuild and swap, and why re-provisioning
+refuses over uncommitted work — is
 [docs/base-artifacts.md](docs/base-artifacts.md).**
 
 ## Daily flow
@@ -1437,7 +1440,7 @@ Four documents, each answering a different question:
 | Document | What it covers |
 | --- | --- |
 | [contrib-maintainer-design.md](docs/contrib-maintainer-design.md) | Why upkeep is shaped the way it is: the problem, the adapter boundary, cold starts, fixtures, the fast lane and the DA policy analysis behind it |
-| [base-artifacts.md](docs/base-artifacts.md) | The base artifact lifecycle: building, pre-release core majors and `--stability`, what a rebuild propagates to, and the sharp edges |
+| [base-artifacts.md](docs/base-artifacts.md) | The base artifact lifecycle: building, pre-release core majors and `--stability`, the staged rebuild, and what a rebuild propagates to |
 | [dashboard-row-model.md](docs/dashboard-row-model.md) | What a dashboard row *is* — identity `(module, issue, branch)`, core as evidence rather than identity, and the live verification behind it |
 | [any-module.md](docs/any-module.md) | The registry as a watchlist rather than a gate: how subject commands take any module, and what is deliberately still scoped to the watchlist |
 

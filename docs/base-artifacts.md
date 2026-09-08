@@ -94,6 +94,28 @@ deliberately.* There is no in-place update: a rebuild is a fresh
 `composer create-project`, so it resolves against packagist as it stands that
 day and you get the newest release your constraint admits.
 
+**The existing set survives until the new one is complete.** A rebuild
+resolves into a staging directory beside the live one —
+`<cockpit>/base-artifacts/.building-d12-<hex>/12/` — and only when the tree,
+dump, meta and marker are all written does the finished set move into place:
+the outgoing one steps aside, the incoming one takes the name, the staging
+directory goes. Both moves are renames within one directory, so the swap is
+bounded by two atomic operations rather than by the minutes a resolve and a
+site install take.
+
+So a rebuild that fails — a network blip, a constraint that no longer resolves
+— costs you the attempt and nothing else. The run says so explicitly (*The
+existing base artifacts for core 12 are untouched at …*), because the other
+reading of a failed rebuild is that everything is gone.
+
+The staging directory is named with a leading dot, which keeps it out of
+`ArtifactLayout::versionsOnDisk()` — the whole-number match behind
+`base-artifacts:status`, prune, and the core inference that gives an
+unregistered module its versions. A half-built tree must never read as a core
+somebody can be offered. A staging directory left behind by a build that was
+killed outright is removed by the next build for that core, which is the next
+moment anyone is demonstrably not relying on it.
+
 ### You do not need to raise the stability as the major matures
 
 A composer stability is a **minimum**, not a pin, and pre-release versions sort
@@ -166,15 +188,17 @@ interpolate the core major get the suffix; a test holds that.
 
 ## 5. Sharp edges
 
-**A forced rebuild removes the old set before building the new one.** `--force`
-`rm -rf`s the version directory first, and a failed build removes the partial
-set too (an existing version directory must always mean the last build
-completed). The consequence: if a forced rebuild fails — a network blip, a
-resolve that no longer works — you are left with **no** artifact set for that
-core, and every command needing an environment for it refuses until you build
-one successfully. Rebuild when you can afford to retry, and note that the
-previous artifacts are not recoverable from the cockpit. *(Building to a
-sibling directory and swapping on success would remove this; not done.)*
+**A rebuild is not free of risk, only of the big one.** The build stages beside
+the live set and swaps at the end (§3), so a failed resolve costs the attempt
+and nothing else. What remains is a window of two renames: a process killed
+between them leaves the core with no version directory and both sets inside
+the staging directory. Nothing is deleted, and the failure message names the
+paths for exactly that reason — recovery is moving one directory by hand.
+
+**A failed build never leaves a partial set.** An existing version directory
+must always mean the last build completed, since that is what every downstream
+environment seeds from. Both the failure path and the staleness collector
+enforce it.
 
 **Re-provisioning refuses over uncommitted work.** A stale environment whose
 module working copy has local changes is not torn down:
@@ -195,7 +219,7 @@ before and `prune` after is the honest sequence if space is tight.
 | Concern | Code |
 | --- | --- |
 | Constraint, stability validation, hint, derived toolchain stability | `BaseArtifact\CoreConstraint` |
-| Build orchestration, `--force` semantics, partial-set cleanup | `BaseArtifact\BaseArtifactBuilder` |
+| Build orchestration, `--force` semantics, staged build and swap, partial-set cleanup | `BaseArtifact\BaseArtifactBuilder` |
 | On-disk layout, canonical marker | `BaseArtifact\ArtifactLayout` |
 | Completeness scan behind `base-artifacts:status` | `BaseArtifact\ArtifactScanner` |
 | Seed-skew detection | `Adapter\EnvironmentMeta::staleReasons()` |

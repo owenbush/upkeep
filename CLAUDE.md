@@ -487,11 +487,29 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   on core's constraint only — `drupal/coder@alpha` carries no version
   constraint at all and would admit an alpha of a package with nothing to do
   with the seeded core.
-  **Known sharp edge, documented rather than fixed:** `--force` removes the
-  existing version directory *before* resolving, and a failed build removes
-  the partial set too, so a forced rebuild that fails leaves the core with no
-  artifact set at all and every environment for it unusable until one builds.
-  Building to a sibling directory and swapping on success would remove it.
+  **A rebuild is staged beside the live set, never over it.** `--force` used to
+  `rm -rf` the version directory and *then* resolve into the empty space, so a
+  routine "pick up the newer alpha" rebuild that hit a network blip left the
+  core with no artifact set at all — every environment for it unusable, the
+  previous set unrecoverable. The build now resolves into
+  `<base-artifacts>/.building-d<major>-<hex>/<major>/` and swaps at the end:
+  the outgoing set is renamed aside, the incoming one takes the name, the
+  staging directory goes. Two renames in one directory, so the exposure is
+  bounded by those rather than by the minutes a resolve and a site install
+  take, and a failed build costs the attempt only (the run says the existing
+  set is untouched, because the other reading is that everything is gone). The
+  leading dot is load-bearing: `versionsOnDisk()` matches whole numbers, so a
+  build in progress is invisible to `base-artifacts:status`, to prune, and to
+  the core inference that gives an unregistered module its versions — a
+  half-built tree must never read as a core somebody can be offered. A staging
+  directory left by a killed build is collected by the next build for that
+  core; nothing else would, since prune protects the whole base-artifacts
+  directory. The residual window is the two renames, and the failure messages
+  name every path rather than deleting anything. There is deliberately **no**
+  restore branch for a failed second rename: both renames need write
+  permission on the same two directories, so it cannot be reached once the
+  first has succeeded, and the message reports the staging directory as a
+  whole instead of branching on a state that cannot occur.
 - `src/Maintenance/` — prune/status inventory and selection.
 - `src/Workflow/` — shared MR- and patch-flow context and the exit-code contract
   (0 did what was asked / 1 the supervised work failed / 2 upkeep could not do
@@ -661,7 +679,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7352/7352), methods (847/847) and classes (162/162), 1551 tests.
+lines (7390/7390), methods (849/849) and classes (162/162), 1556 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with
