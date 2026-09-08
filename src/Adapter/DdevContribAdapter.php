@@ -6,6 +6,7 @@ namespace Upkeep\Adapter;
 
 use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\ArtifactMeta;
+use Upkeep\BaseArtifact\CoreConstraint;
 use Upkeep\BaseArtifact\MetaException;
 use Upkeep\Cockpit\Module;
 use Upkeep\Filesystem\FileWriter;
@@ -53,6 +54,14 @@ final class DdevContribAdapter implements EngineAdapterInterface
      * to the seeded core; coder ships phpcs + the Drupal standards;
      * mglaman/phpstan-drupal + extension-installer + deprecation-rules make
      * the gitlab_templates phpstan.neon work as it does in CI.
+     *
+     * `drupal/core-dev:^%s` carries whatever stability the seeded core has
+     * (`BaseArtifact\CoreConstraint::packageFor()`): `^12` resolves to nothing
+     * while 12 is in alpha, so an environment built with
+     * `base-artifacts:build --stability=alpha` would have failed at its first
+     * check. Derived from the artifact meta rather than asked for again —
+     * a second flag could disagree with the tree it is installing into, and
+     * this way 13 and everything after it need no change here.
      */
     private const TOOLCHAIN_PACKAGES = [
         'drupal/core-dev:^%s',
@@ -605,7 +614,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // The add-on command owns all fixture resolution and load semantics
         // (module scope, shared library, snapshot fast path) — the adapter
         // only invokes it and surfaces failure as AdapterException.
-        $this->runner->run(['ddev', 'upkeep-fixture-load', $fixtureName], $environment->projectPath);
+        $this->runner->run(['ddev', FixtureAddOn::LOAD_COMMAND, $fixtureName], $environment->projectPath);
     }
 
     public function runChecks(Environment $environment, array $checks = []): CheckRunResult
@@ -1038,8 +1047,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
             'ddev', 'composer', 'config', '--no-plugins',
             'allow-plugins.dealerdirect/phpcodesniffer-composer-installer', 'true',
         ], $environment->projectPath);
+        $coreVersion = $this->requireArtifactMeta($environment->coreMajor)->coreVersion;
         $packages = array_map(
-            static fn (string $package): string => sprintf($package, $environment->coreMajor),
+            fn (string $package): string => CoreConstraint::packageFor(
+                $package,
+                $environment->coreMajor,
+                $coreVersion,
+            ),
             self::TOOLCHAIN_PACKAGES,
         );
         $this->runner->run([

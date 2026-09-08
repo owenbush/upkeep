@@ -120,10 +120,15 @@ abstract class UpkeepCommand extends Command
 
     protected function addModuleArgument(): static
     {
+        // Any Drupal module, not only a registered one: the registry became a
+        // watchlist (docs/any-module.md) and subject commands resolve
+        // `project/<name>` for anything. Help that still said "registered"
+        // described a gate that no longer exists — and the generated command
+        // reference is where that showed up.
         $this->addArgument(
             'module',
             InputArgument::REQUIRED,
-            'Registered module machine name (see `upkeep modules`)',
+            'Module machine name — any Drupal module, registered or not (see `upkeep modules`)',
         );
 
         return $this;

@@ -74,7 +74,11 @@ final class IssuesCommand extends UpkeepCommand
             To begin work on one: <info>upkeep start <module> <issue></info>.
             HELP);
 
-        $this->addArgument('module', InputArgument::REQUIRED, 'Registered module machine name');
+        $this->addArgument(
+            'module',
+            InputArgument::REQUIRED,
+            'Module machine name — any Drupal module, registered or not',
+        );
         $this->addCockpitOption();
         $this->addOption(
             'status',

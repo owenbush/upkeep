@@ -10,6 +10,23 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   registers every command and is the only file outside `src/Adapter/` allowed
   to name a concrete engine. It builds one `Adapter\DdevContribAdapterFactory`
   and injects it into the commands that need an environment.
+- **The fixture add-on's command names are one constant, checked against the
+  add-on itself.** `Adapter\FixtureAddOn::LOAD_COMMAND` is `fixture-load`, and
+  `MARKER` is derived from it (ddev names a host command after the file it came
+  from). They used to be two independent strings and they disagreed: the
+  adapter ran `ddev upkeep-fixture-load` while owenbush/ddev-upkeep has always
+  published `fixture-load` — its README, bats tests and recorded end-to-end run
+  all use the short name, and the `upkeep-` prefix appears there only on
+  snapshot names and environment variables. So **`--fixture=NAME` could never
+  have worked**, and the installed-probe looked for a file that is never
+  written, re-fetching the add-on on every call. The unit suite was green and
+  could not have been otherwise — the engine fake records whatever string it is
+  handed, and the marker fixture is built from the same constant under test, so
+  both halves agreed with each other and with nothing real.
+  `tests/Integration/FixtureAddOnContractTest` reads the add-on's own
+  `install.yaml` and compares. It takes a local checkout via
+  `UPKEEP_ADDON_SOURCE` first and an authenticated API read otherwise, because
+  both repositories are private while upkeep is unreleased.
 - `src/Adapter/` — the engine adapter: everything ddev / ddev-drupal-contrib
   specific (provisioning, MR checkout, patch application, check execution,
   teardown, the ddev-upkeep fixture add-on). Engine pinned:
@@ -461,6 +478,55 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   the patch's source URL, not its bytes — the dashboard must judge staleness
   from the attachment list without downloading anything).
 - `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
+  Lifecycle in full (building, rebuilding, what propagates, sharp edges):
+  `docs/base-artifacts.md`.
+  **A core major in pre-release is built deliberately, and everything after
+  that follows it.** `drupal/recommended-project:^12` resolves to nothing
+  while 12 is in alpha — packagist carried exactly one 12.x release when this
+  was written — and composer says only that no matching version was found.
+  That is not an edge case for this tool: a Drupal major spends months in
+  alpha and beta, and *that is when compatibility work happens*, since the
+  Project Update Bot merge requests the fast lane exists to merge are about
+  the unreleased core. `BaseArtifact\CoreConstraint` holds the whole answer.
+  `--stability` is a **flag, never a fallback**: substituting a pre-release
+  when a stable constraint finds nothing would make every later verdict a
+  statement about a tree nobody asked for, and a base artifact set is the one
+  place a silent substitution is least acceptable. A failed *stable* resolve
+  gets the hint appended to composer's own words; once a stability was given
+  it does not, because then the constraint is not the obvious suspect and
+  repeating advice already taken buries what composer said. Nothing downstream
+  takes the flag — `drupal/core-dev:^12` fails to resolve for exactly the same
+  reason, so `ensureCheckToolchain()` derives the stability from the artifact
+  meta's resolved `core_version` (`CoreConstraint::stabilityOf()`, which is
+  composer's own `VersionParser::parseStability`). Derived rather than asked
+  for again: a second flag could disagree with the tree it is installing into,
+  and this way 13 and everything after it need no change here. The suffix goes
+  on core's constraint only — `drupal/coder@alpha` carries no version
+  constraint at all and would admit an alpha of a package with nothing to do
+  with the seeded core.
+  **A rebuild is staged beside the live set, never over it.** `--force` used to
+  `rm -rf` the version directory and *then* resolve into the empty space, so a
+  routine "pick up the newer alpha" rebuild that hit a network blip left the
+  core with no artifact set at all — every environment for it unusable, the
+  previous set unrecoverable. The build now resolves into
+  `<base-artifacts>/.building-d<major>-<hex>/<major>/` and swaps at the end:
+  the outgoing set is renamed aside, the incoming one takes the name, the
+  staging directory goes. Two renames in one directory, so the exposure is
+  bounded by those rather than by the minutes a resolve and a site install
+  take, and a failed build costs the attempt only (the run says the existing
+  set is untouched, because the other reading is that everything is gone). The
+  leading dot is load-bearing: `versionsOnDisk()` matches whole numbers, so a
+  build in progress is invisible to `base-artifacts:status`, to prune, and to
+  the core inference that gives an unregistered module its versions — a
+  half-built tree must never read as a core somebody can be offered. A staging
+  directory left by a killed build is collected by the next build for that
+  core; nothing else would, since prune protects the whole base-artifacts
+  directory. The residual window is the two renames, and the failure messages
+  name every path rather than deleting anything. There is deliberately **no**
+  restore branch for a failed second rename: both renames need write
+  permission on the same two directories, so it cannot be reached once the
+  first has succeeded, and the message reports the staging directory as a
+  whole instead of branching on a state that cannot occur.
 - `src/Maintenance/` — prune/status inventory and selection.
 - `src/Workflow/` — shared MR- and patch-flow context and the exit-code contract
   (0 did what was asked / 1 the supervised work failed / 2 upkeep could not do
@@ -630,7 +696,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7302/7302), methods (842/842) and classes (161/161), 1536 tests.
+lines (7390/7390), methods (849/849) and classes (162/162), 1556 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

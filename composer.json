@@ -50,7 +50,9 @@
     "scripts": {
         "lint": "phpcs",
         "lint:fix": "phpcbf",
-        "analyse": "phpstan analyse --no-progress"
+        "analyse": "phpstan analyse --no-progress",
+        "docs:commands": "@php tools/generate-command-reference.php",
+        "docs:check": "@php tools/generate-command-reference.php --check"
     },
     "minimum-stability": "stable"
 }

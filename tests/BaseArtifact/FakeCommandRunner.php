@@ -25,10 +25,27 @@ final class FakeCommandRunner implements CommandRunner
 
     private bool $exportDump = true;
 
+    /** @var array<string, \Closure(): void> summary => hook run after that command */
+    private array $hooks = [];
+
     public function failOn(string $summary, string $message): void
     {
         $this->failCommand = $summary;
         $this->failMessage = $message;
+    }
+
+    /**
+     * Runs $hook immediately after the command whose summary is $summary.
+     *
+     * The seam the swap tests need: they have to change the world *during* a
+     * build — mid-flight is the only moment a staged set exists alongside a
+     * live one — and the runner is the only thing the builder calls out to.
+     *
+     * @param \Closure(): void $hook
+     */
+    public function after(string $summary, \Closure $hook): void
+    {
+        $this->hooks[$summary] = $hook;
     }
 
     public function skipDumpExport(): void
@@ -60,6 +77,17 @@ final class FakeCommandRunner implements CommandRunner
             throw new AdapterException(sprintf('Command failed (1): %s', $this->failMessage));
         }
 
+        $output = $this->outputFor($summary, $command);
+        ($this->hooks[$summary] ?? static fn () => null)();
+
+        return $output;
+    }
+
+    /**
+     * @param list<string> $command
+     */
+    private function outputFor(string $summary, array $command): string
+    {
         return match (true) {
             $summary === 'composer create-project' => $this->resolveTree($command[3]),
             $summary === 'cp -a' => $this->seedThrowaway($command[3]),

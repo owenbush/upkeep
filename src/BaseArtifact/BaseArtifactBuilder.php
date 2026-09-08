@@ -61,58 +61,175 @@ final readonly class BaseArtifactBuilder
         $this->runner = $runner ?? new ProcessRunner($log);
     }
 
-    public function build(string $coreMajor, bool $force): ArtifactMeta
-    {
-        $versionDir = $this->layout->versionDir($coreMajor);
+    /**
+     * Where a build in progress lives: a sibling of the live version
+     * directory, inside the base-artifacts directory so the finished set moves
+     * into place with a rename on the same filesystem rather than a copy.
+     *
+     * The leading dot keeps it out of `ArtifactLayout::versionsOnDisk()`,
+     * which matches whole numbers — so a build in progress is invisible to
+     * `base-artifacts:status`, to prune, and to the core inference that gives
+     * an unregistered module its versions. A half-built tree must never read
+     * as a core somebody can be offered.
+     */
+    private const STAGING_PREFIX = '.building-d';
 
-        if (is_dir($versionDir)) {
-            if (!$force) {
-                throw new BuildException(sprintf(
-                    'Base artifacts for core %s already exist at %s. Re-run with --force to rebuild deliberately.',
+    /** Where the outgoing set waits while the incoming one is moved in. */
+    private const RETIRED_DIR = 'retired';
+
+    public function build(string $coreMajor, bool $force, ?string $stability = null): ArtifactMeta
+    {
+        CoreConstraint::assertStability($stability);
+
+        $versionDir = $this->layout->versionDir($coreMajor);
+        $existing = is_dir($versionDir);
+
+        if ($existing && !$force) {
+            throw new BuildException(sprintf(
+                'Base artifacts for core %s already exist at %s. Re-run with --force to rebuild deliberately.',
+                $coreMajor,
+                $versionDir,
+            ));
+        }
+
+        // A rebuild used to remove the existing set first and resolve into the
+        // empty directory, so a resolve that failed — a network blip, a
+        // constraint that no longer resolves — left the core with no artifact
+        // set at all and every environment for it unusable. The expensive,
+        // failure-prone part now happens beside the live set and only a
+        // rename touches it.
+        $this->removeStaleStaging($coreMajor);
+        $stagingRoot = $this->layout->baseArtifactsDir . '/' . self::STAGING_PREFIX . $coreMajor . '-'
+            . bin2hex(random_bytes(4));
+        $staging = new ArtifactLayout($stagingRoot);
+        $stagingVersionDir = $staging->versionDir($coreMajor);
+
+        // Silenced: a directory that cannot be created is reported as a build
+        // failure naming it, not as a PHP warning printed mid-build.
+        if (!@mkdir($stagingVersionDir, 0755, true) && !is_dir($stagingVersionDir)) {
+            throw new BuildException(sprintf('Could not create artifact staging directory "%s".', $stagingVersionDir));
+        }
+
+        try {
+            $meta = $this->doBuild($coreMajor, $staging, $stability);
+        } catch (\Throwable $e) {
+            // Never leave a partial artifact set behind: an existing version
+            // directory must always mean the last build completed.
+            ($this->log)(sprintf('Build failed — removing the staged artifact set at %s', $stagingRoot));
+            $this->run(['rm', '-rf', $stagingRoot], null);
+            if ($existing) {
+                ($this->log)(sprintf(
+                    'The existing base artifacts for core %s are untouched at %s.',
                     $coreMajor,
                     $versionDir,
                 ));
             }
-            // Deliberate stale rebuild: discard the previous artifact set. The
-            // artifact directory never has an engine project attached (only
-            // the throwaway copy does), so plain removal is safe here — the
-            // delete-project-first reclamation rule applies to the throwaway,
-            // inside the adapter's ThrowawaySite::teardown().
-            ($this->log)(sprintf('--force: removing existing artifact set at %s', $versionDir));
-            $this->run(['rm', '-rf', $versionDir], null);
-        }
-
-        // Silenced: a directory that cannot be created is reported as a build
-        // failure naming it, not as a PHP warning printed mid-build.
-        if (!@mkdir($versionDir, 0755, true) && !is_dir($versionDir)) {
-            throw new BuildException(sprintf('Could not create artifact directory "%s".', $versionDir));
-        }
-
-        try {
-            return $this->doBuild($coreMajor, $versionDir);
-        } catch (\Throwable $e) {
-            // Never leave a partial artifact set behind: an existing version
-            // directory must always mean the last build completed.
-            ($this->log)(sprintf('Build failed — removing partial artifact set at %s', $versionDir));
-            $this->run(['rm', '-rf', $versionDir], null);
             throw $e;
+        }
+
+        $this->swapIntoPlace($coreMajor, $existing, $stagingRoot, $stagingVersionDir, $versionDir);
+
+        return $meta;
+    }
+
+    /**
+     * Moves a finished staged set into place: the outgoing one steps aside,
+     * the incoming one takes the name, the staging directory goes.
+     *
+     * Both moves are renames within the base-artifacts directory, so each is
+     * atomic and the whole swap is bounded by two of them rather than by the
+     * minutes a resolve and a site install take. The residual window is real
+     * but small: a process killed between the two renames leaves the core with
+     * no version directory and both sets inside the staging directory, which
+     * the failure message names for exactly that reason.
+     */
+    private function swapIntoPlace(
+        string $coreMajor,
+        bool $existing,
+        string $stagingRoot,
+        string $stagingVersionDir,
+        string $versionDir,
+    ): void {
+        $retired = $stagingRoot . '/' . self::RETIRED_DIR;
+
+        if ($existing) {
+            ($this->log)(sprintf('Retiring the previous base artifacts for core %s ...', $coreMajor));
+            if (!@rename($versionDir, $retired)) {
+                throw new BuildException(sprintf(
+                    "The new base artifacts for core %s built successfully, but the existing set at %s could not "
+                    . "be moved aside.\nThe existing set is untouched; the new one is at %s.",
+                    $coreMajor,
+                    $versionDir,
+                    $stagingVersionDir,
+                ));
+            }
+        }
+
+        if (!@rename($stagingVersionDir, $versionDir)) {
+            // No branch on whether there was a previous set. Reporting the
+            // staging directory as a whole is true either way, and the
+            // alternative — a message that names the retired path only
+            // sometimes — is a branch that cannot be reached: both renames
+            // need write permission on the same two directories, so the
+            // second cannot fail over permissions once the first has
+            // succeeded.
+            throw new BuildException(sprintf(
+                "The new base artifacts for core %s built successfully but could not be moved to %s.\n"
+                . "Nothing has been deleted: the finished set is at %s, and %s holds anything moved aside.\n"
+                . 'Move the finished set into place by hand.',
+                $coreMajor,
+                $versionDir,
+                $stagingVersionDir,
+                $stagingRoot,
+            ));
+        }
+
+        ($this->log)(sprintf('Base artifacts for core %s are in place at %s.', $coreMajor, $versionDir));
+        $this->run(['rm', '-rf', $stagingRoot], null);
+    }
+
+    /**
+     * Staging directories left by an earlier build that was killed outright.
+     *
+     * A crash between the staging mkdir and either exit path leaves a
+     * multi-gigabyte tree that nothing else collects: the base-artifacts
+     * directory is canonical, so prune protects it, and the leading-dot name
+     * keeps it out of every listing. Removed at the start of the next build
+     * for the same core, which is the next moment anyone is demonstrably not
+     * relying on it.
+     */
+    private function removeStaleStaging(string $coreMajor): void
+    {
+        $stale = glob($this->layout->baseArtifactsDir . '/' . self::STAGING_PREFIX . $coreMajor . '-*', GLOB_ONLYDIR);
+        foreach ($stale === false ? [] : $stale as $directory) {
+            ($this->log)(sprintf('Removing a staging directory left by an interrupted build: %s', $directory));
+            $this->run(['rm', '-rf', $directory], null);
         }
     }
 
-    private function doBuild(string $coreMajor, string $versionDir): ArtifactMeta
+    private function doBuild(string $coreMajor, ArtifactLayout $into, ?string $stability): ArtifactMeta
     {
-        $treePath = $this->layout->treePath($coreMajor);
+        $treePath = $into->treePath($coreMajor);
 
         // Full resolve riding the shared global Composer cache (see class
         // comment): this produces the pristine canonical tree all downstream
         // environments copy from. Never a bundled Composer — shell out.
-        ($this->log)(sprintf('Resolving drupal/recommended-project:^%s into %s ...', $coreMajor, $treePath));
-        $this->run([
-            'composer', 'create-project',
-            sprintf('drupal/recommended-project:^%s', $coreMajor),
-            $treePath,
-            '--no-interaction',
-        ], null);
+        $constraint = CoreConstraint::for($coreMajor, $stability);
+        ($this->log)(sprintf('Resolving %s into %s ...', $constraint, $treePath));
+
+        try {
+            $this->run(['composer', 'create-project', $constraint, $treePath, '--no-interaction'], null);
+        } catch (BuildException $e) {
+            // Composer's own words first, then what can be done about them —
+            // the same order a refused push uses. The commonest cause is a
+            // core major that has no stable release yet, and nothing in
+            // composer's output suggests there is a flag for that.
+            throw new BuildException(
+                $e->getMessage() . (CoreConstraint::unresolvableHint($coreMajor, $stability) ?? ''),
+                0,
+                $e,
+            );
+        }
 
         ($this->log)('Validating resolved base tree (composer validate) ...');
         $this->run(['composer', 'validate', '--no-interaction'], $treePath);
@@ -123,7 +240,7 @@ final readonly class BaseArtifactBuilder
         $projectName = sprintf('upkeep-base-d%s-%s', $coreMajor, substr(bin2hex(random_bytes(4)), 0, 6));
         $throwaway = rtrim($this->scratchDir, '/') . '/' . $projectName;
 
-        $dumpPath = $this->layout->dumpPath($coreMajor);
+        $dumpPath = $into->dumpPath($coreMajor);
 
         if (!is_dir($this->scratchDir) && !@mkdir($this->scratchDir, 0755, true) && !is_dir($this->scratchDir)) {
             throw new BuildException(sprintf('Could not create scratch directory "%s".', $this->scratchDir));
@@ -150,9 +267,9 @@ final readonly class BaseArtifactBuilder
         // reports a successful build. The enclosing catch in build() removes
         // the whole version directory if either fails.
         $meta = new ArtifactMeta($coreVersion, $coreMajor, $phpVersion, $dbEngine, new \DateTimeImmutable());
-        FileWriter::write($this->layout->metaPath($coreMajor), $meta->toYaml(), FileWriter::MODE_SHARED);
+        FileWriter::write($into->metaPath($coreMajor), $meta->toYaml(), FileWriter::MODE_SHARED);
         FileWriter::write(
-            $this->layout->canonicalMarkerPath($coreMajor),
+            $into->canonicalMarkerPath($coreMajor),
             "This artifact set is canonical: never auto-pruned. Rebuild only via "
                 . "`upkeep base-artifacts:build --force`.\n",
             FileWriter::MODE_SHARED,
