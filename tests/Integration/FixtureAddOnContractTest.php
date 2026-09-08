@@ -91,13 +91,17 @@ final class FixtureAddOnContractTest extends TestCase
             }
         }
 
-        if ($token === '') {
-            self::markTestSkipped(sprintf(
-                'No add-on to compare against. Point %s at a ddev-upkeep checkout, or set one of %s '
-                . '(both repositories are private).',
-                FixtureAddOn::SOURCE_ENV,
-                implode(', ', self::TOKEN_ENV),
-            ));
+        // Tried with or without a credential. A token is needed only while the
+        // add-on is private, so asking for one up front would outlive the
+        // reason for it: publication is supposed to make the secret
+        // unnecessary, not leave a test skipping itself until somebody
+        // notices. The request decides, not a guess about access.
+        $headers = [
+            'Accept' => 'application/vnd.github.raw+json',
+            'User-Agent' => 'upkeep-contract-test',
+        ];
+        if ($token !== '') {
+            $headers['Authorization'] = 'Bearer ' . $token;
         }
 
         $url = sprintf('https://api.github.com/repos/%s/contents/install.yaml', FixtureAddOn::NAME);
@@ -106,14 +110,22 @@ final class FixtureAddOnContractTest extends TestCase
             return HttpClient::create()->request('GET', $url, [
                 'timeout' => 10,
                 'max_duration' => 30,
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $token,
-                    'Accept' => 'application/vnd.github.raw+json',
-                    'User-Agent' => 'upkeep-contract-test',
-                ],
+                'headers' => $headers,
             ])->getContent();
         } catch (\Throwable $e) {
-            self::markTestSkipped(sprintf('Could not read %s: %s', $url, $e->getMessage()));
+            self::markTestSkipped(sprintf(
+                "Could not read %s: %s\n%s",
+                $url,
+                $e->getMessage(),
+                $token === ''
+                    ? sprintf(
+                        'The add-on is private, so this needs a credential: point %s at a checkout, or set one '
+                        . 'of %s.',
+                        FixtureAddOn::SOURCE_ENV,
+                        implode(', ', self::TOKEN_ENV),
+                    )
+                    : 'A token was supplied and the read still failed, so it may not cover that repository.',
+            ));
         }
     }
 }
