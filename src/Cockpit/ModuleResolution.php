@@ -73,7 +73,7 @@ final readonly class ModuleResolution
         // silently answer for the oldest core built on this machine — which is
         // the least interesting question you could ask about whether a module
         // still works.
-        return new Module($name, self::projectFor($name), array_reverse($coresOnDisk));
+        return new Module($name, self::projectFor($name), array_reverse($coresOnDisk), watched: false);
     }
 
     /**

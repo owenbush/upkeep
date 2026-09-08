@@ -150,10 +150,14 @@ deliberate statement about what they support and outranks a guess.
   environments for thirty modules they looked at once. `status --disk` and
   `prune` stop being housekeeping and become necessary; prune's ad-hoc
   discovery (§4) is part of this change, not a follow-up.
-- **A derived module has no `core_versions` to disagree with.** The refusal
-  "does not track core version 12" becomes "no base artifacts for 12", which is
-  a different and more honest statement — but anything scripted against the old
-  wording breaks.
+- ~~**A derived module has no `core_versions` to disagree with.**~~ Written
+  down here, then not implemented — so the first real `--version=12` on an
+  unregistered module answered *"Its registry entry tracks: 11, 10. Add it to
+  core_versions in registry.yml"*, naming an entry that does not exist and
+  listing a directory in reverse. Fixed: `Module::$watched` carries the
+  provenance and the refusal is "no base artifacts for core 12, build one".
+  Anything scripted against the old wording still breaks, which was the real
+  content of this risk.
 - **Verified against fixtures is not verified.** Every bug this week survived a
   green suite. This lands with a run against a module that is *not* in the
   registry, on a machine where it has never been provisioned, and the

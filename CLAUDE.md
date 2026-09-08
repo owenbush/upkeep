@@ -197,7 +197,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `prune`, the UI) keep iterating the watchlist and `requireModule()` stays
   strict for narrowing into it. A registry entry always wins where there is
   one: a maintainer's `core_versions` is a deliberate statement and outranks
-  anything inferred. A derived module's cores are **newest first**, because
+  anything inferred. `Module::$watched` carries that provenance, because it
+  changes what a refusal can honestly say — an unavailable core is "add it to
+  core_versions in registry.yml" for a watched module and "no base artifacts
+  for core N, build one" for a derived one, and telling somebody to edit a
+  file that does not mention their module is worse than not answering. A derived module's cores are **newest first**, because
   `selectCoreVersion()` documents `core_versions[0]` as the default and
   `versionsOnDisk()` sorts ascending — passed through unchanged, asking about
   an unregistered module answered for the *oldest* core built on the machine. What is **not** dropped is the refusal — a name that
@@ -626,7 +630,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7289/7289), methods (841/841) and classes (161/161), 1534 tests.
+lines (7302/7302), methods (842/842) and classes (161/161), 1536 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

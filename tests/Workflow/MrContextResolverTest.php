@@ -88,6 +88,40 @@ final class MrContextResolverTest extends TestCase
         ];
     }
 
+    /**
+     * A watched module's core list is a line in registry.yml, so that is what
+     * the refusal names.
+     */
+    public function testAnUntrackedCoreOnAWatchedModulePointsAtTheRegistry(): void
+    {
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage('core_versions in registry.yml');
+
+        self::resolver()->resolve('conditions_helper', 1, '9');
+    }
+
+    /**
+     * A derived module has no registry entry, so pointing at one sends
+     * somebody to edit a file that does not mention the module.
+     *
+     * Reported from a real run: `--version=12` on an unregistered module
+     * answered "Its registry entry tracks: 11, 10" — naming an entry that does
+     * not exist, and listing the contents of a directory in the reverse order
+     * they read in.
+     */
+    public function testAnUnavailableCoreOnADerivedModuleTalksAboutArtifacts(): void
+    {
+        try {
+            self::resolver([], ['10', '11'])->resolve('paragraphs', 1, '12');
+            self::fail('Expected a refusal.');
+        } catch (WorkflowException $e) {
+            self::assertStringContainsString('No base artifacts for core 12', $e->getMessage());
+            self::assertStringContainsString('Built here: 10, 11', $e->getMessage(), 'ascending, as prose reads');
+            self::assertStringContainsString('base-artifacts:build --version=12', $e->getMessage());
+            self::assertStringNotContainsString('registry.yml', $e->getMessage());
+        }
+    }
+
     // ------------------------------------- the core the branch actually declares
 
     /** A plain-text response, for the raw-file endpoint info.yml comes from. */

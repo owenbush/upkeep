@@ -74,6 +74,48 @@ final readonly class MrContextResolver
     }
 
     /**
+     * Why a requested core is not available — which is a different sentence
+     * depending on where the module's core list came from.
+     *
+     * A watched module's `core_versions` is a line somebody wrote in
+     * registry.yml, so that is the thing to edit. A *derived* module has no
+     * entry at all: its list is the base artifacts on this machine, and
+     * telling a maintainer to "add it to core_versions in registry.yml" sends
+     * them to edit a file that does not mention the module. Reported from a
+     * real run — `--version=12` on an unregistered module answered "Its
+     * registry entry tracks: 11, 10", naming a registry entry that does not
+     * exist and listing the contents of a directory.
+     *
+     * Listed ascending here whatever the internal order: newest-first exists
+     * so `core_versions[0]` is the default, and it reads as a mistake in prose.
+     */
+    private static function untrackedCore(Module $module, string $requestedCore): string
+    {
+        $available = $module->coreVersions;
+        usort($available, static fn (string $a, string $b): int => (int) $a <=> (int) $b);
+
+        if ($module->watched) {
+            return sprintf(
+                'Module "%s" does not track core version "%s". Its registry entry tracks: %s. Add it to '
+                    . 'core_versions in registry.yml to check against it.',
+                $module->name,
+                $requestedCore,
+                implode(', ', $available),
+            );
+        }
+
+        return sprintf(
+            "No base artifacts for core %s, so \"%s\" cannot be checked against it.\n"
+            . "Built here: %s.\n"
+            . 'Build another with: upkeep base-artifacts:build --version=%s',
+            $requestedCore,
+            $module->name,
+            implode(', ', $available),
+            $requestedCore,
+        );
+    }
+
+    /**
      * Refuse a core the merge request's target branch does not declare.
      *
      * Checking a branch on a core it never claimed produces a failure that
@@ -155,13 +197,7 @@ final readonly class MrContextResolver
         }
 
         if (!\in_array($requestedCore, $module->coreVersions, true)) {
-            throw new WorkflowException(sprintf(
-                'Module "%s" does not track core version "%s". Its registry entry tracks: %s. Add it to '
-                    . 'core_versions in registry.yml to check against it.',
-                $module->name,
-                $requestedCore,
-                implode(', ', $module->coreVersions),
-            ));
+            throw new WorkflowException(self::untrackedCore($module, $requestedCore));
         }
 
         return $requestedCore;

@@ -144,7 +144,7 @@ final readonly class PruneExecutor
     {
         if ($item->module !== null && $item->coreMajor !== null) {
             $module = $this->registryModules[$item->module]
-                ?? new Module($item->module, 'project/' . $item->module, [$item->coreMajor]);
+                ?? new Module($item->module, 'project/' . $item->module, [$item->coreMajor], watched: false);
 
             return [$module, $item->coreMajor];
         }
