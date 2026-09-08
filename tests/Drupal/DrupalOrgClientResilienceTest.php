@@ -449,13 +449,20 @@ final class DrupalOrgClientResilienceTest extends TestCase
 
         self::assertSame(2, $calls);
         self::assertSame(1, $issue?->patchCount(), 'the wait was followed by a successful retry');
-        // Deliberately just under the second it asks for. What this test is
-        // for is that the production default is not a no-op — an injected
-        // fake or a dropped call measures in microseconds, three orders of
-        // magnitude away — and pinning the exact boundary buys nothing while
-        // making the assertion knife-edge on a wall clock that PHP does not
-        // promise to the microsecond.
-        self::assertGreaterThanOrEqual(0.95, $elapsed, 'the default wait must really wait');
+        // Half the second it asks for, deliberately.
+        //
+        // `sleep(1)` does not guarantee a second of wall clock: it returns
+        // early when a signal arrives, and under a coverage-instrumented run
+        // this was measured returning in 0.91s. Any threshold near the
+        // boundary is therefore a flake generator, and this one was — it
+        // failed twice in a day and passed on rerun both times.
+        //
+        // What the test is actually for is that the *production default* is a
+        // real sleep rather than a no-op, and that has three orders of
+        // magnitude of headroom: a fake sleeper or a dropped call returns in
+        // microseconds. Half a second proves the claim and cannot be reached
+        // by jitter.
+        self::assertGreaterThanOrEqual(0.5, $elapsed, 'the default wait must really wait');
     }
 
     /**
