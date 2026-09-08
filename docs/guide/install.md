@@ -24,14 +24,40 @@ What upkeep needs, how to install it from a clone, and how to get tab completion
 
 ## Install
 
-Until the first release is published to Packagist, install from a clone:
-
 ```bash
-composer install
+composer create-project owenbush/upkeep ~/.upkeep/app
+ln -s ~/.upkeep/app/bin/upkeep /usr/local/bin/upkeep
 ```
 
-then put `bin/upkeep` on your `PATH` (or call it by path). Once published,
-the intended install is `composer global require owenbush/upkeep`.
+Anywhere on your `PATH` will do for the symlink; `~/.local/bin` is the usual
+alternative if `/usr/local/bin` needs a password.
+
+**Into its own directory, on purpose**, rather than
+`composer global require owenbush/upkeep`. Two reasons, and both are about
+getting the tree upkeep was tested with:
+
+- **`create-project` uses the committed `composer.lock`**, so you get the exact
+  dependency versions CI ran against. A global require resolves fresh and gives
+  you something nobody has tested together. (Both are supported —
+  `composer global require owenbush/upkeep` works, and CI resolves the
+  unlocked tree on the lowest and highest supported PHP so that path is
+  exercised too. It is simply the weaker guarantee.)
+- **Nothing to collide with.** A global require puts upkeep in one dependency
+  tree with drush, php-cs-fixer and everything else installed that way, where a
+  conflicting constraint breaks whichever tool loses. Its own directory has no
+  neighbours.
+
+To update, run the same `create-project` again over a fresh directory, or
+`git pull && composer install` if you cloned instead.
+
+### Or from a clone
+
+For working on upkeep itself:
+
+```bash
+git clone https://github.com/owenbush/upkeep.git
+cd upkeep && composer install
+```
 
 **Re-run `composer install` after every `git pull`.** A pull can bring a new
 dependency with it, and a `vendor/` older than the code it sits beside is a
@@ -42,9 +68,10 @@ than dying partway through a command with a class-not-found trace.
 `composer.lock` is committed, so `composer install` gives you the same
 dependency versions CI tested against. Resolution is pinned to PHP 8.2 (the
 lowest version upkeep supports) via `config.platform`, so the tree is the same
-whichever PHP you run it on.
+whichever PHP you run it on. That pin is upkeep's own: it applies when you
+install *upkeep*, not when you require it as a dependency.
 
-Sanity check:
+Sanity check, however you installed:
 
 ```bash
 upkeep list --raw
