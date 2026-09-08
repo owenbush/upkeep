@@ -33,6 +33,17 @@ final readonly class MrContextResolver
     public function __construct(
         private array $modules,
         private GitlabClient $client,
+        /**
+         * Base artifact versions on disk, ascending, for a module the registry
+         * does not carry.
+         *
+         * Empty means the caller has no cockpit to ask — then only registered
+         * modules resolve, which is the behaviour that predates the watchlist
+         * split rather than a new refusal.
+         *
+         * @var list<string>
+         */
+        private array $coresOnDisk = [],
     ) {
     }
 
@@ -41,7 +52,7 @@ final readonly class MrContextResolver
      */
     public function resolve(string $moduleName, int $iid, ?string $requestedCore): MrContext
     {
-        $module = self::requireModule($this->modules, $moduleName);
+        $module = ModuleResolution::resolve($this->modules, $moduleName, $this->coresOnDisk);
         $coreMajor = self::selectCoreVersion($module, $requestedCore);
 
         $project = $this->client->project($module->project);

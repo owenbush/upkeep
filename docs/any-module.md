@@ -182,6 +182,15 @@ Each step independently green and shippable.
    `core_versions` and is unusable without one. The disk is the source (§3.1);
    the branch-disagreement refusal of §3.2 is **not** built and is still to
    come.
+
+   **Landed incomplete the first time.** `check <module> <mr>` and `review`
+   resolve through `MrContextResolver::resolve()`, which kept its own
+   `requireModule()` call — so the merge-request path, the one the change was
+   most about, still refused unregistered modules while every other subject
+   command accepted them. Nothing failed, because no test asked for an
+   unregistered module on that path. The resolver now takes the on-disk
+   versions like every other caller, and the missing test is the one that
+   would have caught it.
 2. **The branch-disagreement refusal** of §3.2 — the half of core selection
    that needs the branch, and so a separate insertion point.
 3. **Prune without the registry.** Reverse `ProjectName`, so ad-hoc

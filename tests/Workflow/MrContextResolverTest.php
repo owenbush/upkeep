@@ -9,6 +9,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Cockpit\Module;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Cockpit\RegistryException;
 use Upkeep\Workflow\MrContextResolver;
 use Upkeep\Workflow\WorkflowException;
 
@@ -17,7 +18,11 @@ final class MrContextResolverTest extends TestCase
     /**
      * @param list<MockResponse> $responses
      */
-    private static function resolver(array $responses = []): MrContextResolver
+    /**
+     * @param list<MockResponse> $responses
+     * @param list<string>       $coresOnDisk base artifacts, for a module the registry does not carry
+     */
+    private static function resolver(array $responses = [], array $coresOnDisk = []): MrContextResolver
     {
         $client = new GitlabClient(
             new MockHttpClient($responses),
@@ -33,7 +38,7 @@ final class MrContextResolverTest extends TestCase
                 'project/field_visibility_conditions',
                 ['11'],
             ),
-        ], $client);
+        ], $client, $coresOnDisk);
     }
 
     /**
@@ -83,12 +88,36 @@ final class MrContextResolverTest extends TestCase
         ];
     }
 
-    public function testUnknownModuleIsRejectedNamingKnownModules(): void
+    /**
+     * With no cockpit to ask — no base artifacts handed in — only registered
+     * modules resolve. That is the behaviour that predates the watchlist
+     * split, not a new refusal: there is nothing on disk to pick a core from.
+     */
+    public function testWithNothingBuiltOnlyRegisteredModulesResolve(): void
     {
-        $this->expectException(WorkflowException::class);
-        $this->expectExceptionMessageMatches('/not registered.*conditions_helper.*field_visibility_conditions/s');
+        $this->expectException(RegistryException::class);
+        $this->expectExceptionMessage('no base artifacts');
 
         self::resolver()->resolve('nope_module', 1, null);
+    }
+
+    /**
+     * And the merge-request path takes any module, like every other subject
+     * command. This is the case that was missed: `check <module> <mr>` went
+     * through resolve(), which still gated on the registry, so the headline
+     * claim of the watchlist change was false for the command it was most
+     * about. See docs/any-module.md.
+     */
+    public function testTheMergeRequestPathResolvesAnUnregisteredModule(): void
+    {
+        $context = self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+        ], ['10', '11'])->resolve('paragraphs', 2, null);
+
+        self::assertSame('paragraphs', $context->module->name);
+        self::assertSame('project/paragraphs', $context->module->project);
+        self::assertSame('11', $context->coreMajor, 'the newest core built here');
     }
 
     public function testOmittedCoreVersionDefaultsToFirstListedInRegistry(): void

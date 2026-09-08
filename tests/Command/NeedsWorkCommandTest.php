@@ -389,6 +389,8 @@ final class NeedsWorkCommandTest extends TestCase
         ]);
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
-        self::assertStringContainsString('not registered', $tester->getDisplay());
+        // A watchlist, not a gate — so the refusal is having nothing built to
+        // run against, not being absent from registry.yml.
+        self::assertStringContainsString('no base artifacts', $tester->getDisplay());
     }
 }
