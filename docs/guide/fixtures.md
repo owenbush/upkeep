@@ -27,10 +27,10 @@ yourself, but you can:
 
 | Command | What it does |
 | --- | --- |
-| `ddev fixture-create <name>` | Dump the current database to a portable fixture. Runs `drush sql:sanitize` by default when the destination is the module repository; `--no-sanitize` opts out |
-| `ddev fixture-load <name>` | Load one. First use imports the dump; later loads restore a snapshot |
-| `ddev fixture-list` | Both scopes, with size and snapshot state |
-| `ddev fixture-prune` | Delete this project's materialized snapshots — never the dumps |
+| `ddev upkeep-fixture-create <name>` | Dump the current database to a portable fixture. Runs `drush sql:sanitize` by default when the destination is the module repository; `--no-sanitize` opts out |
+| `ddev upkeep-fixture-load <name>` | Load one. First use imports the dump; later loads restore a snapshot |
+| `ddev upkeep-fixture-list` | Both scopes, with size and snapshot state |
+| `ddev upkeep-fixture-prune` | Delete this project's materialized snapshots — never the dumps |
 
 ## Dumps and snapshots
 
@@ -41,7 +41,7 @@ time; if either changes — you upgraded the engine, or the dump was updated —
 the snapshot is stale and is rebuilt from the dump on the next load.
 
 Snapshots are **disposable, engine-tied local caches and never authoritative**.
-`upkeep prune` and `ddev fixture-prune` delete them; the dump is untouched, and
+`upkeep prune` and `ddev upkeep-fixture-prune` delete them; the dump is untouched, and
 the next load rebuilds. Do not commit them.
 
 ## Where a fixture is found
@@ -72,7 +72,7 @@ or your co-maintainers use upkeep — anyone without the add-on can
 - **Sanitisation is mandatory.** A committed fixture is public data. Never dump
   a database holding real accounts, e-mail addresses, personal data or secrets:
   sanitise first, or build the fixture from a scratch install that never held
-  any. `ddev fixture-create` runs `drush sql:sanitize` for you by default when
+  any. `ddev upkeep-fixture-create` runs `drush sql:sanitize` for you by default when
   the destination is the module repository.
 - **Keep them lean.** The *minimum* state that makes the fixture useful — a
   minimal-profile install plus the entities your tests need, not a production
