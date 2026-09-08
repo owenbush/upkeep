@@ -11,11 +11,16 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpClient\HttpClient;
+use Upkeep\Cockpit\Module;
+use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Dashboard\DashboardCache;
 use Upkeep\Dashboard\DashboardRow;
-use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Drupal\IssueStatus;
+use Upkeep\Gitlab\ApiFailure;
+use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Gitlab\GitlabClientFactory;
+use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Patches\Contribution;
 use Upkeep\Patches\ContributionKind;
 use Upkeep\Workflow\ExitCode;
@@ -42,8 +47,14 @@ use Upkeep\Workflow\MrContextResolver;
 )]
 final class IssuesCommand extends UpkeepCommand
 {
-    public function __construct(private readonly ?DrupalOrgClient $drupalClient = null)
-    {
+    /**
+     * @param ?GitlabClient $gitlabClient injected in tests; built read-only
+     *                                    otherwise, which needs no credential
+     */
+    public function __construct(
+        private readonly ?DrupalOrgClient $drupalClient = null,
+        private readonly ?GitlabClient $gitlabClient = null,
+    ) {
         parent::__construct();
     }
 
@@ -100,16 +111,22 @@ final class IssuesCommand extends UpkeepCommand
         $io->writeln(sprintf('Reading %s issues from drupal.org ...', $module->name));
         $issues = $drupal->projectIssues($module->name, $statuses);
 
-        // Merge requests come from the dashboard cache rather than a fresh
-        // fetch: this command's job is the issue queue, and a cockpit that has
-        // never run `dashboard --refresh` should still get its issues rather
-        // than a credential error.
+        // Merge requests come from the dashboard cache when there is one, and
+        // from a live read when there is not.
+        //
+        // It used to be cache-only, to spare "a cockpit that has never run
+        // `dashboard --refresh`" a credential error. Anonymous reads removed
+        // that constraint, and the watchlist split made the gap harmful: an
+        // unwatched module has no snapshot and cannot be given one, since
+        // `dashboard --refresh` surveys the watchlist — so every issue looked
+        // unclaimed and NEXT said `upkeep start` on work somebody had already
+        // done.
         $snapshot = (new DashboardCache($cockpit->dashboardCachePath()))->load($module->name);
-        $contributions = Contribution::pair(
-            $module->name,
-            $issues,
-            $snapshot?->mergeRequests() ?? [],
-        );
+        [$mergeRequests, $forkNids] = $snapshot !== null
+            ? [$snapshot->mergeRequests(), $snapshot->forkNids]
+            : $this->readMergeRequests($module, $io);
+
+        $contributions = Contribution::pair($module->name, $issues, $mergeRequests, $forkNids);
 
         if ($input->getOption('unclaimed') === true) {
             $contributions = array_values(array_filter(
@@ -130,12 +147,57 @@ final class IssuesCommand extends UpkeepCommand
         $output->writeln('');
         $output->writeln(self::summary(
             $contributions,
-            $snapshot === null,
+            $mergeRequests === [] && $snapshot === null,
             $module->name,
             ModuleResolution::isRegistered($this->modules($cockpit), $module->name),
         ));
 
         return ExitCode::OK;
+    }
+
+    /**
+     * The module's open merge requests, read live.
+     *
+     * Only reached when there is no snapshot to read them from. Needs no
+     * credential — git.drupalcode.org serves a public project's merge requests
+     * and forks anonymously — which is what makes this affordable at all;
+     * until reading without a token was possible, doing it here would have
+     * turned `issues` into a command that demands a PAT.
+     *
+     * Every failure yields nothing and lets the run continue. The issue queue
+     * is this command's subject; the contribution column is context, and
+     * losing context is not worth losing the list for. The footer says so.
+     *
+     * The fork map is fetched with them, because it is **the only thing that
+     * pairs a Project Update Bot merge request to its issue** — those are
+     * titled "Automated Project Update Bot fixes" and mention their issue in a
+     * way `extractOwning()` rejects by design. Without it a compatibility
+     * issue with a bot MR on it reads as untouched, which on a module with
+     * many of them is most of the difference.
+     *
+     * @return array{list<MergeRequest>, array<int, int>}
+     */
+    private function readMergeRequests(Module $module, SymfonyStyle $io): array
+    {
+        $client = GitlabClientFactory::readOnlyOr(
+            $this->gitlabClient,
+            GitlabClientFactory::resolver($io),
+            $io->note(...),
+        );
+
+        $project = $client->project($module->project);
+        if ($project instanceof ApiFailure) {
+            return [[], []];
+        }
+
+        $list = $client->openMergeRequests($project);
+        if ($list instanceof ApiFailure) {
+            return [[], []];
+        }
+
+        $forkNids = $client->issueForkNids($project);
+
+        return [$list->all(), $forkNids instanceof ApiFailure ? [] : $forkNids];
     }
 
     /**

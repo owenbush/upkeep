@@ -343,6 +343,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   56 times. Every failure (no version, no token, unreadable branches, no match)
   falls back to the old behaviour and says so; none refuses, because this
   exists to be right more often, not to add a way to be stopped.
+- `upkeep issues` reads merge requests from the dashboard snapshot when there
+  is one and **live when there is not**. It used to be cache-only, to spare a
+  never-refreshed cockpit "a credential error" — anonymous reads removed that
+  constraint, and the watchlist split made the gap harmful: an unwatched module
+  has no snapshot and cannot be given one (`dashboard --refresh` surveys the
+  watchlist), so every issue looked unclaimed and NEXT said `upkeep start` on
+  work somebody had already done. The fork map is fetched with the merge
+  requests, because it is the only thing that pairs a Project Update Bot MR to
+  its issue. Any failure costs the CONTRIBUTION column, never the list.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
   happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —
@@ -609,7 +618,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7257/7257), methods (838/838) and classes (161/161), 1526 tests.
+lines (7270/7270), methods (840/840) and classes (161/161), 1530 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

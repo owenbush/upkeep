@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\HttpClient\MockHttpClient;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\TokenResolver;
@@ -102,6 +103,28 @@ final class GitlabClientFactoryTest extends TestCase
         self::assertStringContainsString('not found', $note);
         self::assertStringContainsString('merge, comment or publish', $note);
         self::assertStringContainsString('UPKEEP_NO_SUCH_TOKEN_VAR', $note, 'and where to configure one');
+    }
+
+    /**
+     * The "injected in tests, resolved otherwise" seam, reachable on its own.
+     *
+     * Written inline at a call site, its fallback arm sits on the line
+     * immediately before a live request — so no offline test can reach it and
+     * the coverage floor cannot tell a deliberate gap from an accident. Here
+     * both arms are one call away, and neither makes a request.
+     */
+    public function testReadOnlyOrPrefersAnInjectedClientAndBuildsOneOtherwise(): void
+    {
+        $resolver = new TokenResolver('UPKEEP_NO_SUCH_TOKEN_VAR', '/nonexistent/pat');
+        $noop = static function (): void {
+        };
+
+        $injected = new GitlabClient(new MockHttpClient(), null);
+        self::assertSame($injected, GitlabClientFactory::readOnlyOr($injected, $resolver, $noop));
+
+        $built = GitlabClientFactory::readOnlyOr(null, $resolver, $noop);
+        self::assertNotSame($injected, $built);
+        self::assertTrue($built->isAnonymous(), 'and it needs no credential');
     }
 
     /** With a token it is an ordinary authenticated client, and says nothing. */

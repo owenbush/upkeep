@@ -86,6 +86,22 @@ final readonly class GitlabClientFactory
     }
 
     /**
+     * The injected client, or a read-only one built here.
+     *
+     * The "injected in tests, resolved otherwise" pattern lives in the factory
+     * rather than being written out at each call site, because written inline
+     * the fallback arm sits on the line immediately before a live request —
+     * which means no offline test can reach it, and the coverage floor cannot
+     * tell a deliberate gap from an accident. Here it is reachable on its own.
+     *
+     * @param callable(string): void $report receives the degraded-mode note
+     */
+    public static function readOnlyOr(?GitlabClient $injected, TokenResolver $resolver, callable $report): GitlabClient
+    {
+        return $injected ?? self::readOnly($resolver, $report);
+    }
+
+    /**
      * Said once, in one wording, like the missing-token guidance it replaces
      * for read-only commands. It never contains token material.
      */
