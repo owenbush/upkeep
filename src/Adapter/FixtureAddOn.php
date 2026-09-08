@@ -22,16 +22,41 @@ namespace Upkeep\Adapter;
  * The name it settled on is the namespaced one, because ddev gives every
  * add-on's host commands one flat namespace per project and `fixture-load`
  * claims ground this add-on has no business claiming. That rename is
- * owenbush/ddev-upkeep#1, and it has to be on that repository's main branch
- * before this is released: the probe looks for the command *file*, so a
- * mismatch reinstalls the add-on on every call and then fails on an unknown
- * command. tests/Integration/FixtureAddOnContractTest is what says whether
- * they agree.
+ * owenbush/ddev-upkeep#1, and it had to be on that repository's main branch
+ * before this shipped: the probe looks for the command *file*, so a mismatch
+ * reinstalls the add-on on every call and then fails on an unknown command.
+ * tests/Integration/FixtureAddOnContractTest is what says whether they agree.
+ *
+ * **The release is pinned**, exactly as EngineAddOn pins ddev-drupal-contrib.
+ * Until the add-on was published there was nothing to float to; a published
+ * add-on with no pin means every environment silently tracks whatever its
+ * latest release happens to be, so a breaking change over there — the command
+ * rename above would have been one — arrives in every environment with no
+ * warning and nothing that could have caught it. The contract test reads the
+ * default branch, which is not what an environment installs.
  */
 final readonly class FixtureAddOn
 {
     /** Published add-on source, as `ddev add-on get` accepts it. */
     public const NAME = 'owenbush/ddev-upkeep';
+
+    /**
+     * The pinned release. Bumping it re-installs the add-on in every existing
+     * environment on next use, because the stamp below stops matching.
+     */
+    public const VERSION = '1.0.0';
+
+    /**
+     * Where the installed version is recorded, under the directory the add-on
+     * owns.
+     *
+     * upkeep's own file rather than ddev's add-on metadata: the location and
+     * shape of that metadata is a ddev implementation detail that has moved
+     * before, and a probe that silently stops finding it would read as "not
+     * installed" and reinstall on every call — which is the bug this file has
+     * already had once, from the other direction.
+     */
+    public const STAMP = 'upkeep/.upkeep-addon-version';
 
     /**
      * Env override for the add-on source — a local checkout path during
@@ -58,5 +83,38 @@ final readonly class FixtureAddOn
         $override = getenv(self::SOURCE_ENV);
 
         return $override !== false && $override !== '' ? $override : self::NAME;
+    }
+
+    /** Whether the add-on comes from somewhere other than the published release. */
+    public static function isOverridden(): bool
+    {
+        return self::source() !== self::NAME;
+    }
+
+    /**
+     * The `ddev add-on get` arguments.
+     *
+     * `--version` only for the published add-on: an override is a local
+     * checkout or an arbitrary source, where a release tag means nothing and
+     * naming one is an error rather than a constraint.
+     *
+     * @return list<string>
+     */
+    public static function installArguments(): array
+    {
+        return self::isOverridden() ? [self::source()] : [self::NAME, '--version', self::VERSION];
+    }
+
+    /**
+     * What an environment should have recorded once this add-on is installed.
+     *
+     * An override stamps its source, so moving between a local checkout and
+     * the published release re-installs rather than trusting whichever landed
+     * first — developing the two repositories together is exactly when a stale
+     * add-on is hardest to notice.
+     */
+    public static function expectedStamp(): string
+    {
+        return self::isOverridden() ? 'source:' . self::source() : self::VERSION;
     }
 }

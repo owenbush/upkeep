@@ -143,8 +143,22 @@ or your co-maintainers use upkeep — anyone without the add-on can
   megabytes of it are usually cache and log tables. Truncate them before
   dumping.
 
-> **Until ddev-upkeep is published:** `ddev add-on get owenbush/ddev-upkeep`
-> 404s while the repository is private, so point upkeep at your add-on source
-> explicitly — `export UPKEEP_ADDON_SOURCE=/path/to/ddev-upkeep` (a local
-> checkout, or any source `ddev add-on get` accepts). Temporary; it disappears
-> at publication.
+## The add-on itself
+
+upkeep installs [ddev-upkeep](https://github.com/owenbush/ddev-upkeep) into
+every environment it provisions, at a **pinned release** — the same treatment
+ddev-drupal-contrib gets, and for the same reason: an environment that tracked
+whatever the latest release happened to be would take a breaking change to the
+add-on without warning. An environment holding an older release re-installs on
+next use.
+
+To develop the add-on against upkeep, point it somewhere else:
+
+```bash
+export UPKEEP_ADDON_SOURCE=/path/to/ddev-upkeep
+```
+
+That takes a local checkout or anything `ddev add-on get` accepts, and no
+version is pinned to it — a checkout has no release to pin to. Moving between
+a checkout and the published release re-installs, so an environment cannot be
+left holding whichever arrived first.

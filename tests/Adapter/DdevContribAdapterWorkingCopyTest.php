@@ -322,6 +322,74 @@ final class DdevContribAdapterWorkingCopyTest extends DdevAdapterTestCase
         );
     }
 
+    /**
+     * The release is pinned, exactly as the engine add-on's is.
+     *
+     * Before the add-on was published there was nothing to float to. A
+     * published add-on with no pin means every environment silently tracks
+     * whatever its latest release happens to be, so a breaking change over
+     * there arrives everywhere at once — the fixture command rename would have
+     * been precisely that.
+     */
+    public function testThePublishedAddOnIsInstalledAtThePinnedVersion(): void
+    {
+        $runner = $this->engine();
+        $this->adapter($runner)->loadFixture($this->environment(), 'baseline');
+
+        self::assertTrue($runner->issued(sprintf(
+            'add-on get %s --version %s',
+            FixtureAddOn::NAME,
+            FixtureAddOn::VERSION,
+        )));
+    }
+
+    /**
+     * Except when it does not come from the release. A local checkout is how
+     * the two repositories are developed together, and a release tag means
+     * nothing there — naming one is an error rather than a constraint.
+     */
+    public function testALocalAddOnSourceIsInstalledWithoutAVersion(): void
+    {
+        putenv(FixtureAddOn::SOURCE_ENV . '=/tmp/ddev-upkeep-checkout');
+        try {
+            $runner = $this->engine();
+            $this->adapter($runner)->loadFixture($this->environment(), 'baseline');
+
+            self::assertTrue($runner->issued('add-on get /tmp/ddev-upkeep-checkout'));
+            self::assertFalse($runner->issued('--version'), 'a checkout has no release to pin to');
+        } finally {
+            putenv(FixtureAddOn::SOURCE_ENV);
+        }
+    }
+
+    /**
+     * An environment carrying an older release re-installs.
+     *
+     * The probe used to be the command file alone, which was enough while
+     * nothing was published — there was no other version to be holding. A
+     * file's presence says nothing about which release wrote it, so on its own
+     * it would pin every existing environment to whatever it installed first,
+     * for ever.
+     */
+    public function testAnEnvironmentHoldingAnOlderReleaseIsUpgraded(): void
+    {
+        $ddev = $this->projectPath() . '/.ddev';
+        @mkdir($ddev . '/upkeep', 0o700, true);
+        @mkdir(\dirname($ddev . '/' . FixtureAddOn::MARKER), 0o700, true);
+        file_put_contents($ddev . '/' . FixtureAddOn::MARKER, "#!/usr/bin/env bash\n");
+        file_put_contents($ddev . '/' . FixtureAddOn::STAMP, "0.9.0\n");
+
+        $runner = $this->engine();
+        $this->adapter($runner)->loadFixture($this->environment(), 'baseline');
+
+        self::assertTrue($runner->issued('add-on get'), 'a stale release must be replaced');
+        self::assertSame(
+            FixtureAddOn::VERSION,
+            trim((string) file_get_contents($ddev . '/' . FixtureAddOn::STAMP)),
+            'and the stamp must record what was actually installed',
+        );
+    }
+
     public function testServingInstallsTheModuleAndReportsTheLoginUrl(): void
     {
         $runner = $this->engine(['drush uli' => "https://widget.ddev.site/user/reset/1/abc\n"]);

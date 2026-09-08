@@ -231,7 +231,12 @@ abstract class DdevAdapterTestCase extends TestCase
 
         if (str_contains($line, 'add-on get ' . FixtureAddOn::source())) {
             $marker = (string) $cwd . '/.ddev/' . FixtureAddOn::MARKER;
-            mkdir(\dirname($marker), 0o700, true);
+            // Tolerant: a test that set the scene for a *re*-install has
+            // already made this directory, and a real `add-on get` over an
+            // existing install does not object either.
+            if (!is_dir(\dirname($marker))) {
+                mkdir(\dirname($marker), 0o700, true);
+            }
             file_put_contents($marker, "#!/bin/bash\n");
 
             return '';

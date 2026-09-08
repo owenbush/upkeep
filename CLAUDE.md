@@ -25,10 +25,18 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   both halves agreed with each other and with nothing real.
   `tests/Integration/FixtureAddOnContractTest` reads the add-on's own
   `install.yaml` and compares. It takes a local checkout via
-  `UPKEEP_ADDON_SOURCE` first and an authenticated API read otherwise, because
-  both repositories are private while upkeep is unreleased — which is also why
-  its CI step needs an `ADDON_READ_TOKEN` secret and warns loudly instead of
-  passing silently when there is none. The commands are **namespaced**
+  `UPKEEP_ADDON_SOURCE` first and an API read otherwise; the read needs no
+  credential now the add-on is public, so its CI step is unconditional and a
+  skip is a failure. **The release is pinned** (`FixtureAddOn::VERSION`), as
+  `EngineAddOn` pins ddev-drupal-contrib: a published add-on with no pin means
+  every environment tracks whatever its latest release happens to be, so a
+  breaking change over there arrives everywhere at once — the command rename
+  below would have been exactly that. The install probe is the command file
+  **and** a version stamp (`FixtureAddOn::STAMP`), because a file's presence
+  says nothing about which release wrote it; the marker alone would pin every
+  existing environment to whatever it installed first. An override
+  (`UPKEEP_ADDON_SOURCE`) pins no version — a checkout has no release — and
+  stamps its source, so moving between a checkout and the release re-installs. The commands are **namespaced**
   (`upkeep-fixture-*`) because ddev gives every add-on's host commands one flat
   namespace per project, so a name as general as `fixture-load` claims ground
   this add-on has no business claiming. That rename lands in the add-on first:
