@@ -39,3 +39,10 @@ jobs:
 
       - name: Smoke-test the binary
         run: ./bin/upkeep list
+
+      # The command reference is generated from the CLI. A hand-written one is
+      # a second copy of the truth, and the copy loses: the project site's
+      # table sat at 11 of 27 commands long enough for the issue loop, the
+      # patch surface and the browser UI to all be missing from it.
+      - name: Command reference is current
+        run: composer docs:check

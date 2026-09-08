@@ -449,7 +449,13 @@ final class DrupalOrgClientResilienceTest extends TestCase
 
         self::assertSame(2, $calls);
         self::assertSame(1, $issue?->patchCount(), 'the wait was followed by a successful retry');
-        self::assertGreaterThanOrEqual(1.0, $elapsed, 'the default wait must really wait');
+        // Deliberately just under the second it asks for. What this test is
+        // for is that the production default is not a no-op — an injected
+        // fake or a dropped call measures in microseconds, three orders of
+        // magnitude away — and pinning the exact boundary buys nothing while
+        // making the assertion knife-edge on a wall clock that PHP does not
+        // promise to the microsecond.
+        self::assertGreaterThanOrEqual(0.95, $elapsed, 'the default wait must really wait');
     }
 
     /**
