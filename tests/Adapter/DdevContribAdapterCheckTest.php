@@ -274,6 +274,35 @@ final class DdevContribAdapterCheckTest extends DdevAdapterTestCase
         self::assertFalse($other->issued('composer require --dev'));
     }
 
+    /**
+     * The toolchain follows the core that was actually seeded, stability and
+     * all. `drupal/core-dev:^12` resolves to nothing while 12 is in alpha —
+     * exactly what `drupal/recommended-project:^12` does — so an environment
+     * built with `base-artifacts:build --stability=alpha` provisioned fine and
+     * then failed at its first check.
+     *
+     * Read from the artifact meta rather than asked for again: a second flag
+     * could disagree with the tree it is installing into, and nothing here
+     * needs changing when 13 reaches alpha.
+     */
+    public function testThePreReleaseCoreSeedCarriesIntoTheToolchainConstraint(): void
+    {
+        file_put_contents($this->artifactsDir . '/' . self::CORE . '/meta.yml', implode("\n", [
+            'core_version: 11.0.0-alpha1',
+            'core_major: ' . self::CORE,
+            'php_version: 8.3.10',
+            "db_engine: 'mariadb:10.11'",
+            "built_at: '2026-01-01T00:00:00+00:00'",
+            '',
+        ]));
+
+        $runner = $this->captureRunner();
+        $this->adapter($runner)->runChecks($this->environment(), [CheckType::PhpCs]);
+
+        self::assertTrue($runner->issued('drupal/core-dev:^11@alpha'));
+        self::assertFalse($runner->issued('drupal/coder@alpha'), 'the stability is core\'s, not the toolchain\'s');
+    }
+
     public function testAnAlreadyProvisionedToolchainIsNotReinstalled(): void
     {
         $this->installToolchain();

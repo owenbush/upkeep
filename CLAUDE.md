@@ -461,6 +461,30 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   the patch's source URL, not its bytes — the dashboard must judge staleness
   from the attachment list without downloading anything).
 - `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
+  **A core major in pre-release is built deliberately, and everything after
+  that follows it.** `drupal/recommended-project:^12` resolves to nothing
+  while 12 is in alpha — packagist carried exactly one 12.x release when this
+  was written — and composer says only that no matching version was found.
+  That is not an edge case for this tool: a Drupal major spends months in
+  alpha and beta, and *that is when compatibility work happens*, since the
+  Project Update Bot merge requests the fast lane exists to merge are about
+  the unreleased core. `BaseArtifact\CoreConstraint` holds the whole answer.
+  `--stability` is a **flag, never a fallback**: substituting a pre-release
+  when a stable constraint finds nothing would make every later verdict a
+  statement about a tree nobody asked for, and a base artifact set is the one
+  place a silent substitution is least acceptable. A failed *stable* resolve
+  gets the hint appended to composer's own words; once a stability was given
+  it does not, because then the constraint is not the obvious suspect and
+  repeating advice already taken buries what composer said. Nothing downstream
+  takes the flag — `drupal/core-dev:^12` fails to resolve for exactly the same
+  reason, so `ensureCheckToolchain()` derives the stability from the artifact
+  meta's resolved `core_version` (`CoreConstraint::stabilityOf()`, which is
+  composer's own `VersionParser::parseStability`). Derived rather than asked
+  for again: a second flag could disagree with the tree it is installing into,
+  and this way 13 and everything after it need no change here. The suffix goes
+  on core's constraint only — `drupal/coder@alpha` carries no version
+  constraint at all and would admit an alpha of a package with nothing to do
+  with the seeded core.
 - `src/Maintenance/` — prune/status inventory and selection.
 - `src/Workflow/` — shared MR- and patch-flow context and the exit-code contract
   (0 did what was asked / 1 the supervised work failed / 2 upkeep could not do
@@ -630,7 +654,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7302/7302), methods (842/842) and classes (161/161), 1536 tests.
+lines (7352/7352), methods (847/847) and classes (162/162), 1551 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

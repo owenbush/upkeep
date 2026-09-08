@@ -96,6 +96,76 @@ final class BaseArtifactBuilderTest extends TestCase
         self::assertStringContainsString('Resolved drupal/core 11.4.4.', implode("\n", $this->log));
     }
 
+    /**
+     * The stability reaches the constraint, and only when asked for.
+     *
+     * `^12` resolves to nothing while Drupal 12 is in alpha, and a major
+     * spends months there — which is exactly when compatibility work happens,
+     * so the tool's main question is about the unreleased core.
+     */
+    public function testTheStabilityIsAppendedToTheConstraintWhenGiven(): void
+    {
+        $this->builder()->build('12', false, 'alpha');
+
+        $lines = array_map(
+            static fn (array $command): string => implode(' ', $command),
+            $this->runner->commands(),
+        );
+        self::assertNotEmpty(array_filter(
+            $lines,
+            static fn (string $line): bool => str_contains($line, 'drupal/recommended-project:^12@alpha'),
+        ));
+    }
+
+    /**
+     * A failed stable resolve says what composer said, then what can be done
+     * about it. Composer's own output reports that no version matched; nothing
+     * in it suggests the major might be unreleased, or that a flag exists.
+     */
+    public function testAFailedStableResolveAddsThePreReleaseHintAfterComposersOwnWords(): void
+    {
+        $this->runner->failOn('composer create-project', 'Could not find a matching version of package');
+
+        try {
+            $this->builder()->build('12', false);
+            self::fail('Expected the build to fail.');
+        } catch (BuildException $e) {
+            self::assertStringContainsString('Could not find a matching version', $e->getMessage());
+            self::assertStringContainsString('--stability=alpha', $e->getMessage());
+        }
+    }
+
+    /**
+     * And no hint once a stability was asked for: the constraint is then not
+     * the obvious suspect, and repeating advice already taken would bury
+     * whatever composer actually said.
+     */
+    public function testAFailureWithAStabilityAlreadySetKeepsComposersMessageAlone(): void
+    {
+        $this->runner->failOn('composer create-project', 'Your requirements could not be resolved');
+
+        try {
+            $this->builder()->build('12', false, 'alpha');
+            self::fail('Expected the build to fail.');
+        } catch (BuildException $e) {
+            self::assertStringContainsString('could not be resolved', $e->getMessage());
+            self::assertStringNotContainsString('--stability', $e->getMessage());
+        }
+    }
+
+    /** A misspelling is refused before composer is asked anything. */
+    public function testAnUnknownStabilityIsRefusedBeforeAnythingIsRun(): void
+    {
+        try {
+            $this->builder()->build('12', false, 'unstable');
+            self::fail('Expected the build to be refused.');
+        } catch (BuildException $e) {
+            self::assertStringContainsString('Composer knows:', $e->getMessage());
+        }
+
+        self::assertSame([], $this->runner->summaries(), 'nothing was run');
+    }
+
     public function testAnExistingArtifactSetIsRefusedUntilTheRebuildIsAskedForDeliberately(): void
     {
         // Constructed without a runner: the default really is a live process

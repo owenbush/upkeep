@@ -15,6 +15,7 @@ use Upkeep\Adapter\ProcessRunner;
 use Upkeep\Adapter\ThrowawaySite;
 use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\BaseArtifactBuilder;
+use Upkeep\BaseArtifact\CoreConstraint;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\WorkflowException;
 
@@ -49,6 +50,18 @@ final class BaseArtifactsBuildCommand extends UpkeepCommand
                 'Drupal core major version to build artifacts for (e.g. 11)',
             )
             ->addOption('force', null, InputOption::VALUE_NONE, 'Deliberately rebuild over an existing artifact set')
+            // Deliberate, never inferred. Falling back to a pre-release when a
+            // stable constraint finds nothing would quietly build something
+            // other than what was asked for, and a base artifact set is what
+            // every later verdict is measured against.
+            ->addOption(
+                'stability',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Lowest release stability to accept (' . implode(', ', CoreConstraint::STABILITIES)
+                . '). Needed while a core major is still in alpha or beta, which is when compatibility '
+                . 'work happens',
+            )
             // Defaults under $HOME, not the system temp dir: the throwaway
             // install project is bind-mounted into the Docker VM, and macOS
             // providers (colima, Docker Desktop) only share the home directory
@@ -96,7 +109,11 @@ final class BaseArtifactsBuildCommand extends UpkeepCommand
         );
 
         try {
-            $meta = $builder->build($version, (bool) $input->getOption('force'));
+            $meta = $builder->build(
+                $version,
+                (bool) $input->getOption('force'),
+                self::stringOption($input, 'stability') ?: null,
+            );
         } catch (\InvalidArgumentException $e) {
             throw new WorkflowException($e->getMessage(), 0, $e);
         }

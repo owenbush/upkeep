@@ -301,6 +301,25 @@ database, and tears itself down — a few minutes each):
 upkeep base-artifacts:build --version=11
 ```
 
+**A core major with no stable release yet needs `--stability`.** `^12`
+resolves to nothing while Drupal 12 is in alpha, and composer says only that
+it could not find a matching version:
+
+```bash
+upkeep base-artifacts:build --version=12 --stability=alpha
+```
+
+That is not a corner case — a Drupal major spends months in alpha and beta,
+and that is exactly when compatibility work happens. It is a flag rather than
+an automatic fallback because quietly building a pre-release when a stable
+constraint finds nothing would make every later verdict about a tree nobody
+asked for; the resolved version is recorded either way, so
+`base-artifacts:status` shows `12.0.0-alpha1` and cannot be mistaken for a
+release. A stability is a *minimum*, so the same cockpit picks up the stable
+release at the next rebuild. Nothing downstream needs the flag: environments
+seeded from a pre-release base install their toolchain at the same stability,
+read from what was built.
+
 Re-running for an existing core version requires `--force` (a deliberate
 rebuild). See what you have:
 
@@ -1343,7 +1362,7 @@ above describe every invocation Upkeep actually runs.
 | `upkeep modules` | List the modules registered in the cockpit registry |
 | `upkeep modules:add` | Register maintained modules from your git.drupalcode.org memberships (interactive opt-in) |
 | `upkeep api:probe <module>` | Probe the GitLab API for a module: open MRs and head pipeline status |
-| `upkeep base-artifacts:build --version=N [--force] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump) |
+| `upkeep base-artifacts:build --version=N [--force] [--stability=S] [--scratch-dir=DIR]` | Build the canonical per-core base artifacts (resolved tree + clean-install dump); `--stability` for a core major with no stable release yet |
 | `upkeep base-artifacts:status` | List built core versions with dates and sizes |
 | `upkeep dashboard [<module>] [--version=N] [--refresh[=MODULE]] [--no-patches] [--all]` | Per-module overview; name a module (or `--all`) for a row per (issue, branch) |
 | `upkeep check <module> <mr> [--version=N] [--fixture=NAME]` | Full isolated check flow for one MR |

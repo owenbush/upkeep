@@ -61,8 +61,10 @@ final readonly class BaseArtifactBuilder
         $this->runner = $runner ?? new ProcessRunner($log);
     }
 
-    public function build(string $coreMajor, bool $force): ArtifactMeta
+    public function build(string $coreMajor, bool $force, ?string $stability = null): ArtifactMeta
     {
+        CoreConstraint::assertStability($stability);
+
         $versionDir = $this->layout->versionDir($coreMajor);
 
         if (is_dir($versionDir)) {
@@ -89,7 +91,7 @@ final readonly class BaseArtifactBuilder
         }
 
         try {
-            return $this->doBuild($coreMajor, $versionDir);
+            return $this->doBuild($coreMajor, $versionDir, $stability);
         } catch (\Throwable $e) {
             // Never leave a partial artifact set behind: an existing version
             // directory must always mean the last build completed.
@@ -99,20 +101,29 @@ final readonly class BaseArtifactBuilder
         }
     }
 
-    private function doBuild(string $coreMajor, string $versionDir): ArtifactMeta
+    private function doBuild(string $coreMajor, string $versionDir, ?string $stability): ArtifactMeta
     {
         $treePath = $this->layout->treePath($coreMajor);
 
         // Full resolve riding the shared global Composer cache (see class
         // comment): this produces the pristine canonical tree all downstream
         // environments copy from. Never a bundled Composer — shell out.
-        ($this->log)(sprintf('Resolving drupal/recommended-project:^%s into %s ...', $coreMajor, $treePath));
-        $this->run([
-            'composer', 'create-project',
-            sprintf('drupal/recommended-project:^%s', $coreMajor),
-            $treePath,
-            '--no-interaction',
-        ], null);
+        $constraint = CoreConstraint::for($coreMajor, $stability);
+        ($this->log)(sprintf('Resolving %s into %s ...', $constraint, $treePath));
+
+        try {
+            $this->run(['composer', 'create-project', $constraint, $treePath, '--no-interaction'], null);
+        } catch (BuildException $e) {
+            // Composer's own words first, then what can be done about them —
+            // the same order a refused push uses. The commonest cause is a
+            // core major that has no stable release yet, and nothing in
+            // composer's output suggests there is a flag for that.
+            throw new BuildException(
+                $e->getMessage() . (CoreConstraint::unresolvableHint($coreMajor, $stability) ?? ''),
+                0,
+                $e,
+            );
+        }
 
         ($this->log)('Validating resolved base tree (composer validate) ...');
         $this->run(['composer', 'validate', '--no-interaction'], $treePath);
