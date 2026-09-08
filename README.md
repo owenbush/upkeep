@@ -312,20 +312,32 @@ upkeep base-artifacts:build --version=12 --stability=alpha
 That is not a corner case — a Drupal major spends months in alpha and beta,
 and that is exactly when compatibility work happens. It is a flag rather than
 an automatic fallback because quietly building a pre-release when a stable
-constraint finds nothing would make every later verdict about a tree nobody
-asked for; the resolved version is recorded either way, so
-`base-artifacts:status` shows `12.0.0-alpha1` and cannot be mistaken for a
-release. A stability is a *minimum*, so the same cockpit picks up the stable
-release at the next rebuild. Nothing downstream needs the flag: environments
-seeded from a pre-release base install their toolchain at the same stability,
-read from what was built.
+constraint finds nothing would make every later verdict a statement about a
+tree nobody asked for. The resolved version is recorded either way, so
+`base-artifacts:status` shows `12.0.0-alpha1` under **Exact core** and cannot
+be mistaken for a release.
+
+Nothing downstream takes the flag: an environment seeded from a pre-release
+base installs its check toolchain at the same stability, read from what was
+actually built.
 
 Re-running for an existing core version requires `--force` (a deliberate
-rebuild). See what you have:
+rebuild), and picks up the newest release your constraint admits. You do
+**not** need to raise the stability as the major matures — a composer
+stability is a minimum, and `12.0.0-alpha1 < 12.0.0-beta1 < 12.0.0-rc1 <
+12.0.0`, so `--stability=alpha` walks itself forward to the stable release. A
+rebuild makes existing environments for that core report *seed skew* and
+re-provision on next use.
+
+See what you have:
 
 ```bash
 upkeep base-artifacts:status
 ```
+
+**The full lifecycle — including what a forced rebuild destroys before it
+starts, and why re-provisioning refuses over uncommitted work — is
+[docs/base-artifacts.md](docs/base-artifacts.md).**
 
 ## Daily flow
 
@@ -1419,6 +1431,15 @@ The architecture — the adapter boundary that keeps engine specifics out of
 the orchestrator, the base-artifact cold-start strategy, the fixture model,
 and the DA-policy analysis behind the fast lane — is written up in
 [docs/contrib-maintainer-design.md](docs/contrib-maintainer-design.md).
+
+Four documents, each answering a different question:
+
+| Document | What it covers |
+| --- | --- |
+| [contrib-maintainer-design.md](docs/contrib-maintainer-design.md) | Why upkeep is shaped the way it is: the problem, the adapter boundary, cold starts, fixtures, the fast lane and the DA policy analysis behind it |
+| [base-artifacts.md](docs/base-artifacts.md) | The base artifact lifecycle: building, pre-release core majors and `--stability`, what a rebuild propagates to, and the sharp edges |
+| [dashboard-row-model.md](docs/dashboard-row-model.md) | What a dashboard row *is* — identity `(module, issue, branch)`, core as evidence rather than identity, and the live verification behind it |
+| [any-module.md](docs/any-module.md) | The registry as a watchlist rather than a gate: how subject commands take any module, and what is deliberately still scoped to the watchlist |
 
 ## License
 

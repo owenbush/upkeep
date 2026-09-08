@@ -461,6 +461,8 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   the patch's source URL, not its bytes — the dashboard must judge staleness
   from the attachment list without downloading anything).
 - `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
+  Lifecycle in full (building, rebuilding, what propagates, sharp edges):
+  `docs/base-artifacts.md`.
   **A core major in pre-release is built deliberately, and everything after
   that follows it.** `drupal/recommended-project:^12` resolves to nothing
   while 12 is in alpha — packagist carried exactly one 12.x release when this
@@ -485,6 +487,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   on core's constraint only — `drupal/coder@alpha` carries no version
   constraint at all and would admit an alpha of a package with nothing to do
   with the seeded core.
+  **Known sharp edge, documented rather than fixed:** `--force` removes the
+  existing version directory *before* resolving, and a failed build removes
+  the partial set too, so a forced rebuild that fails leaves the core with no
+  artifact set at all and every environment for it unusable until one builds.
+  Building to a sibling directory and swapping on success would remove it.
 - `src/Maintenance/` — prune/status inventory and selection.
 - `src/Workflow/` — shared MR- and patch-flow context and the exit-code contract
   (0 did what was asked / 1 the supervised work failed / 2 upkeep could not do

@@ -243,6 +243,10 @@ caches and base artifacts rather than through shared codebases.
 
 ## 6. Fast cold starts
 
+> Lifecycle detail — building, rebuilding, pre-release core majors and what a
+> rebuild propagates to — is [base-artifacts.md](base-artifacts.md). This
+> section is the rationale for having base artifacts at all.
+
 Running N projects is accepted. The lever for making a *new* (module ×
 core-version) project spin up quickly is caching the stateful layers, since the
 containers themselves are already cheap (shared images, create-from-image in
