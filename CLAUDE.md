@@ -330,7 +330,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `^10.2` does declare core 10, and only an interval gets that right. **Null is
   "cannot tell", never "supports nothing"**, and an empty intersection returns
   the tracked set unchanged — a module vanishing from the dashboard is the
-  worst failure mode this tool has.
+  worst failure mode this tool has. `MrContextResolver` also **refuses a core
+  the merge request's target branch does not declare** — checking a branch on
+  a core it never claimed fails at composer resolution and reads as though the
+  contribution is broken. That matters more now the core can be inferred from
+  the disk for an unregistered module: without it upkeep would pick a core and
+  then blame the module for it. The suggestion names only cores that are both
+  declared *and* built here. Unreadable info.yml, unparseable constraint,
+  closed endpoint: all silence, because refusing on not-knowing blocks work
+  over a file that merely failed to fetch.
 - **A patch belongs to the branch its issue is filed against.**
   `Drupal\IssueVersion` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
@@ -618,7 +626,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7270/7270), methods (840/840) and classes (161/161), 1530 tests.
+lines (7289/7289), methods (841/841) and classes (161/161), 1534 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

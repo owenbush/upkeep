@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Workflow;
 
 use Upkeep\Cockpit\Module;
+use Upkeep\Drupal\CoreCompatibility;
 use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
@@ -61,6 +62,7 @@ final readonly class MrContextResolver
         }
 
         $mergeRequest = $this->fetchOpenMr($module, $project, $iid);
+        $this->assertBranchSupports($project, $module, $mergeRequest->targetBranch, $coreMajor);
 
         return new MrContext(
             $module,
@@ -69,6 +71,58 @@ final readonly class MrContextResolver
             $coreMajor,
             $this->client->mergeRefSha($project, $iid),
         );
+    }
+
+    /**
+     * Refuse a core the merge request's target branch does not declare.
+     *
+     * Checking a branch on a core it never claimed produces a failure that
+     * says nothing about the module — composer refuses to resolve, and the
+     * report reads as though the contribution is broken. The same reasoning
+     * removed the core multiplier from the dashboard: evidence gathered
+     * against a core the branch does not support is not evidence.
+     *
+     * It matters more now the core can be *inferred*. A module the registry
+     * does not carry takes the newest core with base artifacts on this
+     * machine, which is a fact about the disk and knows nothing about the
+     * branch — so without this, upkeep would pick a core and then blame the
+     * module for it.
+     *
+     * **Silence is the answer whenever the branch cannot be read.** No
+     * info.yml at that path, a constraint nobody can parse, a closed endpoint:
+     * each of them means upkeep does not know, and refusing on not-knowing
+     * would block work over a file it merely failed to fetch.
+     *
+     * @throws WorkflowException when the branch declares cores and this is not one
+     */
+    private function assertBranchSupports(Project $project, Module $module, string $branch, string $core): void
+    {
+        $info = $this->client->fileContents($project, $module->name . '.info.yml', $branch);
+        $constraint = $info === null ? null : CoreCompatibility::constraintIn($info);
+
+        // The cores worth *suggesting* are the ones this machine could run:
+        // what is built, or failing that what the registry entry tracks.
+        // Naming a core with no base artifacts would answer one refusal with
+        // another.
+        $usable = $this->coresOnDisk !== [] ? $this->coresOnDisk : $module->coreVersions;
+        $declared = $constraint === null ? null : CoreCompatibility::fromConstraint($constraint, $usable);
+
+        if ($declared === null || $declared->declares($core)) {
+            return;
+        }
+
+        throw new WorkflowException(sprintf(
+            "%s %s declares core_version_requirement \"%s\", which does not include core %s.\n"
+            . "Checking it there would fail for reasons that say nothing about the module.\n"
+            . '%s',
+            $module->name,
+            $branch,
+            $constraint,
+            $core,
+            $declared->cores === []
+                ? 'Build base artifacts for a core it declares: upkeep base-artifacts:build --version=<core>'
+                : 'Pass --version=' . implode(' or --version=', $declared->cores) . '.',
+        ));
     }
 
     /**

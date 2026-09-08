@@ -1,7 +1,7 @@
 # Plan — the registry as a watchlist, not a gate
 
-*Status: step 1 built. Written to be disagreed with before 1,508 tests moved;
-§6 records what has landed and what has not.*
+*Status: steps 1 and 2 built. Written to be disagreed with before 1,508 tests
+moved; §6 records what has landed and what has not.*
 
 Drupal core is **out of scope here** and gets its own design: it needs a second
 engine adapter, not a registry change. See §7.
@@ -191,8 +191,14 @@ Each step independently green and shippable.
    unregistered module on that path. The resolver now takes the on-disk
    versions like every other caller, and the missing test is the one that
    would have caught it.
-2. **The branch-disagreement refusal** of §3.2 — the half of core selection
-   that needs the branch, and so a separate insertion point.
+2. ~~**The branch-disagreement refusal**~~ **Done**, on the merge-request
+   path: `MrContextResolver` reads the target branch's info.yml and refuses a
+   core it does not declare, naming the constraint and a core that is *both*
+   declared and built here — suggesting one with no base artifacts would
+   answer a refusal with another. Unreadable or unparseable stays silent.
+
+   Not yet on the patch path, where the base branch comes from the issue's
+   version field and the GitLab client is optional by design.
 3. **Prune without the registry.** Reverse `ProjectName`, so ad-hoc
    environments are discoverable and collectable.
 4. **Docs and the survey/subject split**, stated once in README and CLAUDE.md

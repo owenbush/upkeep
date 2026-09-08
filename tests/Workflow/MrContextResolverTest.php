@@ -88,6 +88,81 @@ final class MrContextResolverTest extends TestCase
         ];
     }
 
+    // ------------------------------------- the core the branch actually declares
+
+    /** A plain-text response, for the raw-file endpoint info.yml comes from. */
+    private static function raw(string $body): MockResponse
+    {
+        return new MockResponse($body, ['http_code' => 200]);
+    }
+
+    /**
+     * Checking a branch on a core it never claimed produces a failure that
+     * says nothing about the module — composer refuses to resolve, and the
+     * report reads as though the contribution is broken. It matters more now
+     * the core can be inferred: a module the registry does not carry takes the
+     * newest core built on this machine, which knows nothing about the branch.
+     */
+    public function testACoreTheTargetBranchDoesNotDeclareIsRefused(): void
+    {
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessageMatches('/does not include core 12.*--version=10 or --version=11/s');
+
+        self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+            self::raw("name: Widget\ncore_version_requirement: ^10 || ^11\n"),
+        ], ['10', '11', '12'])->resolve('paragraphs', 2, '12');
+    }
+
+    /** A core it does declare is simply used. */
+    public function testACoreTheBranchDeclaresIsAccepted(): void
+    {
+        $context = self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+            self::raw("core_version_requirement: ^10 || ^11\n"),
+        ], ['10', '11'])->resolve('paragraphs', 2, '11');
+
+        self::assertSame('11', $context->coreMajor);
+    }
+
+    /**
+     * Silence whenever the branch cannot be read. A missing info.yml, an
+     * unparseable constraint or a closed endpoint all mean upkeep does not
+     * know — and refusing on not-knowing would block work over a file it
+     * merely failed to fetch.
+     */
+    public function testAnUnreadableOrUnparseableBranchIsNotARefusal(): void
+    {
+        foreach (["see the README\n", ''] as $body) {
+            $context = self::resolver([
+                self::json(self::projectPayload()),
+                self::json(self::mrPayload()),
+                self::raw($body === '' ? '' : "core_version_requirement: " . $body),
+            ], ['11'])->resolve('paragraphs', 2, '11');
+
+            self::assertSame('11', $context->coreMajor);
+        }
+    }
+
+    /**
+     * The branch declares cores, and none of them is built here. Naming one
+     * anyway would answer a refusal with another refusal, so the suggestion
+     * becomes the build.
+     */
+    public function testWhenNothingDeclaredIsBuiltTheSuggestionIsToBuildOne(): void
+    {
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage('upkeep base-artifacts:build');
+
+        self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+            self::raw("core_version_requirement: ^12 || ^13\n"),
+        ], ['10', '11'])->resolve('paragraphs', 2, '10');
+    }
+
     /**
      * With no cockpit to ask — no base artifacts handed in — only registered
      * modules resolve. That is the behaviour that predates the watchlist
