@@ -46,3 +46,56 @@ jobs:
       # patch surface and the browser UI to all be missing from it.
       - name: Command reference is current
         run: composer docs:check
+
+  # The tree a user actually gets, which is not the tree above.
+  #
+  # Every leg of `tests` installs from the committed lock, so all three run
+  # Symfony 7.4. The constraints say `^7.2 || ^8.0`, and nothing anywhere
+  # exercised the second half — a `composer global require` or
+  # `create-project` on PHP 8.4 resolves Symfony 8, and that person would have
+  # been the first to run it.
+  #
+  # `config.platform.php` has to go before resolving: it pins resolution to
+  # 8.2 regardless of the PHP in use, which is right for reproducing the
+  # tested tree and exactly wrong for discovering what somebody else resolves.
+  #
+  # Blocking, deliberately. A red build here means users are getting a tree
+  # that does not work, which is worth stopping for; the escape hatch is to
+  # narrow the constraint to what is actually supported rather than to keep a
+  # warning nobody reads.
+  resolved:
+    name: Resolved tree, PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.4"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: pcov
+
+      - name: Resolve as a consumer would
+        run: |
+          composer config --unset platform
+          rm -f composer.lock
+          composer update --no-interaction --no-progress
+
+      - name: What this PHP resolves
+        run: composer show --direct
+
+      - name: Lint (PSR-12)
+        run: composer lint
+
+      - name: Static analysis (PHPStan max)
+        run: composer analyse
+
+      - name: Run PHPUnit (with coverage)
+        run: vendor/bin/phpunit --coverage-text
+
+      - name: Smoke-test the binary
+        run: ./bin/upkeep list
