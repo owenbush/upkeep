@@ -89,4 +89,4 @@ name is not the per-MR prompt that earns the approval. See
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
