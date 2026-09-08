@@ -613,7 +613,10 @@ final class PatchCommandsTest extends TestCase
         $exit = $cli->run('patch:check', 'gadget', '3597808', '--version=11');
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
-        self::assertStringContainsString('not registered', $cli->display());
+        // The registry is a watchlist now, so being absent from it is not the
+        // refusal — having nothing built to run against is. See
+        // docs/any-module.md.
+        self::assertStringContainsString('no base artifacts', $cli->display());
     }
 
     public function testAnUntrackedCoreVersionIsRefusedBeforeAnyNetworkCall(): void

@@ -191,6 +191,22 @@ final class CliHarness
         return $this;
     }
 
+    /**
+     * Takes the injected client away again, for the tests whose subject *is*
+     * having no credential.
+     *
+     * Needed because some helpers attach a client for hermeticity — a command
+     * with none builds a real one and would put a live request in an offline
+     * suite — and a test about the missing-token path has to opt back out of
+     * that, visibly.
+     */
+    public function withoutGitlab(): self
+    {
+        $this->gitlab = null;
+
+        return $this;
+    }
+
     public function withDrupalOrg(DrupalOrgClient $client): self
     {
         $this->drupalOrg = $client;
@@ -433,7 +449,7 @@ final class CliHarness
             new ExplainCommand(),
             new InitCommand(),
             new IssueCommand($this->gitlab, $this->drupalOrg),
-            new IssuesCommand($this->drupalOrg),
+            new IssuesCommand($this->drupalOrg, $this->gitlab),
             new MergeCommand($this->gitlab),
             new NeedsWorkCommand($this->gitlab),
             new ModulesAddCommand($this->gitlab),

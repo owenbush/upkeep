@@ -163,7 +163,8 @@ final class CheckCommand extends AbstractMrCommand
         ?string $fixture,
     ): int {
         $cockpit = $this->cockpit($input);
-        $module = MrContextResolver::requireModule(
+        $module = $this->resolveModule(
+            $cockpit,
             $this->modules($cockpit),
             self::stringArgument($input, 'module'),
         );

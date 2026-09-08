@@ -204,6 +204,21 @@ Origin is never pushed to and never altered.
 
 ## Cockpit setup
 
+**You do not have to register a module to work on it.** `check`, `review`,
+`start`, `publish`, `issue`, `issues`, `patch:*`, `dev`, `exec` and `env:path`
+take any module machine name: the project is `project/<name>` by drupal.org
+convention, and the core version comes from the base artifacts you have built.
+So reviewing one patch on somebody else's module needs no setup:
+
+```bash
+upkeep check paragraphs 42
+```
+
+The registry is a **watchlist**. It decides what `dashboard`, `patches`,
+`issues` and `status` survey, and a module you register can say which cores it
+supports — which then wins over anything upkeep would infer. Register the ones
+you maintain; work on anything.
+
 The cockpit is a plain directory holding your module registry, the per-core
 base artifacts, your shared fixture library, and cached check results. Create
 one:

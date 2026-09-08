@@ -8,6 +8,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Adapter\EngineAdapterFactory;
+use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\Adapter\EngineAdapterInterface;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
@@ -69,13 +70,21 @@ abstract class AbstractMrCommand extends UpkeepCommand
      */
     protected function resolveContext(InputInterface $input, SymfonyStyle $io): MrContext
     {
-        $registry = $this->cockpit($input)->loadRegistry();
+        $cockpit = $this->cockpit($input);
+        $registry = $cockpit->loadRegistry();
         $client = $this->gitlabClient ?? $this->clientFromToken($io);
 
         $iid = self::mrIid($input);
         $io->writeln(sprintf('Resolving MR !%d of %s via GitLab ...', $iid, self::stringArgument($input, 'module')));
 
-        return (new MrContextResolver($registry->modules(), $client))
+        // The disk answers for a module the registry does not carry — the
+        // merge-request path is a subject command like any other, and gating
+        // it on the watchlist was the half of the split that got missed.
+        return (new MrContextResolver(
+            $registry->modules(),
+            $client,
+            (new ArtifactLayout($cockpit->baseArtifactsPath()))->versionsOnDisk(),
+        ))
             ->resolve(
                 self::stringArgument($input, 'module'),
                 $iid,

@@ -12,7 +12,12 @@ use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\Environment;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Style\SymfonyStyle;
+use Upkeep\Command\IssuesCommand;
 use Upkeep\Tests\Support\CliHarness;
+use Upkeep\Tests\Support\MockGitlab;
 use Upkeep\Tests\Support\FakeEngineAdapter;
 use Upkeep\Workflow\ExitCode;
 
@@ -64,33 +69,39 @@ final class IssueWorkflowTest extends TestCase
      */
     private function withIssues(array $issues, int $singleNid = 3223746, string $title = 'Fix the thing'): CliHarness
     {
-        return $this->cli()->withDrupalOrg(new DrupalOrgClient(new MockHttpClient(
-            static function (string $method, string $url) use ($issues, $singleNid, $title): MockResponse {
-                if (str_contains($url, 'field_project_machine_name=')) {
-                    return self::json(['list' => [['nid' => self::PROJECT_NID]]]);
-                }
-                if (str_contains($url, '/node/')) {
-                    return self::json([
+        // `issues` reads merge requests live when there is no snapshot, so the
+        // harness always hands it a GitLab client: an un-injected one would
+        // build a real client and put a live request in the offline suite.
+        // 404s here, which is the "no merge-request data" case these cover.
+        return $this->cli()->withGitlab(MockGitlab::create()
+            ->route('/projects/', ['message' => '404 Not Found'], 404)
+            ->client())->withDrupalOrg(new DrupalOrgClient(new MockHttpClient(
+                static function (string $method, string $url) use ($issues, $singleNid, $title): MockResponse {
+                    if (str_contains($url, 'field_project_machine_name=')) {
+                        return self::json(['list' => [['nid' => self::PROJECT_NID]]]);
+                    }
+                    if (str_contains($url, '/node/')) {
+                        return self::json([
                         'nid' => $singleNid,
                         'title' => $title,
                         'url' => 'https://www.drupal.org/node/' . $singleNid,
                         'field_issue_status' => '1',
                         'field_project' => ['machine_name' => 'widget'],
-                    ]);
-                }
+                        ]);
+                    }
 
                 // Filtered by the requested status, as api-d7 does: a fixture
                 // that answered every status with everything would prove
                 // nothing about which statuses the command actually asks for.
-                preg_match('/field_issue_status=(\d+)/', $url, $m);
-                $wanted = $m[1] ?? '';
+                    preg_match('/field_issue_status=(\d+)/', $url, $m);
+                    $wanted = $m[1] ?? '';
 
-                return self::json(['list' => array_values(array_filter(
-                    $issues,
-                    static fn (array $i): bool => ($i['field_issue_status'] ?? null) === $wanted,
-                ))]);
-            },
-        )));
+                    return self::json(['list' => array_values(array_filter(
+                        $issues,
+                        static fn (array $i): bool => ($i['field_issue_status'] ?? null) === $wanted,
+                    ))]);
+                },
+            )));
     }
 
     /**
@@ -201,6 +212,94 @@ final class IssueWorkflowTest extends TestCase
 
         self::assertStringContainsString('#1001', $cli->display());
         self::assertStringContainsString('no cached MRs', $cli->display());
+        self::assertStringContainsString('--refresh=widget', $cli->display(), 'a command it will accept');
+    }
+
+    /**
+     * The recommendation that was wrong, and why it mattered.
+     *
+     * With no snapshot, `issues` had no merge requests at all, so NEXT could
+     * never say `upkeep check` — every issue fell through to `upkeep start`,
+     * telling you to begin work somebody had already done. Harmless for a
+     * watched module you refresh; not harmless for an unwatched one, which
+     * cannot be given a snapshot at all because `dashboard --refresh` surveys
+     * the watchlist.
+     *
+     * So merge requests are read live when there is no snapshot. Anonymous
+     * reads are what make that affordable — before them this would have turned
+     * `issues` into a command that demands a PAT.
+     */
+    public function testAnIssueWithAMergeRequestSaysCheckItRatherThanStartIt(): void
+    {
+        $cli = $this->withIssues([self::issue(1001, '8')])->withGitlab(
+            MockGitlab::create()
+                ->route('/projects/project%2Fwidget', MockGitlab::projectPayload('widget'))
+                ->route('/merge_requests?', [MockGitlab::mergeRequestPayload('widget', 7, [
+                    'title' => 'Issue #1001: the work',
+                    'source_branch' => '1001-the-work',
+                ])])
+                ->route('/forks?', [])
+                ->client(),
+        );
+
+        $cli->run('issues', 'widget');
+
+        self::assertStringContainsString('upkeep check widget 7', $cli->display());
+        self::assertStringNotContainsString('upkeep start widget 1001', $cli->display());
+        self::assertStringNotContainsString('no cached MRs', $cli->display(), 'they were read live');
+    }
+
+    /**
+     * The project resolves and the merge-request listing does not — a closed
+     * endpoint, a rate limit. Same answer: the list survives, the column does
+     * not, and the footer says which.
+     */
+    public function testAFailedMergeRequestListingStillListsTheIssues(): void
+    {
+        $cli = $this->withIssues([self::issue(1001, '8')])->withGitlab(
+            MockGitlab::create()
+                ->route('/projects/project%2Fwidget', MockGitlab::projectPayload('widget'))
+                ->route('/merge_requests?', ['message' => '403 Forbidden'], 403)
+                ->client(),
+        );
+
+        self::assertSame(ExitCode::OK, $cli->run('issues', 'widget'));
+        self::assertStringContainsString('#1001', $cli->display());
+        self::assertStringContainsString('no cached MRs', $cli->display());
+    }
+
+    /**
+     * A GitLab that cannot answer costs the contribution column, not the list.
+     * The issue queue is this command's subject; the column is context.
+     */
+    public function testAnUnreachableGitlabStillListsTheIssues(): void
+    {
+        $cli = $this->withIssues([self::issue(1001, '8')]);
+
+        self::assertSame(ExitCode::OK, $cli->run('issues', 'widget'));
+        self::assertStringContainsString('#1001', $cli->display());
+        self::assertStringContainsString('no cached MRs', $cli->display());
+    }
+
+    /**
+     * And an *unwatched* module is not sent to a command that would refuse it.
+     *
+     * `issues paragraphs` works now — the registry is a watchlist, not a gate
+     * — but the dashboard still surveys the watchlist, so telling somebody to
+     * run `dashboard --refresh=paragraphs` would hand them a refusal. Reported
+     * from a real run against an unregistered module.
+     */
+    public function testAnUnwatchedModuleIsNotToldToRefreshADashboardThatRefusesIt(): void
+    {
+        mkdir($this->cli()->cockpit . '/base-artifacts/11', 0o755, true);
+        $cli = $this->withIssues([self::issue(1001, '8')]);
+
+        $cli->run('issues', 'paragraphs');
+
+        self::assertStringContainsString('no cached MRs', $cli->display());
+        self::assertStringNotContainsString('--refresh=paragraphs', $cli->display());
+        self::assertStringContainsString('watchlist', $cli->display());
+        self::assertStringContainsString('modules:add', $cli->display(), 'the command that would help');
     }
 
     public function testAnUnregisteredModuleIsRefused(): void
@@ -208,7 +307,10 @@ final class IssueWorkflowTest extends TestCase
         $cli = $this->cli();
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $cli->run('issues', 'nope'));
-        self::assertStringContainsString('not registered', $cli->display());
+        // The registry is a watchlist now, so being absent from it is not the
+        // refusal — having nothing built to run against is. See
+        // docs/any-module.md.
+        self::assertStringContainsString('no base artifacts', $cli->display());
     }
 
     // ---------------------------------------------------------------- start
@@ -911,6 +1013,50 @@ final class IssueWorkflowTest extends TestCase
         self::assertStringContainsString('Cannot resolve the GitLab project', $cli->display());
     }
 
+    /**
+     * The typo help, at the only point it is knowable.
+     *
+     * The registry stopped gating which modules can be worked on, so an
+     * unheard-of name is now an ordinary request rather than a refusal. It
+     * becomes a *typo* only once drupal.org says there is nothing at
+     * `project/<name>` — and then the near-miss against a watched module is
+     * exactly the thing the old "not registered" refusal used to catch. See
+     * docs/any-module.md §5.
+     */
+    public function testADerivedModuleThatDoesNotExistIsOfferedTheNameItNearlyMatched(): void
+    {
+        mkdir($this->cli()->cockpit . '/base-artifacts/11', 0o755, true);
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()
+            ->withEngine(FakeEngineAdapter::withEnvironment(self::environment()))
+            ->withGitlab($this->gitlab(['/projects/' => self::json(['message' => 'gone'], 404)]));
+
+        $exit = $cli->run('publish', 'widgte', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('Cannot resolve the GitLab project', $cli->display());
+        self::assertStringContainsString('Did you mean "widget"?', $cli->display());
+    }
+
+    /**
+     * And a module that is simply not watched gets no suggestion. Offering one
+     * would imply the name is wrong when the project may genuinely not exist,
+     * which is a worse answer than none.
+     */
+    public function testAnUnrelatedDerivedModuleIsNotAccusedOfBeingATypo(): void
+    {
+        mkdir($this->cli()->cockpit . '/base-artifacts/11', 0o755, true);
+        $this->withIssues([], 3223746, 'Fix the thing');
+        $cli = $this->cli()
+            ->withEngine(FakeEngineAdapter::withEnvironment(self::environment()))
+            ->withGitlab($this->gitlab(['/projects/' => self::json(['message' => 'gone'], 404)]));
+
+        $exit = $cli->run('publish', 'paragraphs', '3223746', '--version=11');
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringNotContainsString('Did you mean', $cli->display());
+    }
+
     public function testPublishingReportsWhenTheBranchesMergeRequestsCannotBeListed(): void
     {
         $this->withIssues([], 3223746, 'Fix the thing');
@@ -966,7 +1112,11 @@ final class IssueWorkflowTest extends TestCase
     public function testPublishingWithoutATokenIsAnInfrastructureOutcome(): void
     {
         $this->withIssues([], 3223746, 'Fix the thing');
-        $cli = $this->cli()->withEngine(FakeEngineAdapter::withEnvironment(self::environment()));
+        // The subject is having no credential, so the client withIssues()
+        // attaches for hermeticity has to be taken back off.
+        $cli = $this->cli()
+            ->withoutGitlab()
+            ->withEngine(FakeEngineAdapter::withEnvironment(self::environment()));
 
         $exit = $cli->run('publish', 'widget', '3223746', '--version=11');
 

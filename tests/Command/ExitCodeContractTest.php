@@ -313,7 +313,10 @@ final class ExitCodeContractTest extends TestCase
         ]);
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
-        self::assertStringContainsString('not registered', $tester->getDisplay());
+        // The registry is a watchlist now, so being absent from it is not the
+        // refusal — having nothing built to run against is. See
+        // docs/any-module.md.
+        self::assertStringContainsString('no base artifacts', $tester->getDisplay());
     }
 
     public function testUntrackedCoreVersionIsAnInfrastructureFailure(): void

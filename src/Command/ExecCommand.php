@@ -57,7 +57,7 @@ final class ExecCommand extends UpkeepCommand
     {
         $cockpit = $this->cockpit($input);
         $name = self::stringArgument($input, 'module');
-        $module = self::requireModule($this->modules($cockpit), $name);
+        $module = $this->resolveModule($cockpit, $this->modules($cockpit), $name);
         $coreMajor = self::targetCore($input, $module);
 
         // Never empty: `cmd` is a REQUIRED array argument, so the console

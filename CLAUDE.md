@@ -185,6 +185,31 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
 - `src/Cockpit/` — cockpit directory + `registry.yml` module registry.
+  **The registry is a watchlist, not a gate** (`docs/any-module.md`). It was
+  doing two jobs — how to find a module and which cores to test it on, *and*
+  which modules the surveys cover — and the first is now derivable:
+  `project/<name>` is drupal.org's convention (`PruneExecutor` already assumed
+  it) and the usable cores are the ones `ArtifactLayout::versionsOnDisk()`
+  finds. So `Cockpit\ModuleResolution` gives **subject** commands (`check`,
+  `review`, `dev`, `exec`, `env:path`, `issue`, `issues`, `needs-work`,
+  `patch:*`, `start`, `publish`) any module, registered or not, while
+  **survey** commands (`dashboard`, `patches`, `notes`, `modules`, `status`,
+  `prune`, the UI) keep iterating the watchlist and `requireModule()` stays
+  strict for narrowing into it. A registry entry always wins where there is
+  one: a maintainer's `core_versions` is a deliberate statement and outranks
+  anything inferred. `Module::$watched` carries that provenance, because it
+  changes what a refusal can honestly say — an unavailable core is "add it to
+  core_versions in registry.yml" for a watched module and "no base artifacts
+  for core N, build one" for a derived one, and telling somebody to edit a
+  file that does not mention their module is worse than not answering. A derived module's cores are **newest first**, because
+  `selectCoreVersion()` documents `core_versions[0]` as the default and
+  `versionsOnDisk()` sorts ascending — passed through unchanged, asking about
+  an unregistered module answered for the *oldest* core built on the machine. What is **not** dropped is the refusal — a name that
+  cannot be a Drupal machine name is refused outright, and a derived name that
+  404s is offered the watched name it nearly matched
+  (`ModuleResolution::projectFailure()`, shared by the two places that report
+  it). That hint lives at the *failure*, not at resolution: until drupal.org
+  says there is nothing there, an unheard-of name is an ordinary request.
 - **Reading needs no credential.** git.drupalcode.org serves a public
   project's merge requests, refs, forks and raw files anonymously — measured
   across upkeep's whole read surface — so requiring a token to *look* was a
@@ -309,7 +334,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `^10.2` does declare core 10, and only an interval gets that right. **Null is
   "cannot tell", never "supports nothing"**, and an empty intersection returns
   the tracked set unchanged — a module vanishing from the dashboard is the
-  worst failure mode this tool has.
+  worst failure mode this tool has. `MrContextResolver` also **refuses a core
+  the merge request's target branch does not declare** — checking a branch on
+  a core it never claimed fails at composer resolution and reads as though the
+  contribution is broken. That matters more now the core can be inferred from
+  the disk for an unregistered module: without it upkeep would pick a core and
+  then blame the module for it. The suggestion names only cores that are both
+  declared *and* built here. Unreadable info.yml, unparseable constraint,
+  closed endpoint: all silence, because refusing on not-knowing blocks work
+  over a file that merely failed to fetch.
 - **A patch belongs to the branch its issue is filed against.**
   `Drupal\IssueVersion` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
@@ -322,6 +355,15 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   56 times. Every failure (no version, no token, unreadable branches, no match)
   falls back to the old behaviour and says so; none refuses, because this
   exists to be right more often, not to add a way to be stopped.
+- `upkeep issues` reads merge requests from the dashboard snapshot when there
+  is one and **live when there is not**. It used to be cache-only, to spare a
+  never-refreshed cockpit "a credential error" — anonymous reads removed that
+  constraint, and the watchlist split made the gap harmful: an unwatched module
+  has no snapshot and cannot be given one (`dashboard --refresh` surveys the
+  watchlist), so every issue looked unclaimed and NEXT said `upkeep start` on
+  work somebody had already done. The fork map is fetched with the merge
+  requests, because it is the only thing that pairs a Project Update Bot MR to
+  its issue. Any failure costs the CONTRIBUTION column, never the list.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
   happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —
@@ -588,7 +630,7 @@ exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
 a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
 registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
 `vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7198/7198), methods (832/832) and classes (160/160), 1508 tests.
+lines (7302/7302), methods (842/842) and classes (161/161), 1536 tests.
 
 Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
 Xdebug (accepted; also supports branch coverage). Check with

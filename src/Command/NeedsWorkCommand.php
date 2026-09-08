@@ -10,6 +10,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Adapter\CheckStatus;
+use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
@@ -58,7 +59,11 @@ final class NeedsWorkCommand extends UpkeepCommand
             return ExitCode::INFRASTRUCTURE;
         }
 
-        $context = (new MrContextResolver($modules, $gitlab))->resolve(
+        $context = (new MrContextResolver(
+            $modules,
+            $gitlab,
+            (new ArtifactLayout($cockpit->baseArtifactsPath()))->versionsOnDisk(),
+        ))->resolve(
             self::stringArgument($input, 'module'),
             $iid,
             self::stringOption($input, 'version'),

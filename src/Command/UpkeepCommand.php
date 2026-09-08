@@ -13,15 +13,17 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Upkeep\Adapter\BaseRefresh;
 use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\BaseRefresh;
 use Upkeep\Adapter\ProjectsRoot;
+use Upkeep\BaseArtifact\ArtifactLayout;
 use Upkeep\BaseArtifact\BuildException;
 use Upkeep\BaseArtifact\MetaException;
 use Upkeep\Cockpit\Cockpit;
-use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Cockpit\Module;
+use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Cockpit\RegistryException;
+use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Filesystem\FilesystemException;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\MrContextResolver;
@@ -334,6 +336,13 @@ abstract class UpkeepCommand extends Command
     }
 
     /**
+     * A module the cockpit *watches*, for the survey commands that narrow
+     * their own output to one of them.
+     *
+     * Still strict, and rightly: `dashboard widget` is a request to drill into
+     * something the dashboard is showing, so a name it is not showing is a
+     * mistake rather than a wider question.
+     *
      * @param array<string, Module> $modules
      *
      * @throws WorkflowException when the module is not registered
@@ -341,6 +350,30 @@ abstract class UpkeepCommand extends Command
     protected static function requireModule(array $modules, string $name): Module
     {
         return MrContextResolver::requireModule($modules, $name);
+    }
+
+    /**
+     * The module a *subject* command acts on, registered or not.
+     *
+     * The registry is a watchlist, not a gate: `project/<name>` is drupal.org's
+     * convention and the cores a run can use are the ones base artifacts exist
+     * for, so a module nobody has registered is workable. A registry entry
+     * still wins where there is one — a maintainer's `core_versions` is a
+     * deliberate statement and outranks anything inferred. See
+     * `docs/any-module.md`.
+     *
+     * @param array<string, Module> $modules
+     *
+     * @throws RegistryException when the name cannot be a module, or nothing
+     *                           has been built for it to run against
+     */
+    protected function resolveModule(Cockpit $cockpit, array $modules, string $name): Module
+    {
+        return ModuleResolution::resolve(
+            $modules,
+            $name,
+            (new ArtifactLayout($cockpit->baseArtifactsPath()))->versionsOnDisk(),
+        );
     }
 
     /**

@@ -9,6 +9,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Cockpit\Module;
 use Upkeep\Gitlab\GitlabClient;
+use Upkeep\Cockpit\RegistryException;
 use Upkeep\Workflow\MrContextResolver;
 use Upkeep\Workflow\WorkflowException;
 
@@ -17,7 +18,11 @@ final class MrContextResolverTest extends TestCase
     /**
      * @param list<MockResponse> $responses
      */
-    private static function resolver(array $responses = []): MrContextResolver
+    /**
+     * @param list<MockResponse> $responses
+     * @param list<string>       $coresOnDisk base artifacts, for a module the registry does not carry
+     */
+    private static function resolver(array $responses = [], array $coresOnDisk = []): MrContextResolver
     {
         $client = new GitlabClient(
             new MockHttpClient($responses),
@@ -33,7 +38,7 @@ final class MrContextResolverTest extends TestCase
                 'project/field_visibility_conditions',
                 ['11'],
             ),
-        ], $client);
+        ], $client, $coresOnDisk);
     }
 
     /**
@@ -83,12 +88,145 @@ final class MrContextResolverTest extends TestCase
         ];
     }
 
-    public function testUnknownModuleIsRejectedNamingKnownModules(): void
+    /**
+     * A watched module's core list is a line in registry.yml, so that is what
+     * the refusal names.
+     */
+    public function testAnUntrackedCoreOnAWatchedModulePointsAtTheRegistry(): void
     {
         $this->expectException(WorkflowException::class);
-        $this->expectExceptionMessageMatches('/not registered.*conditions_helper.*field_visibility_conditions/s');
+        $this->expectExceptionMessage('core_versions in registry.yml');
+
+        self::resolver()->resolve('conditions_helper', 1, '9');
+    }
+
+    /**
+     * A derived module has no registry entry, so pointing at one sends
+     * somebody to edit a file that does not mention the module.
+     *
+     * Reported from a real run: `--version=12` on an unregistered module
+     * answered "Its registry entry tracks: 11, 10" — naming an entry that does
+     * not exist, and listing the contents of a directory in the reverse order
+     * they read in.
+     */
+    public function testAnUnavailableCoreOnADerivedModuleTalksAboutArtifacts(): void
+    {
+        try {
+            self::resolver([], ['10', '11'])->resolve('paragraphs', 1, '12');
+            self::fail('Expected a refusal.');
+        } catch (WorkflowException $e) {
+            self::assertStringContainsString('No base artifacts for core 12', $e->getMessage());
+            self::assertStringContainsString('Built here: 10, 11', $e->getMessage(), 'ascending, as prose reads');
+            self::assertStringContainsString('base-artifacts:build --version=12', $e->getMessage());
+            self::assertStringNotContainsString('registry.yml', $e->getMessage());
+        }
+    }
+
+    // ------------------------------------- the core the branch actually declares
+
+    /** A plain-text response, for the raw-file endpoint info.yml comes from. */
+    private static function raw(string $body): MockResponse
+    {
+        return new MockResponse($body, ['http_code' => 200]);
+    }
+
+    /**
+     * Checking a branch on a core it never claimed produces a failure that
+     * says nothing about the module — composer refuses to resolve, and the
+     * report reads as though the contribution is broken. It matters more now
+     * the core can be inferred: a module the registry does not carry takes the
+     * newest core built on this machine, which knows nothing about the branch.
+     */
+    public function testACoreTheTargetBranchDoesNotDeclareIsRefused(): void
+    {
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessageMatches('/does not include core 12.*--version=10 or --version=11/s');
+
+        self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+            self::raw("name: Widget\ncore_version_requirement: ^10 || ^11\n"),
+        ], ['10', '11', '12'])->resolve('paragraphs', 2, '12');
+    }
+
+    /** A core it does declare is simply used. */
+    public function testACoreTheBranchDeclaresIsAccepted(): void
+    {
+        $context = self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+            self::raw("core_version_requirement: ^10 || ^11\n"),
+        ], ['10', '11'])->resolve('paragraphs', 2, '11');
+
+        self::assertSame('11', $context->coreMajor);
+    }
+
+    /**
+     * Silence whenever the branch cannot be read. A missing info.yml, an
+     * unparseable constraint or a closed endpoint all mean upkeep does not
+     * know — and refusing on not-knowing would block work over a file it
+     * merely failed to fetch.
+     */
+    public function testAnUnreadableOrUnparseableBranchIsNotARefusal(): void
+    {
+        foreach (["see the README\n", ''] as $body) {
+            $context = self::resolver([
+                self::json(self::projectPayload()),
+                self::json(self::mrPayload()),
+                self::raw($body === '' ? '' : "core_version_requirement: " . $body),
+            ], ['11'])->resolve('paragraphs', 2, '11');
+
+            self::assertSame('11', $context->coreMajor);
+        }
+    }
+
+    /**
+     * The branch declares cores, and none of them is built here. Naming one
+     * anyway would answer a refusal with another refusal, so the suggestion
+     * becomes the build.
+     */
+    public function testWhenNothingDeclaredIsBuiltTheSuggestionIsToBuildOne(): void
+    {
+        $this->expectException(WorkflowException::class);
+        $this->expectExceptionMessage('upkeep base-artifacts:build');
+
+        self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+            self::raw("core_version_requirement: ^12 || ^13\n"),
+        ], ['10', '11'])->resolve('paragraphs', 2, '10');
+    }
+
+    /**
+     * With no cockpit to ask — no base artifacts handed in — only registered
+     * modules resolve. That is the behaviour that predates the watchlist
+     * split, not a new refusal: there is nothing on disk to pick a core from.
+     */
+    public function testWithNothingBuiltOnlyRegisteredModulesResolve(): void
+    {
+        $this->expectException(RegistryException::class);
+        $this->expectExceptionMessage('no base artifacts');
 
         self::resolver()->resolve('nope_module', 1, null);
+    }
+
+    /**
+     * And the merge-request path takes any module, like every other subject
+     * command. This is the case that was missed: `check <module> <mr>` went
+     * through resolve(), which still gated on the registry, so the headline
+     * claim of the watchlist change was false for the command it was most
+     * about. See docs/any-module.md.
+     */
+    public function testTheMergeRequestPathResolvesAnUnregisteredModule(): void
+    {
+        $context = self::resolver([
+            self::json(self::projectPayload()),
+            self::json(self::mrPayload()),
+        ], ['10', '11'])->resolve('paragraphs', 2, null);
+
+        self::assertSame('paragraphs', $context->module->name);
+        self::assertSame('project/paragraphs', $context->module->project);
+        self::assertSame('11', $context->coreMajor, 'the newest core built here');
     }
 
     public function testOmittedCoreVersionDefaultsToFirstListedInRegistry(): void

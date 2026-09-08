@@ -313,13 +313,66 @@ final class EnvPathCommandTest extends TestCase
         self::assertSame([['token', '11']], $calls);
     }
 
+    /**
+     * The change this is all for: a module the cockpit does not watch is a
+     * module you can still work on.
+     *
+     * `project/<name>` is drupal.org's convention and the cores this machine
+     * can run are the ones base artifacts exist for, so nothing about a
+     * registry entry was load-bearing here. See docs/any-module.md.
+     */
+    public function testAnUnregisteredModuleResolvesFromWhatIsOnDisk(): void
+    {
+        mkdir($this->cockpit . '/base-artifacts/10', 0o755, true);
+        mkdir($this->cockpit . '/base-artifacts/11', 0o755, true);
+
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter('/x'))));
+        $exit = $tester->execute(['module' => 'paragraphs', '--cockpit' => $this->cockpit]);
+
+        self::assertSame(ExitCode::OK, $exit, $tester->getDisplay());
+        self::assertStringContainsString('/x', $tester->getDisplay());
+    }
+
+    /**
+     * And `--version` still picks among them, so an unregistered module is not
+     * a less controllable one.
+     */
+    public function testAnUnregisteredModuleStillHonoursTheVersionFlag(): void
+    {
+        mkdir($this->cockpit . '/base-artifacts/10', 0o755, true);
+        mkdir($this->cockpit . '/base-artifacts/11', 0o755, true);
+
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter('/x'))));
+        $exit = $tester->execute(['module' => 'paragraphs', '--version' => '10', '--cockpit' => $this->cockpit]);
+
+        self::assertSame(ExitCode::OK, $exit, $tester->getDisplay());
+    }
+
+    /**
+     * A name that cannot be a Drupal machine name is still refused outright:
+     * there is no project to go and look for.
+     */
+    public function testANameThatCannotBeAModuleIsRefused(): void
+    {
+        mkdir($this->cockpit . '/base-artifacts/11', 0o755, true);
+
+        $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter('/x'))));
+        $exit = $tester->execute(['module' => 'Not-A-Module', '--cockpit' => $this->cockpit]);
+
+        self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
+        self::assertStringContainsString('machine name', $tester->getDisplay());
+    }
+
     public function testFailsForUnregisteredModule(): void
     {
         $tester = new CommandTester(new EnvPathCommand(new StubEngineAdapterFactory($this->adapter('/x'))));
         $exit = $tester->execute(['module' => 'nope', '--cockpit' => $this->cockpit]);
 
         self::assertSame(ExitCode::INFRASTRUCTURE, $exit);
-        self::assertStringContainsString('not registered', $tester->getDisplay());
+        // The registry is a watchlist now, so being absent from it is not the
+        // refusal — having nothing built to run against is. See
+        // docs/any-module.md.
+        self::assertStringContainsString('no base artifacts', $tester->getDisplay());
     }
 
     public function testFailsForUntrackedCoreVersion(): void

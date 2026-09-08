@@ -22,6 +22,7 @@ use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
 use Upkeep\Gitlab\MergeRequest;
 use Upkeep\Gitlab\Project;
+use Upkeep\Cockpit\ModuleResolution;
 use Upkeep\Workflow\ExitCode;
 use Upkeep\Workflow\MrContextResolver;
 use Upkeep\Workflow\WorkflowException;
@@ -100,7 +101,8 @@ final class PublishCommand extends UpkeepCommand
     protected function perform(InputInterface $input, OutputInterface $output, SymfonyStyle $io): int
     {
         $cockpit = $this->cockpit($input);
-        $module = MrContextResolver::requireModule(
+        $module = $this->resolveModule(
+            $cockpit,
             $this->modules($cockpit),
             self::stringArgument($input, 'module'),
         );
@@ -128,11 +130,9 @@ final class PublishCommand extends UpkeepCommand
 
         $project = $client->project($module->project);
         if ($project instanceof ApiFailure) {
-            throw new WorkflowException(sprintf(
-                'Cannot resolve the GitLab project for "%s": %s',
-                $module->project,
-                $project->message,
-            ));
+            throw new WorkflowException(
+                ModuleResolution::projectFailure($this->modules($cockpit), $module, $project->message),
+            );
         }
 
         $io->section('Issue fork');
