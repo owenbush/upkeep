@@ -181,4 +181,30 @@ final class RuntimeRequirementsTest extends TestCase
             RuntimeRequirements::missing($declared, \Composer\InstalledVersions::isInstalled(...)),
         );
     }
+
+    /**
+     * Installed as somebody's dependency — which is what
+     * `composer global require` does — the package sits under vendor/, where
+     * `composer install` is meaningless. Naming the wrong command in a
+     * directory that is not a project is worse than naming none, because it
+     * reads as authoritative.
+     */
+    public function testAVendoredInstallIsToldToUpdateThePackageNotToInstallInIt(): void
+    {
+        $message = RuntimeRequirements::message(['symfony/yaml'], '/home/me/.composer/vendor/owenbush');
+
+        self::assertStringContainsString('composer global update owenbush/upkeep', $message);
+        self::assertStringNotContainsString('composer install', $message);
+        self::assertStringNotContainsString('/home/me/.composer/vendor/owenbush', $message);
+    }
+
+    /** A clone has a project to run it in, and the path is the useful part. */
+    public function testACloneIsToldWhereToRunComposerInstall(): void
+    {
+        $message = RuntimeRequirements::message(['symfony/yaml'], '/home/me/code/upkeep');
+
+        self::assertStringContainsString('From /home/me/code/upkeep:', $message);
+        self::assertStringContainsString('composer install', $message);
+        self::assertStringNotContainsString('global update', $message);
+    }
 }

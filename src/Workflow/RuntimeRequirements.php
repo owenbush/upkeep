@@ -117,11 +117,44 @@ final readonly class RuntimeRequirements
 
         $lines[] = '';
         $lines[] = 'This usually means vendor/ is older than the code: the dependency list';
-        $lines[] = 'changed since it was last installed. From ' . $packageRoot . ':';
+        $lines[] = 'changed since it was last installed.';
         $lines[] = '';
-        $lines[] = '  composer install';
+
+        // Two ways upkeep is installed, and only one of them has a composer
+        // project at $packageRoot to run `composer install` in. Installed as a
+        // dependency — which `composer global require` does — the package sits
+        // under vendor/, where that command is meaningless and the fix is an
+        // update of the package itself. Telling somebody to run the wrong
+        // command in a directory that is not a project is worse than saying
+        // nothing, because it looks authoritative.
+        if (self::isVendored($packageRoot)) {
+            $lines[] = '  composer global update owenbush/upkeep';
+            $lines[] = '';
+            $lines[] = '(or `composer update owenbush/upkeep` wherever you required it.)';
+        } else {
+            $lines[] = 'From ' . $packageRoot . ':';
+            $lines[] = '';
+            $lines[] = '  composer install';
+        }
         $lines[] = '';
 
         return implode(\PHP_EOL, $lines);
+    }
+
+    /**
+     * Whether this copy of upkeep is installed as somebody's dependency.
+     *
+     * A path segment rather than a composer API: `InstalledVersions` answers
+     * for the *root* project, which when upkeep is the dependency is not
+     * upkeep, and when upkeep is the clone is. Being under a `vendor`
+     * directory is the fact that actually distinguishes them, and it is true
+     * of `composer global require`, of a project-local require, and of
+     * nothing else.
+     */
+    private static function isVendored(string $packageRoot): bool
+    {
+        $segments = explode('/', str_replace('\\', '/', $packageRoot));
+
+        return \in_array('vendor', $segments, true);
     }
 }

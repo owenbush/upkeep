@@ -19,11 +19,11 @@ add-on. You never interact with either directly unless you want to.
 ## Quick start
 
 ```bash
-# 1. Install from a clone (not yet on Packagist)
-git clone https://github.com/owenbush/upkeep.git && cd upkeep && composer install
+# 1. Install
+composer global require owenbush/upkeep
 
 # 2. Scaffold a cockpit
-./bin/upkeep init ~/my-cockpit && cd ~/my-cockpit
+upkeep init ~/my-cockpit && cd ~/my-cockpit
 
 # 3. Build the base artifacts for a core version you maintain for
 upkeep base-artifacts:build --version=11
@@ -43,7 +43,7 @@ publishing.
 
 | | |
 | --- | --- |
-| [Install](docs/guide/install.md) | Requirements, installing from a clone, shell completion |
+| [Install](docs/guide/install.md) | Requirements, installing, shell completion |
 | [GitLab token](docs/guide/gitlab-token.md) | What needs a credential and what does not |
 | [Set up a cockpit](docs/guide/cockpit.md) | The registry, and what lives in a cockpit directory |
 | [Base artifacts](docs/base-artifacts.md) | The per-core building blocks, pre-release core majors, rebuilding |
