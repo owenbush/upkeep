@@ -183,18 +183,30 @@ final readonly class MrCheckout
      *
      * @throws AdapterException when the MR targets a different branch than the working copy's base
      */
-    public static function assertNativeBase(MergeRequest $mergeRequest, string $baseBranch): void
-    {
+    public static function assertNativeBase(
+        MergeRequest $mergeRequest,
+        string $baseBranch,
+        string $moduleName,
+    ): void {
         if ($mergeRequest->targetBranch === $baseBranch) {
             return;
         }
 
+        // Named, not described. "Apply the MR in an environment whose base is
+        // its target branch" is true and leaves you working out how — and the
+        // how is one command. Every other refusal here ends in something you
+        // can paste; this one did not, and a module whose default branch is
+        // not the branch its merge requests target hits it on the first try.
         throw new AdapterException(sprintf(
             'MR !%d targets branch "%s", but the environment\'s module working copy is based on branch "%s". '
-            . 'Backport testing is out of scope: apply the MR in an environment whose base is its target branch.',
+            . "Backport testing is out of scope: a verdict from the wrong base is about code nobody proposed.\n"
+            . "Re-base the working copy on the branch the MR targets, then re-run:\n"
+            . '  upkeep dev %s --branch=%s',
             $mergeRequest->iid,
             $mergeRequest->targetBranch,
             $baseBranch,
+            $moduleName,
+            $mergeRequest->targetBranch,
         ));
     }
 }

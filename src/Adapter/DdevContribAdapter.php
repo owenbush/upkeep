@@ -141,7 +141,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
             $recordedBase !== null ? trim($recordedBase) : null,
         );
 
-        MrCheckout::assertNativeBase($mergeRequest, $baseBranch);
+        MrCheckout::assertNativeBase($mergeRequest, $baseBranch, $environment->moduleName);
 
         ($this->log)(sprintf(
             'Applying MR !%d (%s -> %s) into the module working copy ...',
