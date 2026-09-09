@@ -408,6 +408,88 @@ final class GuidanceTest extends TestCase
     }
 
     /**
+     * Reported from a real dashboard, on static_setting_contexts #3603341:
+     *
+     *   !1 empty   1   –   –   draft, needs a check
+     *   upkeep check static_setting_contexts 1 --version=11
+     *
+     * The row says the merge request is empty and that a patch exists, and
+     * then sends you to check the merge request. Checking it applies nothing:
+     * the verdict would be about the branch as it already stands, reported as
+     * though it were about the contribution.
+     *
+     * The dispatch asked only whether a merge request *object* existed.
+     * RowFactory hands over the empty one when it is the only one open —
+     * correctly, since that is the merge request the row is about — and
+     * everything downstream then treated it as work to check.
+     */
+    public function testAnEmptyMergeRequestSendsYouToThePatchNotTheCheck(): void
+    {
+        $empty = self::emptyMr();
+        $contribution = self::contribution([self::file('https://x.test/a.patch')], [$empty]);
+
+        $row = DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            new Project(1, 'widget', 'project/widget', 'Widget', 'https://git.drupalcode.org/project/widget'),
+            $empty,
+            LocalEvidence::of(['11' => null], $contribution->currentRevision()),
+            new GateVerdict(GateStatus::Review, ['draft', 'ci-missing', 'local-missing']),
+        );
+
+        $guidance = Guidance::forRow($row);
+
+        self::assertStringContainsString('empty MR', $guidance->status);
+        self::assertSame('upkeep patch:check widget 3597808 --version=11', $guidance->command);
+    }
+
+    /**
+     * And with nothing to fall back to, it does not offer a check either.
+     * An empty merge request and no patch is an issue with nothing on it yet;
+     * the honest move is to go and look.
+     */
+    public function testAnEmptyMergeRequestWithNoPatchSendsYouToTheIssue(): void
+    {
+        $empty = self::emptyMr();
+        $contribution = self::contribution([], [$empty]);
+
+        $row = DashboardRow::forIssue(
+            'widget',
+            '1.0.x',
+            $contribution,
+            new Project(1, 'widget', 'project/widget', 'Widget', 'https://git.drupalcode.org/project/widget'),
+            $empty,
+            LocalEvidence::of(['11' => null], $contribution->currentRevision()),
+            new GateVerdict(GateStatus::Review, ['draft', 'ci-missing', 'local-missing']),
+        );
+
+        $guidance = Guidance::forRow($row);
+
+        self::assertSame('empty MR, nothing to check', $guidance->status);
+        self::assertSame('upkeep issue widget 1', $guidance->command);
+    }
+
+    private static function emptyMr(): MergeRequest
+    {
+        return new MergeRequest(
+            iid: 1,
+            title: 'Automated Drupal 12 compatibility fixes',
+            state: 'opened',
+            authorUsername: 'project update bot',
+            authorId: 3644742,
+            sourceBranch: 'project-update-bot-only',
+            targetBranch: '1.0.x',
+            draft: true,
+            detailedMergeStatus: null,
+            headSha: 'same',
+            webUrl: 'https://git.drupalcode.org/project/widget/-/merge_requests/1',
+            diffBaseSha: 'same',
+            diffHeadSha: 'same',
+        );
+    }
+
+    /**
      * The row the whole patch surface exists for: a merge request that covers
      * nothing, beside a patch that is the only work there is.
      */

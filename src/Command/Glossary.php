@@ -190,6 +190,13 @@ final readonly class Glossary
                 "A gate reason: the cached result is for a different revision than the MR's current head.",
                 'dashboard STATUS (-v)',
             ],
+            'no-changes' => [
+                'A gate reason: the merge request is empty — its branch is identical to the branch it '
+                    . 'targets, so merging it would change nothing. Checking one applies nothing either, which '
+                    . 'is why it has to be denied here: the checks pass against the base branch and would '
+                    . 'otherwise read as a green contribution.',
+                'dashboard STATUS (-v)',
+            ],
             'ci-missing' => [
                 'A gate reason: GitLab reports no pipeline for the head commit.',
                 'dashboard STATUS (-v)',

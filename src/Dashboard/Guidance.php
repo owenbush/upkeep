@@ -49,9 +49,44 @@ final readonly class Guidance
             return new self('unavailable', sprintf('upkeep dashboard --refresh=%s', $row->module));
         }
 
+        // An empty merge request is not work to check. Applying it changes
+        // nothing, so the checks would run against the branch as it already
+        // stands and the verdict would be reported as though it were about the
+        // contribution. Reported from a real dashboard, where a row showed
+        // "!1 empty" and "1" patch side by side and then said to check the
+        // merge request.
+        //
+        // `=== false` and never a truthiness test: carriesChanges() is
+        // deliberately nullable, and null means the list endpoint did not
+        // carry diff_refs — "not known", which no caller may read as empty.
+        if ($row->mergeRequest?->carriesChanges() === false) {
+            return self::forEmptyMergeRequest($row);
+        }
+
         return $row->mergeRequest !== null
             ? self::forMergeRequest($row)
             : self::forDormantIssue($row);
+    }
+
+    /**
+     * A merge request that carries nothing.
+     *
+     * With a patch beside it this is the shape the whole patch surface exists
+     * for — the row looks covered and is not — so the patch is the work and
+     * forDormantIssue already says all of that. With no patch there is simply
+     * nothing to check yet, and the honest move is to go and look at the
+     * issue rather than to name a command that would do nothing.
+     */
+    private static function forEmptyMergeRequest(DashboardRow $row): self
+    {
+        if ($row->patchCount > 0) {
+            return self::forDormantIssue($row);
+        }
+
+        return new self(
+            'empty MR, nothing to check',
+            sprintf('upkeep issue %s %d', $row->module, $row->requireMergeRequest()->iid),
+        );
     }
 
     /**
