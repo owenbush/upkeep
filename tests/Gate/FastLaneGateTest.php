@@ -115,6 +115,41 @@ final class FastLaneGateTest extends TestCase
         self::assertSame([], $verdict->reasons);
     }
 
+    /**
+     * An empty merge request is not mergeable work, however green it looks.
+     *
+     * This was reachable, and the route to it started with a dashboard bug:
+     * a row showing "!1 empty" beside a patch told you to check the merge
+     * request. Checking one applies nothing, so the suite runs against the
+     * base branch and passes — and green local plus green CI plus a bot author
+     * is READY-AUTO. The fast lane would then offer to merge a branch
+     * identical to its target.
+     */
+    public function testAnEmptyMergeRequestIsDeniedHoweverGreenItLooks(): void
+    {
+        $mr = $this->mr(['diffBaseSha' => 'same', 'diffHeadSha' => 'same']);
+
+        $verdict = $this->verdict($mr, $this->local());
+
+        self::assertSame(GateStatus::Review, $verdict->status);
+        self::assertContains('no-changes', $verdict->reasons);
+    }
+
+    /**
+     * And an unsettled one is not denied on a guess. The merge-request *list*
+     * endpoint omits diff_refs, so carriesChanges() is null there; reading
+     * that as empty would deny every row built from a listing.
+     */
+    public function testAMergeRequestWhoseEmptinessIsUnknownIsNotDenied(): void
+    {
+        $mr = $this->mr(['diffBaseSha' => null, 'diffHeadSha' => null]);
+
+        $verdict = $this->verdict($mr, $this->local());
+
+        self::assertSame(GateStatus::ReadyAuto, $verdict->status);
+        self::assertNotContains('no-changes', $verdict->reasons);
+    }
+
     public function testNonBotAuthorAllGreenRoutesToReviewWithNotBotAuthorReason(): void
     {
         $mr = $this->mr(['authorUsername' => 'owenbush', 'authorId' => 12345]);

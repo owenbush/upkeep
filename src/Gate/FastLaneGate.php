@@ -57,6 +57,20 @@ final class FastLaneGate
             $reasons[] = 'not-bot-author';
         }
 
+        // A merge request that carries no changes is not mergeable work,
+        // whatever else is green about it. This is reachable, and was:
+        // checking an empty merge request applies nothing, so the suite runs
+        // against the base branch and passes, and green local plus green CI
+        // plus a bot author is READY-AUTO — the fast lane offering to merge a
+        // branch identical to its target. Denied here rather than left to the
+        // prompt, because the gate is what the fast lane reads.
+        //
+        // `=== false` only: carriesChanges() is nullable and null means the
+        // payload could not settle it, which is not permission to assume.
+        if ($mr->carriesChanges() === false) {
+            $reasons[] = 'no-changes';
+        }
+
         // Draft is signaled two ways by the API (the draft flag and
         // detailed_merge_status "draft_status"); either alone denies.
         if ($mr->draft || $mr->detailedMergeStatus === 'draft_status') {
