@@ -150,6 +150,31 @@ final class PatchRowTest extends TestCase
     }
 
     /**
+     * A patch row's verbose status comes from the contribution.
+     *
+     * `toTableCells()` renders the plain-English guidance; `statusCell()` is
+     * the gate's own vocabulary behind `-v`, and `MergeCommand` prints it when
+     * it has to explain why a row is not mergeable. With no gate verdict — and
+     * a patch row never has one — that falls through to the contribution.
+     *
+     * The coverage floor found this: the browser UI was the only thing
+     * exercising the fallback, so removing it left live CLI code untested
+     * rather than dead. Deleting it would have been the wrong reading.
+     */
+    public function testTheVerboseStatusOfAPatchRowIsTheContributionsOwn(): void
+    {
+        $contribution = new Contribution('widget', self::issue(3597808, [
+            self::patch('3597808-9.patch', 'https://example.test/a.patch'),
+        ]));
+
+        $row = self::patchRow($contribution, null);
+
+        self::assertNull($row->verdict, 'a patch row carries no gate verdict, by construction');
+        self::assertSame($contribution->dashboardStatus(), $row->statusCell());
+        self::assertSame($row->statusCell(), $row->toTableCells(true)[8]);
+    }
+
+    /**
      * The invariant the whole design rests on. A row with no gate verdict is
      * not ready-auto, and cannot be made so by any evidence.
      */

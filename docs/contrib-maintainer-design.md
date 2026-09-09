@@ -63,8 +63,9 @@ first-class dimension of the design, not a hard-coded assumption.
   changes to batch in before tagging. The tool drafts notes; the human tags.
 - Not a new test rig. The per-project testing environment already exists and is
   good; this design reuses it rather than reinventing it.
-- Not a hosted service. This is local, maintainer-side tooling. (`upkeep ui`
-  serves a page on the loopback interface only, and exits with the command.)
+- Not a hosted service. This is local, maintainer-side tooling. A browser UI
+  existed briefly and was removed: nothing forced it to stay in step with the
+  core it rendered, and it fell behind twice before anyone noticed.
 - **No issue *creation*, and no status changes.** drupal.org's api-d7 is
   read-only — a POST answers 403 — so anything that writes to an issue queue
   can only be a pre-filled browser form. `issue` and `needs-work` already hand

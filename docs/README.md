@@ -28,7 +28,6 @@ module — registered or not.
 - [Review, merge and release notes](guide/review-and-merge.md)
 - [Working in an environment](guide/environments.md) — a shell, a path, a running site
 - [Fixtures](guide/fixtures.md) — check against real database state
-- [Browser UI](guide/ui.md) — the same core behind a local web page
 
 ## Reference
 

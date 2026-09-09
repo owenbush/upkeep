@@ -555,48 +555,20 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `CredentialEnvironment` (removes `UPKEEP_GITLAB_TOKEN` from every child
   process environment).
 - `src/Notes/`, `src/Config/` — release-notes drafting; config resolution.
-- `src/Ui/` — the browser UI (`upkeep ui`), a **second renderer over the same
-  core**, never a second source of truth: `Ui\StateBuilder` reads
-  `Dashboard\RowFactory`, and actions shell out to `bin/upkeep` itself, so exit
-  codes, adapter behaviour and redaction are inherited rather than
-  reimplemented. `Ui\Api` is the whole request surface as one pure
-  Request→Response function; `bin/upkeep-ui-router.php` is the only place that
-  touches a superglobal or emits a byte. Four properties are load-bearing:
-  every path (assets included) sits behind `Ui\LaunchToken`, compared with
-  `hash_equals` — and a token in the URL beats the cookie, because the URL is
-  the operator deliberately presenting a credential while the cookie is only
-  what an earlier visit left behind; the other order made a restart
-  unrecoverable, every fresh launch link being shadowed by the previous run's
-  cookie. The token stays in the address bar deliberately: stripping it read as
-  tidier and stranded people, since a restart mints a new one and a cleaned URL
-  has nothing left to present. The cookie is not a duplicate — the page's own
-  subresources and API calls carry no query string, and it brings
-  `SameSite=Strict` with it. The point of any of this is that a localhost port
-  is reachable by any page the operator visits, and this one has a GitLab PAT
-  behind it — refusals are a flat identical 404 with exactly one exception,
-  a GET of `/`, which serves a self-contained explanation because a per-run
-  token plus a URL the page strips plus a silent refusal otherwise leaves a tab
-  open across a restart unable to recover or to say why; and `upkeep ui`
-  refuses a port that is already answering *before* minting or printing
-  anything, because a second run otherwise announces a fresh URL, fails to
-  bind, and leaves the port replying with the previous run's token — a link
-  dead the moment it was written; **the browser never supplies argv** — `Ui\Jobs\JobAction` is a
-  closed whitelist of recipes whose parameters are validated into shapes they
-  already had to have; jobs record their exit status to a sentinel file so they
-  outlive the server (`JobStore` reconciles); and the page polls with a byte
-  offset rather than holding a stream, because the built-in server has few
-  workers and an offset is the only thing a client must remember across a
-  refresh. The page has two views over one snapshot — contribution rows and the
-  whole issue queue — and offers `start` and `publish` alongside the check
-  actions. `publish` is the only action reaching outside the machine, so the
-  page confirms it before asking; `start` needs no guard because it resumes
-  rather than resets. **Merging is deliberately absent** — the DA stance is one human
-  approval per merge and a button that POSTs an action name is not the per-MR
-  prompt that earns it; that needs its own design before it needs code.
-  `Ui\UiServer` is the single documented exception to the
-  credential-scrubbing invariant (see
-  `tests/Security/ProcessEnvironmentInvariantTest`), because its children are
-  upkeep itself; served job output is redacted again on the way out regardless.
+- **There is no browser UI, and that is a decision.** `upkeep ui` served the
+  cockpit as a local web page: a second renderer over the same core, actions
+  shelling out to `bin/upkeep` so exit codes and redaction were inherited
+  rather than reimplemented. It was removed. Nothing forced it to track the
+  core it rendered, and it fell behind twice — the row-model rework, and then
+  the change that made `issues` read merge requests live when there is no
+  snapshot, which `Ui\StateBuilder` never got. The result was a page showing
+  no issues for every module while the CLI showed them, which is worse than
+  having no page. The structural problem underneath: every action handed you
+  back to the terminal the moment it failed, so it was a read-mostly view
+  competing with a CLI that reads better, and the one action worth a button —
+  merging — is deliberately absent under the DA one-approval stance. It is in
+  git history if it is ever worth reviving; reviving it means solving "what
+  makes this stay in step with the core", not porting the code.
 - **Shell completion** — `upkeep completion <shell>` is Symfony Console's own,
   and command names complete for free. What does not is *values*, so
   `UpkeepCommand::complete()` suggests the registry's module machine names for
