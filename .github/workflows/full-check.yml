@@ -125,20 +125,14 @@ jobs:
             exit 1
           fi
 
+      # A pinned patch stops applying eventually, and then permanently: the
+      # branch moves and the attachment does not. That refusal is the tool
+      # working — it is most of what patch:check is for — so it warns rather
+      # than failing, and says that everything past the apply went unexercised.
       - name: patch:check downloads, applies and checks a real patch
         run: |
-          set +e
-          ./bin/upkeep patch:check "$MODULE" 3559057 --latest --version="$CORE" --cockpit="$COCKPIT"
-          status=$?
-          set -e
-          echo "exit=$status"
-          # An issue whose patch no longer applies is a true verdict, not a
-          # broken tool, so only exit 2 fails the job. Pinning the outcome
-          # instead would make this red whenever somebody re-rolls.
-          if [ "$status" -eq 2 ]; then
-            echo '::error::patch:check could not run (exit 2).'
-            exit 1
-          fi
+          .github/scripts/expect-upkeep.sh 'patch:check' 'does not[[:space:]]+apply' -- \
+            ./bin/upkeep patch:check "$MODULE" 3559057 --latest --version="$CORE" --cockpit="$COCKPIT"
 
       # The MR path, which needed a credential until reading anonymously
       # became possible. drupalcode serves a public project's merge requests,
@@ -146,15 +140,8 @@ jobs:
       # choice and the checkout with no secret in the workflow at all.
       - name: check <mr> reads drupalcode anonymously
         run: |
-          set +e
-          ./bin/upkeep check "$MODULE" 4 --version="$CORE" --cockpit="$COCKPIT"
-          status=$?
-          set -e
-          echo "exit=$status"
-          if [ "$status" -eq 2 ]; then
-            echo '::error::check <mr> could not run anonymously (exit 2).'
-            exit 1
-          fi
+          .github/scripts/expect-upkeep.sh 'check <mr>' 'only open MRs can be checked|not found or inaccessible' -- \
+            ./bin/upkeep check "$MODULE" 4 --version="$CORE" --cockpit="$COCKPIT"
 
       - name: Diagnostics on failure
         if: failure()
