@@ -47,6 +47,12 @@ jobs:
       COCKPIT: ${{ github.workspace }}/cockpit
       CORE: ${{ inputs.core || '11' }}
       MODULE: field_visibility_conditions
+      # Pinned live drupal.org state. When !4 is merged the step warns rather
+      # than failing (see expect-upkeep.sh); re-point these to keep the merge
+      # request path covered. MR_TARGET must stay the branch MR targets —
+      # upkeep refuses to apply a merge request to a base it does not target.
+      MR: '4'
+      MR_TARGET: 2.0.x
 
     steps:
       - uses: actions/checkout@v4
@@ -138,10 +144,22 @@ jobs:
       # became possible. drupalcode serves a public project's merge requests,
       # refs and forks without one, so this exercises the fetch, the merge-ref
       # choice and the checkout with no secret in the workflow at all.
+      # The working copy is on 1.0.x by now — it clones on the module's default
+      # branch, and the patch step re-based it there. Both of this module's
+      # open merge requests target 2.0.x, and upkeep refuses to apply a merge
+      # request to a base it does not target, because a verdict from the wrong
+      # base is about code nobody proposed. So put the working copy on the
+      # branch the merge request targets first; that is what `dev --branch` is
+      # for, and it is what the refusal now tells you to run.
+      - name: Re-base the working copy on the branch the MR targets
+        run: |
+          .github/scripts/expect-upkeep.sh 'dev --branch' '-' -- \
+            ./bin/upkeep dev "$MODULE" --branch="$MR_TARGET" --version="$CORE" --cockpit="$COCKPIT"
+
       - name: check <mr> reads drupalcode anonymously
         run: |
           .github/scripts/expect-upkeep.sh 'check <mr>' 'only open MRs can be checked|not found or inaccessible' -- \
-            ./bin/upkeep check "$MODULE" 4 --version="$CORE" --cockpit="$COCKPIT"
+            ./bin/upkeep check "$MODULE" "$MR" --version="$CORE" --cockpit="$COCKPIT"
 
       - name: Diagnostics on failure
         if: failure()

@@ -110,18 +110,30 @@ final class MrCheckoutTest extends TestCase
 
     public function testNativeBaseValidationPassesWhenTargetMatchesBase(): void
     {
-        MrCheckout::assertNativeBase($this->mergeRequest(targetBranch: '2.0.x'), '2.0.x');
+        MrCheckout::assertNativeBase($this->mergeRequest(targetBranch: '2.0.x'), '2.0.x', 'widget');
         $this->addToAssertionCount(1);
     }
 
-    public function testBackportIsRejectedWithAClearError(): void
+    /**
+     * The refusal names the command that fixes it.
+     *
+     * Not a nicety: a module whose default branch is not the branch its merge
+     * requests target hits this on the very first `check`, and the nightly
+     * full check hit it against a real module — field_visibility_conditions
+     * clones on 1.0.x while both of its open MRs target 2.0.x. "Apply the MR
+     * in an environment whose base is its target branch" is true and leaves
+     * you to work out how; the how is one command, and every other refusal in
+     * this tool ends in something you can paste.
+     */
+    public function testBackportIsRejectedAndSaysHowToGetTheRightBase(): void
     {
         // The only real-world shape: an MR targeting a branch the environment
         // does not have checked out as its base (e.g. fvc !2 targets 2.0.x,
         // environment base is 1.0.x) — out-of-scope backport testing.
         $this->expectException(\Upkeep\Adapter\AdapterException::class);
         $this->expectExceptionMessageMatches('/MR !2 targets branch "2\.0\.x".*branch "1\.0\.x".*[Bb]ackport/s');
-        MrCheckout::assertNativeBase($this->mergeRequest(targetBranch: '2.0.x'), '1.0.x');
+        $this->expectExceptionMessageMatches('/upkeep dev widget --branch=2\.0\.x/');
+        MrCheckout::assertNativeBase($this->mergeRequest(targetBranch: '2.0.x'), '1.0.x', 'widget');
     }
 
     private function mergeRequest(string $targetBranch): \Upkeep\Gitlab\MergeRequest
