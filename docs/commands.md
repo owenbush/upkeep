@@ -561,7 +561,7 @@ With several patches on the issue and no terminal to ask at, the newest is taken
 Apply a drupal.org patch onto an issue work branch, credited to its author, ready to publish.
 
 ```
-upkeep patch:promote [--version VERSION] [--file FILE] [--url URL] [--latest] [--cockpit COCKPIT] [--projects-root PROJECTS-ROOT] [--no-update] [--branch BRANCH] [--] <module> <issue>
+upkeep patch:promote [--version VERSION] [--file FILE] [--url URL] [--latest] [--cockpit COCKPIT] [--projects-root PROJECTS-ROOT] [--no-update] [--branch BRANCH] [--partial] [--] <module> <issue>
 ```
 
 Converts a patch contribution into a branch you can open a merge request from.
@@ -595,6 +595,7 @@ Afterwards, upkeep check &lt;module&gt; --working-copy runs the suite against th
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then &lt;cockpit&gt;/projects/ if it exists, then ~/.upkeep/projects) |
 | `--no-update` | Do not fetch the base branch first; check against the working copy's base as it stands |
 | `--branch=BRANCH` | Work branch to promote onto (default: the drupal.org &lt;nid&gt;-&lt;slug&gt; convention) |
+| `--partial` | When the patch will not apply, keep the hunks that still fit and leave the rest as .rej files to resolve by hand — the start of a re-roll rather than a refusal |
 
 ## `upkeep patches`
 

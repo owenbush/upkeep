@@ -121,6 +121,7 @@ final class PatchCheckoutTest extends TestCase
             '1.0.x',
             self::statOutput(),
             self::checkOutput(),
+            'widget',
         );
 
         self::assertInstanceOf(AdapterException::class, $e);
@@ -171,6 +172,7 @@ final class PatchCheckoutTest extends TestCase
             '1.0.x',
             self::statOutput(),
             "error: unrecognized input\n",
+            'widget',
         );
 
         self::assertStringContainsString('It changes 9 file(s).', $e->getMessage());
@@ -178,10 +180,111 @@ final class PatchCheckoutTest extends TestCase
         self::assertStringContainsString('Re-roll it against "1.0.x"', $e->getMessage());
     }
 
+    /**
+     * A patch cut against a release tarball, told apart from a stale one.
+     *
+     * drupal.org's packaging script appends `version`, `project` and
+     * `datestamp` to every .info.yml when it builds a release. A patch
+     * generated from an unpacked release carries those as *context*, and no
+     * commit ever had them — so it cannot apply to a checkout however fresh
+     * the branch is.
+     *
+     * Reported from a real run on static_setting_contexts #3603341, where the
+     * message said "that file has moved on since the patch was cut" about a
+     * file that had not moved at all, and sent the maintainer to re-roll
+     * against a branch where there was nothing to re-roll against.
+     */
+    public function testAPatchCutFromAReleaseTarballSaysSoInsteadOfBlamingTheBranch(): void
+    {
+        $check = <<<'OUT'
+            error: while searching for:
+            type: module
+            package: Custom
+            core_version_requirement: ^10 || ^11
+
+            # Information added by Drupal.org packaging script on 2025-04-25
+            version: '1.0.2'
+
+            error: patch failed: mod.info.yml:2
+            error: mod.info.yml: patch does not apply
+            OUT;
+
+        self::assertTrue(PatchCheckout::cutFromReleaseTarball($check));
+
+        $message = PatchCheckout::unappliableException(
+            self::patch(),
+            '1.0.x',
+            self::statOutput(),
+            $check,
+            'widget',
+        )->getMessage();
+
+        self::assertStringContainsString('cut against a release tarball', $message);
+        self::assertStringContainsString('regenerated from a checkout', $message);
+        self::assertStringNotContainsString('has moved on since the patch was cut', $message);
+    }
+
+    /** And an ordinary stale patch is still called stale. */
+    public function testAnOrdinaryStalePatchIsNotMistakenForATarballOne(): void
+    {
+        self::assertFalse(PatchCheckout::cutFromReleaseTarball(self::checkOutput()));
+
+        $message = PatchCheckout::unappliableException(
+            self::patch(),
+            '1.0.x',
+            self::statOutput(),
+            self::checkOutput(),
+            'widget',
+        )->getMessage();
+
+        self::assertStringNotContainsString('release tarball', $message);
+    }
+
+    /** Either way, the refusal names the way out rather than ending at "re-roll". */
+    public function testEveryUnappliableReportOffersTheRerollDoor(): void
+    {
+        $message = PatchCheckout::unappliableException(
+            self::patch(),
+            '1.0.x',
+            self::statOutput(),
+            self::checkOutput(),
+            'widget',
+        )->getMessage();
+
+        self::assertStringContainsString('upkeep patch:promote widget 3597808 --partial', $message);
+    }
+
+    /**
+     * The reject apply, and what is read back out of it.
+     *
+     * Verified against real git output: `--reject` exits non-zero even when it
+     * applied most of the patch, so the status is useless and the caller has
+     * to read what it said.
+     */
+    public function testTheRejectApplyIsReadFromItsOutputNotItsStatus(): void
+    {
+        self::assertSame(
+            ['apply', '-p1', '--reject', '/tmp/p.patch'],
+            PatchCheckout::rejectApplyArgs('/tmp/p.patch'),
+        );
+
+        $output = <<<'OUT'
+            Checking patch A.php...
+            Checking patch mod.info.yml...
+            error: patch failed: mod.info.yml:2
+            Applied patch A.php cleanly.
+            Applying patch mod.info.yml with 1 reject...
+            Rejected hunk #1.
+            OUT;
+
+        self::assertSame(['A.php'], PatchCheckout::cleanlyApplied($output));
+        self::assertSame(['mod.info.yml'], PatchCheckout::rejectedFiles($output));
+    }
+
     /** Output with nothing to parse degrades to a report without those parts. */
     public function testAFailureGitSaidNothingUsableAboutStillReportsWhatItCan(): void
     {
-        $e = PatchCheckout::unappliableException(self::patch(), '1.0.x', '', '');
+        $e = PatchCheckout::unappliableException(self::patch(), '1.0.x', '', '', 'widget');
 
         self::assertNull(PatchCheckout::searchedContext(''));
         self::assertSame([], PatchCheckout::failedFiles(''));

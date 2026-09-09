@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Upkeep\Tests\Adapter;
 
 use Upkeep\Adapter\AdapterException;
+use Upkeep\Adapter\CapturedProcess;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
 
@@ -207,6 +208,78 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
     }
 
     /**
+     * The re-roll door: what still fits lands on the work branch, and the rest
+     * is left as .rej files to resolve.
+     *
+     * Without it a patch that will not apply is a dead end — the report names
+     * the stale files and stops, while the work of re-rolling is exactly the
+     * work the failed apply was doing.
+     *
+     * Nothing is committed. The commit carries the patch author's attribution,
+     * and half their patch plus a pile of rejects is not what they wrote.
+     */
+    public function testPartialPromotionKeepsWhatFitsAndLeavesTheRest(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597808-fix-it\n",
+            'config --get upkeep.base-branch' => "1.0.x\n",
+            'apply --index' => null,
+            // Exit 1 with most of the patch applied — real git output. The
+            // status says nothing useful here, so the adapter reads what it
+            // said instead.
+            'apply -p1 --reject' => new CapturedProcess(
+                1,
+                "Checking patch a.php...\nApplied patch a.php cleanly.\n"
+                . "Applying patch mod.info.yml with 1 reject...\nRejected hunk #1.\n",
+                false,
+                0.1,
+            ),
+        ]);
+
+        $promotion = $this->adapter($runner)->promotePatch(
+            $this->environment(),
+            $this->patch(),
+            IssueBranch::named(3597808, '3597808-fix-it'),
+            "Issue #3597808 by someone: Fix it\n",
+            allowPartial: true,
+        );
+
+        self::assertFalse($promotion->isComplete());
+        self::assertSame(['a.php'], $promotion->applied);
+        self::assertSame(['mod.info.yml'], $promotion->rejected);
+        self::assertFalse($runner->issued('commit'), 'a partial promotion is never committed');
+    }
+
+    /**
+     * And when nothing fits there is no head start to offer, so it refuses as
+     * it always did rather than reporting an empty success.
+     */
+    public function testPartialPromotionStillRefusesWhenNothingApplies(): void
+    {
+        $runner = $this->engine([
+            'status --porcelain' => '',
+            'symbolic-ref --short HEAD' => "3597808-fix-it\n",
+            'config --get upkeep.base-branch' => "1.0.x\n",
+            'apply --index' => null,
+            'apply --stat' => " a.php | 2 +-\n 1 file changed\n",
+            'apply --check' => "error: a.php: patch does not apply\n",
+            'apply -p1 --reject' => new CapturedProcess(1, "Applying patch a.php with 1 reject...\n", false, 0.1),
+        ]);
+
+        $this->expectException(AdapterException::class);
+        $this->expectExceptionMessage('does not apply');
+
+        $this->adapter($runner)->promotePatch(
+            $this->environment(),
+            $this->patch(),
+            IssueBranch::named(3597808, '3597808-fix-it'),
+            "Issue #3597808 by someone: Fix it\n",
+            allowPartial: true,
+        );
+    }
+
+    /**
      * All three rungs failing is the review finding: this patch really is
      * stale. The working copy goes back to the base rather than being left
      * half-patched for the next command to inherit, and the report names the
@@ -281,14 +354,15 @@ final class DdevContribAdapterPatchTest extends DdevAdapterTestCase
             'rev-parse HEAD' => "ccccccc\n",
         ]);
 
-        $sha = $this->adapter($runner)->promotePatch(
+        $promotion = $this->adapter($runner)->promotePatch(
             $this->environment(),
             $this->patch(),
             IssueBranch::named(3597808, '3597808-fix-it'),
             "Issue #3597808 by someone: Fix it\n",
         );
 
-        self::assertSame('ccccccc', $sha);
+        self::assertTrue($promotion->isComplete(), 'a clean apply is committed, as it always was');
+        self::assertSame('ccccccc', $promotion->requireSha());
         self::assertTrue($runner->issued('checkout 3597808-fix-it'));
         self::assertTrue($runner->issued('apply --index -p1 ' . $this->patchFile));
 

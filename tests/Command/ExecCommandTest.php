@@ -13,6 +13,7 @@ use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
+use Upkeep\Adapter\PatchPromotion;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
@@ -96,7 +97,8 @@ final class ExecCommandTest extends TestCase
                 IssueBranch $branch,
                 string $commitMessage,
                 BaseRefresh $refresh = BaseRefresh::Update,
-            ): string {
+                bool $allowPartial = false,
+            ): PatchPromotion {
                 throw new \BadMethodCallException();
             }
 

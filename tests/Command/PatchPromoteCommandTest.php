@@ -11,6 +11,7 @@ use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\Environment;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Tests\Support\CliHarness;
+use Upkeep\Adapter\PatchPromotion;
 use Upkeep\Tests\Support\FakeEngineAdapter;
 use Upkeep\Workflow\ExitCode;
 
@@ -135,6 +136,51 @@ final class PatchPromoteCommandTest extends TestCase
         self::assertStringStartsWith('Issue #3597808 by hebatelhayah: Fix the widget', $message);
         self::assertStringContainsString('Patch-author: hebatelhayah', $message);
         self::assertStringContainsString('not authoring it', $message);
+    }
+
+    /**
+     * `--partial` turns a patch that will not apply from a dead end into the
+     * start of a re-roll.
+     *
+     * Reported from a real run: a patch cut against a release tarball can
+     * never apply to a git checkout, so "re-roll it" is advice with nowhere to
+     * go. What the maintainer actually wants is the work on a branch with the
+     * conflicts marked — which is what the failed apply was already doing.
+     *
+     * Exit 1, not 0: the patch did not apply, and a script treating this as
+     * success would go on to publish half of somebody's work.
+     */
+    public function testPartialPromotionReportsWhatLandedAndWhatIsLeft(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $engine->partialPromotion = PatchPromotion::partial(['widget.module'], ['widget.info.yml']);
+        $this->withIssue();
+        $this->withDownload();
+        $cli = $this->cli()->withEngine($engine);
+
+        $exit = $cli->run('patch:promote', 'widget', '3597808', '--version=11', '--partial');
+
+        self::assertSame(ExitCode::FAILED, $exit, $cli->display());
+        self::assertTrue($engine->promotions[0]['partial'], 'the flag reaches the adapter');
+
+        $out = $cli->display();
+        self::assertStringContainsString('did not apply cleanly', $out);
+        self::assertStringContainsString('widget.module', $out);
+        self::assertStringContainsString('widget.info.yml.rej', $out);
+        self::assertStringContainsString('Nothing is committed', $out);
+        self::assertStringContainsString('upkeep publish widget 3597808', $out);
+    }
+
+    /** Without the flag, an unappliable patch refuses exactly as before. */
+    public function testPromotionIsNotPartialUnlessAskedFor(): void
+    {
+        $engine = FakeEngineAdapter::withEnvironment(self::environment());
+        $this->withIssue();
+        $this->withDownload();
+
+        $this->cli()->withEngine($engine)->run('patch:promote', 'widget', '3597808', '--version=11');
+
+        self::assertFalse($engine->promotions[0]['partial']);
     }
 
     /**
