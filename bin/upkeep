@@ -34,7 +34,6 @@ use Upkeep\Command\PublishCommand;
 use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StartCommand;
 use Upkeep\Command\StatusCommand;
-use Upkeep\Command\UiCommand;
 use Upkeep\Command\VersionOptionInput;
 use Upkeep\Security\SecretRedactor;
 use Upkeep\Workflow\ExitCode;
@@ -105,7 +104,6 @@ $application->addCommands([
     new ReviewCommand($engines),
     new StartCommand($engines),
     new StatusCommand($volumeProbe),
-    new UiCommand(),
 ]);
 
 // The check/review/dashboard commands use --version as the target-core

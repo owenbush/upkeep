@@ -39,7 +39,6 @@ use Upkeep\Command\PublishCommand;
 use Upkeep\Command\ReviewCommand;
 use Upkeep\Command\StartCommand;
 use Upkeep\Command\StatusCommand;
-use Upkeep\Command\UiCommand;
 use Upkeep\Command\VersionOptionInput;
 use Upkeep\Drupal\DrupalOrgClient;
 use Upkeep\Gitlab\GitlabClient;
@@ -464,7 +463,6 @@ final class CliHarness
             new ReviewCommand($engines, $this->gitlab),
             new StartCommand($engines, $this->drupalOrg),
             new StatusCommand($probe),
-            new UiCommand(static fn (): int => 0),
         ]);
 
         $definition = $application->getDefinition();

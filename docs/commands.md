@@ -43,7 +43,6 @@ Conventions worth knowing before the list:
 | [`review`](#upkeep-review) | Apply a merge request to a running site and print its browsable URL. |
 | [`start`](#upkeep-start) | Start (or resume) work on a drupal.org issue: provision an environment and open a branch. |
 | [`status`](#upkeep-status) | Report cockpit state; --disk itemizes real measured disk usage per module, core version, and category. |
-| [`ui`](#upkeep-ui) | Serve the cockpit dashboard in a browser (localhost only; runs until interrupted). |
 
 ## Global options
 
@@ -765,20 +764,4 @@ upkeep status [--disk] [--cockpit COCKPIT] [--projects-root PROJECTS-ROOT]
 | `--disk` | Itemize disk usage (project trees, materialized snapshots, docker volumes, base artifacts, fixture dumps) with totals |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then &lt;cockpit&gt;/projects/ if it exists, then ~/.upkeep/projects) |
-
-## `upkeep ui`
-
-Serve the cockpit dashboard in a browser (localhost only; runs until interrupted).
-
-```
-upkeep ui [--cockpit COCKPIT] [--port PORT] [--no-open]
-```
-
-**Options**
-
-| Option | What it does |
-| --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
-| `--port=PORT` | Port to listen on (default: 8721) |
-| `--no-open` | Do not open the drupal.org issue in the browser |
 

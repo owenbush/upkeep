@@ -60,7 +60,6 @@ publishing.
 | [Review, merge and release notes](docs/guide/review-and-merge.md) | Looking at it, merging it, writing it up |
 | [Working in an environment](docs/guide/environments.md) | A shell, a path, a running site |
 | [Fixtures](docs/guide/fixtures.md) | Check against real database state |
-| [Browser UI](docs/guide/ui.md) | The same core behind a local web page |
 
 **Reference**
 
