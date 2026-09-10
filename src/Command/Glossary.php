@@ -210,8 +210,11 @@ final readonly class Glossary
             ],
             'partial promotion' => [
                 'A patch that would not apply, promoted anyway: every hunk that still fits is applied to the '
-                    . 'issue work branch and the rest is left as .rej files. Exits 1 rather than 0 — the patch '
-                    . 'did not apply, and treating it as success would publish half of somebody\'s work.',
+                    . 'issue work branch and the rest is left as .rej files. On `patch:promote` only — it is the '
+                    . 'one patch command whose branch upkeep never resets, and rejects resolved on the '
+                    . 'disposable patch-<nid> branch would be destroyed by the next apply. Exits 1 rather than '
+                    . '0 — the patch did not apply, and treating it as success would publish half of '
+                    . 'somebody\'s work.',
                 'patch:promote --partial',
             ],
 

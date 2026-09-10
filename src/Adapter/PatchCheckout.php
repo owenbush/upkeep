@@ -179,7 +179,12 @@ final readonly class PatchCheckout
         }
 
         $lines[] = '';
-        $lines[] = 'To start the re-roll from what still fits:';
+        // `promote`, whichever command you were running. It is the only patch
+        // command that lands on the issue work branch, which upkeep never
+        // resets — `patch-<nid>` is rebuilt from the base on every apply, so
+        // rejects resolved there would be destroyed by the next run.
+        $lines[] = 'To start the re-roll from what still fits — promote, because it is the only patch command';
+        $lines[] = 'whose branch survives the next apply:';
         $lines[] = sprintf('  upkeep patch:promote %s %d --partial', $moduleName, $patch->issueNid);
 
         return new AdapterException(implode("\n", $lines));
