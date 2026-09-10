@@ -139,6 +139,31 @@ final readonly class MrCheckout
      */
     public static function resolveBaseBranch(?string $currentBranch, ?string $recordedBase): string
     {
+        // The record is a fallback, not an override. It exists to answer the
+        // one question the working copy cannot: what an upkeep-managed branch
+        // was cut from, while you are sitting on it. When the working copy is
+        // on a real branch, *that* is the base, and the record is at best a
+        // description of some earlier state.
+        //
+        // It used to win outright, which made a stale record permanent. Check
+        // a patch (recording 1.0.x), move to the branch a merge request
+        // targets, and the check still refused on a 1.0.x base — telling you
+        // to run `upkeep dev <module> --branch=2.0.x`, which is what you had
+        // just run. Found by the nightly full check, twice.
+        //
+        // Clearing the record on checkout would not have been enough: the
+        // module working copy is a real clone and `git checkout` in it is
+        // ordinary, expected use, so the record can go stale without upkeep
+        // ever being told.
+        if (
+            $currentBranch !== null
+            && $currentBranch !== ''
+            && !ManagedBranch::isManaged($currentBranch)
+            && !IssueBranch::isWorkBranch($currentBranch)
+        ) {
+            return $currentBranch;
+        }
+
         if ($recordedBase !== null && $recordedBase !== '') {
             return $recordedBase;
         }
@@ -164,16 +189,16 @@ final readonly class MrCheckout
         // verdict on the contribution alone. Refused rather than guessed,
         // because the wrong answer here is a green check on code that was
         // never actually tested.
-        if (IssueBranch::isWorkBranch($currentBranch)) {
-            throw new AdapterException(sprintf(
-                'The module working copy is on your own work branch "%s". Checking a contribution from here would '
-                . 'test it on top of that work. Switch to the target branch first (git -C <module> checkout <base>), '
-                . 'then re-run.',
-                $currentBranch,
-            ));
-        }
-
-        return $currentBranch;
+        //
+        // The last case, and unconditional: everything a real branch could
+        // answer was answered at the top, so anything still here is a work
+        // branch with no record behind it.
+        throw new AdapterException(sprintf(
+            'The module working copy is on your own work branch "%s". Checking a contribution from here would '
+            . 'test it on top of that work. Switch to the target branch first (git -C <module> checkout <base>), '
+            . 'then re-run.',
+            $currentBranch,
+        ));
     }
 
     /**

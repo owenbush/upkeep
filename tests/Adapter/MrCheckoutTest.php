@@ -84,10 +84,37 @@ final class MrCheckoutTest extends TestCase
         self::assertSame('mr-2', MrCheckout::branchName(2));
     }
 
-    public function testRecordedBaseBranchWinsOverTheCurrentBranch(): void
+    /**
+     * The record answers only what the working copy cannot.
+     *
+     * On a managed branch there is no other way to know what it was cut from,
+     * so the record wins. On a real branch, that branch *is* the base and the
+     * record is at best a description of some earlier state.
+     */
+    public function testTheRecordedBaseIsUsedOnlyWhenTheBranchCannotAnswer(): void
     {
-        self::assertSame('2.0.x', MrCheckout::resolveBaseBranch('mr-2', '2.0.x'));
-        self::assertSame('2.0.x', MrCheckout::resolveBaseBranch('1.0.x', '2.0.x'));
+        self::assertSame('2.0.x', MrCheckout::resolveBaseBranch('mr-2', '2.0.x'), 'managed: ask the record');
+        self::assertSame('2.0.x', MrCheckout::resolveBaseBranch('patch-3559057', '2.0.x'));
+        self::assertSame('2.0.x', MrCheckout::resolveBaseBranch(null, '2.0.x'), 'detached: ask the record');
+    }
+
+    /**
+     * This assertion used to be the other way round, and it was wrong.
+     *
+     * A stale record was permanent once written: check a patch, which records
+     * the issue's base as 1.0.x, then move the working copy to the branch a
+     * merge request targets, and the check still refused on a 1.0.x base —
+     * advising `upkeep dev <module> --branch=2.0.x`, which is exactly what had
+     * just been run. The nightly full check hit it twice.
+     *
+     * Clearing the record on checkout would not fix it. The module working
+     * copy is a real clone and `git checkout` in it is ordinary use, so the
+     * record can go stale without upkeep ever being told; the reader has to be
+     * right rather than the writer being diligent.
+     */
+    public function testARealBranchOutranksAStaleRecord(): void
+    {
+        self::assertSame('2.0.x', MrCheckout::resolveBaseBranch('2.0.x', '1.0.x'));
     }
 
     public function testCurrentBranchIsTheBaseWhenNothingIsRecorded(): void
