@@ -121,6 +121,7 @@ final readonly class PatchCheckout
         string $baseBranch,
         string $statOutput,
         string $checkOutput,
+        string $moduleName,
     ): AdapterException {
         $failed = self::failedFiles($checkOutput);
         $touched = self::touchedFiles($statOutput);
@@ -157,15 +158,94 @@ final readonly class PatchCheckout
         }
 
         $lines[] = '';
-        $lines[] = $failed === []
-            ? 'Re-roll it against "' . $baseBranch . '", or check the issue for a newer patch.'
-            : sprintf(
-                'That file has moved on since the patch was cut. Re-roll against "%s", or check the issue for a '
-                . 'newer patch.',
+        if (self::cutFromReleaseTarball($checkOutput)) {
+            // Not staleness, and saying "that file has moved on" sends
+            // somebody looking for changes that were never made.
+            $lines[] = sprintf(
+                'This patch was cut against a release tarball, not a git checkout: the context it is looking '
+                . 'for contains lines the drupal.org packaging script adds to .info.yml files at release time '
+                . "and the repository does not have. Re-rolling against \"%s\" will not help until it is "
+                . 'regenerated from a checkout.',
                 $baseBranch,
             );
+        } else {
+            $lines[] = $failed === []
+                ? 'Re-roll it against "' . $baseBranch . '", or check the issue for a newer patch.'
+                : sprintf(
+                    'That file has moved on since the patch was cut. Re-roll against "%s", or check the issue '
+                    . 'for a newer patch.',
+                    $baseBranch,
+                );
+        }
+
+        $lines[] = '';
+        $lines[] = 'To start the re-roll from what still fits:';
+        $lines[] = sprintf('  upkeep patch:promote %s %d --partial', $moduleName, $patch->issueNid);
 
         return new AdapterException(implode("\n", $lines));
+    }
+
+    /**
+     * A `--reject` apply: takes every hunk that fits and writes the rest to
+     * `<file>.rej` beside the file it could not change.
+     *
+     * No `--index`, unlike every other rung. The point of this one is to hand
+     * back a working copy somebody is about to edit, so staging half of it
+     * would put them in a state where `git diff` hides the very changes they
+     * came to look at. It exits non-zero even when it applied most of the
+     * patch, so the caller reads the output rather than the status.
+     *
+     * @return list<string>
+     */
+    public static function rejectApplyArgs(string $localPath): array
+    {
+        return ['apply', '-p1', '--reject', $localPath];
+    }
+
+    /**
+     * Whether the patch was cut against a drupal.org release tarball rather
+     * than a git checkout.
+     *
+     * The packaging script appends `version`, `project` and `datestamp` to
+     * every `.info.yml` when it builds a release. Those lines exist in the
+     * tarball and in no commit, so a patch generated from an unpacked release
+     * carries them as *context* — and no amount of re-rolling against the
+     * branch will make that context match, because the branch never had it.
+     *
+     * Worth telling apart, because the two failures give opposite advice. A
+     * stale patch wants re-rolling against the branch. This one is not
+     * necessarily stale at all; it wants regenerating from a checkout, and
+     * being told to re-roll against "1.0.x" sends you to look for changes that
+     * are not there.
+     */
+    public static function cutFromReleaseTarball(string $checkOutput): bool
+    {
+        return str_contains($checkOutput, 'Information added by Drupal.org packaging script')
+            || (bool) preg_match('/^\s*datestamp:\s*\d+/m', $checkOutput);
+    }
+
+    /**
+     * Files whose hunks were rejected, read from `git apply --reject` output.
+     *
+     * @return list<string>
+     */
+    public static function rejectedFiles(string $rejectOutput): array
+    {
+        preg_match_all('/^Applying patch (.+?) with \d+ reject/m', $rejectOutput, $matches);
+
+        return array_values(array_unique($matches[1]));
+    }
+
+    /**
+     * Files the reject apply changed cleanly.
+     *
+     * @return list<string>
+     */
+    public static function cleanlyApplied(string $rejectOutput): array
+    {
+        preg_match_all('/^Applied patch (.+?) cleanly\./m', $rejectOutput, $matches);
+
+        return array_values(array_unique($matches[1]));
     }
 
     /**

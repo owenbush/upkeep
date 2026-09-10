@@ -561,7 +561,7 @@ With several patches on the issue and no terminal to ask at, the newest is taken
 Apply a drupal.org patch onto an issue work branch, credited to its author, ready to publish.
 
 ```
-upkeep patch:promote [--version VERSION] [--file FILE] [--url URL] [--latest] [--cockpit COCKPIT] [--projects-root PROJECTS-ROOT] [--no-update] [--branch BRANCH] [--] <module> <issue>
+upkeep patch:promote [--version VERSION] [--file FILE] [--url URL] [--latest] [--cockpit COCKPIT] [--projects-root PROJECTS-ROOT] [--no-update] [--branch BRANCH] [--partial] [--] <module> <issue>
 ```
 
 Converts a patch contribution into a branch you can open a merge request from.
@@ -570,11 +570,14 @@ Converts a patch contribution into a branch you can open a merge request from.
 upkeep patch:promote pathauto 3597857
 upkeep patch:promote pathauto 3597857 --latest
 upkeep patch:promote pathauto 3597857 --file=NAME
+upkeep patch:promote pathauto 3597857 --partial
 ```
 
 The commit credits whoever posted the patch, by name, in the message — promoting moves somebody else's work into history, and the commit is the durable record of whose it is. Nothing is pushed: run upkeep publish afterwards, which is the step that puts it on drupal.org.
 
 Afterwards, upkeep check &lt;module&gt; --working-copy runs the suite against the branch it made, and upkeep dev &lt;module&gt; prints the site URL. A patch that only applied with reduced context is a weaker guarantee than a merge request implies, so checking before you publish is worth the minutes.
+
+--partial is for a patch that will not apply at all. Every hunk that still fits lands on the branch and the rest is left as &lt;file&gt;.rej beside the file it could not change, which is where a re-roll starts. Nothing is committed — the commit carries the patch author's name, and half their patch is not what they wrote — so resolve the rejects, delete the .rej files, commit, and publish. It exits 1, because the patch did not apply.
 
 **Arguments**
 
@@ -595,6 +598,7 @@ Afterwards, upkeep check &lt;module&gt; --working-copy runs the suite against th
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then &lt;cockpit&gt;/projects/ if it exists, then ~/.upkeep/projects) |
 | `--no-update` | Do not fetch the base branch first; check against the working copy's base as it stands |
 | `--branch=BRANCH` | Work branch to promote onto (default: the drupal.org &lt;nid&gt;-&lt;slug&gt; convention) |
+| `--partial` | When the patch will not apply, keep the hunks that still fit and leave the rest as .rej files to resolve by hand — the start of a re-roll rather than a refusal |
 
 ## `upkeep patches`
 

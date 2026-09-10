@@ -78,6 +78,10 @@ final class ExplainCommandTest extends TestCase
             'ready to merge', 'needs a check', 'checks are stale', 'needs your review',
             'CI failed', 'draft', 'empty MR', 'unclaimed', '↑', 'stale',
             'ISSUE', 'VERSION', 'PATCH', 'LOCAL', 'BRANCHES',
+            // Not dashboard vocabulary, but the tool prints these too, and
+            // ".rej" is the one word in the whole surface a maintainer is
+            // most likely to meet without knowing what to do about it.
+            '.rej', 'partial promotion', 'no-changes',
         ];
         foreach ($emittedTerms as $emitted) {
             self::assertContains($emitted, $defined, $emitted . ' is printed but not defined');

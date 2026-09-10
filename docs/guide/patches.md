@@ -250,6 +250,52 @@ unreadable branch list — all of them fall back rather than refuse, because
 resolving the branch exists to be right more often, not to add a way to be
 stopped.
 
+## When a patch will not apply
+
+Applying escalates — straight, then `--3way`, then reduced context — and only
+when all three fail is the patch reported as unappliable. The report names
+which files are stale and shows the context git could not find, because "this
+needs a re-roll" is the review outcome worth reporting.
+
+Two different failures produce it, and they want opposite things:
+
+- **The branch moved.** The patch is genuinely stale and wants re-rolling
+  against the branch.
+- **The patch was cut against a release tarball.** drupal.org's packaging
+  script appends `version`, `project` and `datestamp` to every `.info.yml` when
+  it builds a release, so a patch generated from an unpacked release carries
+  those lines as *context* — and no commit ever had them. It cannot apply to a
+  checkout however fresh the branch is, and re-rolling "against 1.0.x" sends
+  you looking for changes nobody made. upkeep says so when it sees the
+  packaging lines in the failing context; the fix is to regenerate the patch
+  from a git checkout.
+
+Either way, `--partial` turns the refusal into a starting point:
+
+```bash
+upkeep patch:promote pathauto 3603341 --partial
+```
+
+Every hunk that still fits is applied onto the issue work branch and the rest
+is left as `<file>.rej` beside the file it could not change. You resolve those,
+delete the `.rej` files, and carry on:
+
+```bash
+upkeep check pathauto --working-copy
+upkeep publish pathauto 3603341
+```
+
+**Nothing is committed.** A promoted patch's commit carries the patch author's
+name (see below), and half their patch plus a pile of rejects is not what they
+wrote — putting their name on it would be the misattribution the whole
+attribution rule exists to prevent. Committing is yours, once it is your work.
+
+It exits 1, not 0: the patch did not apply, and a script treating a partial
+promotion as success would publish half of somebody's contribution.
+
+If *nothing* fits, `--partial` refuses exactly as it would without the flag —
+an empty working copy beside a pile of rejects is not a head start on anything.
+
 ## Turn a patch into a merge request
 
 A patch and a merge request carry the same work, but only one of them gets CI,

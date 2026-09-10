@@ -444,6 +444,31 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   resource's `owner` reference is already in the payload the client
   dereferences for the filename (`IssueFile::$ownerUid`), so only
   `DrupalOrgClient::user()` is new work, once per promotion.
+  **A patch that will not apply is the start of a re-roll, not a dead end.**
+  Applying escalates (straight, `--3way`, `-C1`) and only then reports; the
+  report distinguishes two failures that want opposite things.
+  `PatchCheckout::cutFromReleaseTarball()` reads the failing context for the
+  lines drupal.org's packaging script appends to every `.info.yml` at release
+  time — `version`, `project`, `datestamp`. A patch generated from an unpacked
+  release carries them as *context*, no commit has ever had them, and it
+  therefore cannot apply to a checkout however fresh the branch is; telling
+  somebody to "re-roll against 1.0.x" sends them looking for changes nobody
+  made. Found on static_setting_contexts #3603341, where the report blamed a
+  file that had not moved. Either way the refusal ends by naming
+  `patch:promote --partial`, which applies every hunk that still fits onto the
+  issue work branch and leaves the rest as `.rej` files — the work of
+  re-rolling rather than a description of it. It **never commits**: a
+  promotion's commit carries the patch author's name
+  (`Patches\PatchAttribution`), and half their patch plus a pile of rejects is
+  not what they wrote, which is the misattribution that rule exists to
+  prevent. Exit 1, not 0, because the patch did not apply and a script reading
+  success would publish half a contribution. Nothing fitting at all refuses as
+  before — an empty working copy beside rejects is no head start. The apply
+  reads `git apply --reject`'s *output*, never its status: it exits 1 even
+  when it applied most of the patch. `Adapter\PatchPromotion` carries which
+  outcome happened, because "committed at this SHA" and "partly applied,
+  nothing committed" are different answers and a nullable string would not
+  have said which.
   `check --working-copy` runs the same suite against whatever the working copy
   holds, needing no MR and no token, and **caches nothing**: every other
   verdict is keyed by a subject and a revision so staleness is detectable, and

@@ -238,7 +238,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         $this->runner->run(['git', '-C', $moduleDir, 'checkout', '-B', $branch, $cutPoint]);
         $this->runner->run(['git', '-C', $moduleDir, 'config', 'upkeep.base-branch', $baseBranch]);
 
-        $this->applyPatchFile($moduleDir, $patch, $baseBranch);
+        $this->applyPatchFile($moduleDir, $patch, $baseBranch, $environment->moduleName);
 
         $this->runner->run([
             'git', '-C', $moduleDir,
@@ -281,8 +281,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
      * Only when all three fail is the patch genuinely stale, and then the
      * report names which files are stale rather than only that something was.
      */
-    private function applyPatchFile(string $moduleDir, PatchApplication $patch, string $baseBranch): void
-    {
+    private function applyPatchFile(
+        string $moduleDir,
+        PatchApplication $patch,
+        string $baseBranch,
+        string $moduleName,
+        bool $allowPartial = false,
+    ): ?PatchPromotion {
         $attempts = [
             'straight' => PatchCheckout::applyArgs($patch->localPath),
             'three-way' => PatchCheckout::threeWayApplyArgs($patch->localPath),
@@ -312,7 +317,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
                 ));
             }
 
-            return;
+            return null;
         }
 
         // Nothing applied. Ask git what it wanted and where it failed, so the
@@ -324,12 +329,61 @@ final class DdevContribAdapter implements EngineAdapterInterface
             array_merge(['git', '-C', $moduleDir], PatchCheckout::checkArgs($patch->localPath)),
         );
 
+        if ($allowPartial) {
+            $partial = $this->applyWhatFits($moduleDir, $patch);
+            if ($partial !== null) {
+                return $partial;
+            }
+            // Nothing fitted either, so there is no re-roll to start from.
+            // Falls through to the ordinary refusal rather than reporting an
+            // empty partial success.
+        }
+
         // Leave the working copy on the base rather than half-patched: the
         // next command must not inherit a tree nobody chose.
         $this->runner->tryRun(['git', '-C', $moduleDir, 'reset', '--hard']);
         $this->runner->tryRun(['git', '-C', $moduleDir, 'checkout', $baseBranch]);
 
-        throw PatchCheckout::unappliableException($patch, $baseBranch, $stat->output, $check->output);
+        throw PatchCheckout::unappliableException(
+            $patch,
+            $baseBranch,
+            $stat->output,
+            $check->output,
+            $moduleName,
+        );
+    }
+
+    /**
+     * Applies every hunk that fits and leaves the rest as `.rej` files.
+     *
+     * Null when nothing fitted: a working copy with no change in it and a
+     * pile of rejects is not a head start on anything, and reporting it as a
+     * partial success would hide an ordinary unappliable patch behind a
+     * cheerier message.
+     *
+     * The tree is left dirty on purpose. This is the beginning of a re-roll,
+     * and the person doing it is about to edit these files.
+     */
+    private function applyWhatFits(string $moduleDir, PatchApplication $patch): ?PatchPromotion
+    {
+        ($this->log)('Applying what still fits, and leaving the rest as .rej files ...');
+
+        $result = $this->runner->capture(array_merge(
+            ['git', '-C', $moduleDir],
+            PatchCheckout::rejectApplyArgs($patch->localPath),
+        ));
+
+        $applied = PatchCheckout::cleanlyApplied($result->output);
+        $rejected = PatchCheckout::rejectedFiles($result->output);
+
+        if ($applied === []) {
+            $this->runner->tryRun(['git', '-C', $moduleDir, 'reset', '--hard']);
+            $this->runner->tryRun(['git', '-C', $moduleDir, 'clean', '-fd']);
+
+            return null;
+        }
+
+        return PatchPromotion::partial($applied, $rejected);
     }
 
     public function startWork(
@@ -533,7 +587,8 @@ final class DdevContribAdapter implements EngineAdapterInterface
         IssueBranch $branch,
         string $commitMessage,
         BaseRefresh $refresh = BaseRefresh::Update,
-    ): string {
+        bool $allowPartial = false,
+    ): PatchPromotion {
         $moduleDir = $environment->projectPath . '/' . self::MODULE_DIR;
 
         // startWork owns the dirty-tree refusal and the resume-never-reset
@@ -547,7 +602,27 @@ final class DdevContribAdapter implements EngineAdapterInterface
         // The work branch is what the patch is applied onto, so it is also
         // what a failure names and returns to — an unappliable patch leaves
         // the branch exactly as it was found.
-        $this->applyPatchFile($moduleDir, $patch, $branch->name);
+        $partial = $this->applyPatchFile(
+            $moduleDir,
+            $patch,
+            $branch->name,
+            $environment->moduleName,
+            $allowPartial,
+        );
+
+        // Deliberately uncommitted. The commit carries the patch author's
+        // attribution, and half their patch plus a pile of rejects is not
+        // what they wrote — committing it would put their name on it.
+        if ($partial !== null) {
+            ($this->log)(sprintf(
+                'Applied %d file(s) onto %s; %d left rejected.',
+                \count($partial->applied),
+                $branch->name,
+                \count($partial->rejected),
+            ));
+
+            return $partial;
+        }
 
         $this->runner->run([
             'git', '-C', $moduleDir,
@@ -559,7 +634,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         $sha = trim($this->runner->run(['git', '-C', $moduleDir, 'rev-parse', 'HEAD']));
         ($this->log)(sprintf('Committed onto %s at %s.', $branch->name, substr($sha, 0, 8)));
 
-        return $sha;
+        return PatchPromotion::committed($sha);
     }
 
     private static function trimmed(?string $value): ?string

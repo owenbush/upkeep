@@ -10,6 +10,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Upkeep\Adapter\IssueBranch;
+use Upkeep\Adapter\PatchPromotion;
 use Upkeep\Drupal\DrupalUser;
 use Upkeep\Patches\PatchAttribution;
 use Upkeep\Workflow\ExitCode;
@@ -55,6 +56,7 @@ final class PatchPromoteCommand extends AbstractPatchCommand
               <info>upkeep patch:promote pathauto 3597857</info>
               <info>upkeep patch:promote pathauto 3597857 --latest</info>
               <info>upkeep patch:promote pathauto 3597857 --file=NAME</info>
+              <info>upkeep patch:promote pathauto 3597857 --partial</info>
 
             The commit credits whoever posted the patch, by name, in the message — promoting
             moves somebody else's work into history, and the commit is the durable record of
@@ -65,6 +67,13 @@ final class PatchPromoteCommand extends AbstractPatchCommand
             it made, and <info>upkeep dev <module></info> prints the site URL. A patch that only applied
             with reduced context is a weaker guarantee than a merge request implies, so
             checking before you publish is worth the minutes.
+
+            <info>--partial</info> is for a patch that will not apply at all. Every hunk that still fits
+            lands on the branch and the rest is left as <info><file>.rej</info> beside the file it could
+            not change, which is where a re-roll starts. Nothing is committed — the commit
+            carries the patch author's name, and half their patch is not what they wrote — so
+            resolve the rejects, delete the .rej files, commit, and publish. It exits 1,
+            because the patch did not apply.
             HELP);
 
         $this->configurePatchSurface();
@@ -73,6 +82,17 @@ final class PatchPromoteCommand extends AbstractPatchCommand
             null,
             InputOption::VALUE_REQUIRED,
             'Work branch to promote onto (default: the drupal.org <nid>-<slug> convention)',
+        );
+        // The re-roll door. Without it a patch that no longer applies is a
+        // dead end: the report says which files are stale and stops, while
+        // the work of re-rolling is exactly the work the failed apply was
+        // doing.
+        $this->addOption(
+            'partial',
+            null,
+            InputOption::VALUE_NONE,
+            'When the patch will not apply, keep the hunks that still fit and leave the rest as .rej files to '
+            . 'resolve by hand — the start of a re-roll rather than a refusal',
         );
     }
 
@@ -96,15 +116,24 @@ final class PatchPromoteCommand extends AbstractPatchCommand
         $environment = $adapter->ensureEnv($context->module, $context->coreMajor);
 
         $io->section('Promote');
-        $sha = $adapter->promotePatch(
+        $promotion = $adapter->promotePatch(
             $environment,
             $context->application(),
             $branch,
             $attribution->message(),
             self::baseRefresh($input),
+            $input->getOption('partial') === true,
         );
 
-        $io->success(sprintf('%s now carries the patch at %s.', $branch->name, substr($sha, 0, 8)));
+        if (!$promotion->isComplete()) {
+            return $this->reportPartial($io, $context, $branch, $promotion);
+        }
+
+        $io->success(sprintf(
+            '%s now carries the patch at %s.',
+            $branch->name,
+            substr($promotion->requireSha(), 0, 8),
+        ));
         $io->writeln($attribution->message());
 
         $io->writeln('<fg=gray>Nothing has been pushed. Run the checks against it, look at the site, then publish:</>');
@@ -117,6 +146,53 @@ final class PatchPromoteCommand extends AbstractPatchCommand
         ));
 
         return ExitCode::OK;
+    }
+
+    /**
+     * A partial promotion: what landed, what did not, and what to do about it.
+     *
+     * Exit 1 rather than 0. The patch did not apply, which is the supervised
+     * work failing — the same answer `patch:check` gives — and a script that
+     * treated this as success would push a half-applied patch. Nothing here
+     * is an upkeep failure, so it is not exit 2 either.
+     */
+    private function reportPartial(
+        SymfonyStyle $io,
+        PatchContext $context,
+        IssueBranch $branch,
+        PatchPromotion $promotion,
+    ): int {
+        $io->warning(sprintf(
+            'The patch did not apply cleanly. %d file(s) landed on %s; %d still need doing by hand.',
+            \count($promotion->applied),
+            $branch->name,
+            \count($promotion->rejected),
+        ));
+
+        if ($promotion->applied !== []) {
+            $io->writeln('<fg=gray>Applied:</>');
+            foreach ($promotion->applied as $file) {
+                $io->writeln('  ' . $file);
+            }
+        }
+
+        $io->writeln('<fg=gray>Rejected — each has a .rej file beside it holding the hunks that did not fit:</>');
+        foreach ($promotion->rejected as $file) {
+            $io->writeln(sprintf('  %s  <fg=gray>(%s.rej)</>', $file, $file));
+        }
+
+        $io->writeln('');
+        $io->writeln('<fg=gray>Nothing is committed: the commit carries the patch author\'s name, and this is not</>');
+        $io->writeln('<fg=gray>their work yet. Resolve the rejects, delete the .rej files, then:</>');
+        $io->writeln(sprintf('  <info>upkeep dev %s</info>', $context->module->name));
+        $io->writeln(sprintf('  <info>upkeep check %s --working-copy</info>', $context->module->name));
+        $io->writeln(sprintf(
+            '  <info>upkeep publish %s %d</info>',
+            $context->module->name,
+            $context->issue->nid,
+        ));
+
+        return ExitCode::FAILED;
     }
 
     /**

@@ -102,7 +102,12 @@ interface EngineAdapterInterface
      * carries the patch author's name into the history (see
      * Patches\PatchAttribution).
      *
-     * @return string the head SHA of the commit that now carries the patch
+     * @param bool $allowPartial when the patch will not apply, take the hunks
+     *                            that still fit and leave the rest as `.rej`
+     *                            files rather than refusing — the start of a
+     *                            re-roll instead of a dead end
+     *
+     * @return PatchPromotion committed, or partial with nothing committed
      *
      * @throws AdapterException when the working copy is dirty or the patch
      *                          does not apply
@@ -113,7 +118,8 @@ interface EngineAdapterInterface
         IssueBranch $branch,
         string $commitMessage,
         BaseRefresh $refresh = BaseRefresh::Update,
-    ): string;
+        bool $allowPartial = false,
+    ): PatchPromotion;
 
     /**
      * Pushes a work branch to $remote, adding or re-pointing it as needed.

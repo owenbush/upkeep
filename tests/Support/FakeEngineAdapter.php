@@ -11,6 +11,7 @@ use Upkeep\Adapter\Environment;
 use Upkeep\Adapter\GitRemote;
 use Upkeep\Adapter\IssueBranch;
 use Upkeep\Adapter\PatchApplication;
+use Upkeep\Adapter\PatchPromotion;
 use Upkeep\Adapter\ServeResult;
 use Upkeep\Adapter\WorkingCopyStatus;
 use Upkeep\Cockpit\Module;
@@ -199,7 +200,7 @@ final class FakeEngineAdapter implements EngineAdapterInterface
      * promoted patch's attribution *is*, so a test that did not assert on it
      * would not be testing the feature.
      *
-     * @var list<array{branch: string, patch: string, message: string}>
+     * @var list<array{branch: string, patch: string, message: string, partial: bool}>
      */
     public array $promotions = [];
 
@@ -213,7 +214,8 @@ final class FakeEngineAdapter implements EngineAdapterInterface
         IssueBranch $branch,
         string $commitMessage,
         BaseRefresh $refresh = BaseRefresh::Update,
-    ): string {
+        bool $allowPartial = false,
+    ): PatchPromotion {
         if ($this->promoteFailure !== null) {
             throw $this->promoteFailure;
         }
@@ -224,10 +226,18 @@ final class FakeEngineAdapter implements EngineAdapterInterface
             'branch' => $branch->name,
             'patch' => $patch->name,
             'message' => $commitMessage,
+            'partial' => $allowPartial,
         ];
 
-        return $this->promotedSha;
+        if ($this->partialPromotion !== null) {
+            return $this->partialPromotion;
+        }
+
+        return PatchPromotion::committed($this->promotedSha);
     }
+
+    /** Set to make promotePatch report a partial application. */
+    public ?PatchPromotion $partialPromotion = null;
 
     /** @var list<array{name: string, url: string}> where each push was sent */
     public array $pushedRemotes = [];
