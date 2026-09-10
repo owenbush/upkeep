@@ -270,7 +270,8 @@ Two different failures produce it, and they want opposite things:
   packaging lines in the failing context; the fix is to regenerate the patch
   from a git checkout.
 
-Either way, `--partial` turns the refusal into a starting point:
+Either way, `--partial` turns the refusal into a starting point. It is on
+**`patch:promote` only**, whichever command produced the failure:
 
 ```bash
 upkeep patch:promote pathauto 3603341 --partial
@@ -295,6 +296,27 @@ promotion as success would publish half of somebody's contribution.
 
 If *nothing* fits, `--partial` refuses exactly as it would without the flag —
 an empty working copy beside a pile of rejects is not a head start on anything.
+
+### Why only `patch:promote`
+
+Resolving rejects is work, and it has to go somewhere that survives.
+
+| Command | Lands on | Survives the next apply? |
+| --- | --- | --- |
+| `patch:check` | `patch-<nid>` | No — reset from the base every time |
+| `patch:apply` | `patch-<nid>` | No — reset from the base every time |
+| `patch:promote` | the issue work branch | Yes — `start` never resets one |
+
+That reset is deliberate where it is: it makes a re-roll get tested on its own
+rather than stacked on whatever was applied last. But it means rejects resolved
+on `patch-<nid>` would be destroyed by the next `patch:check` on that issue,
+without warning, because destroying that branch is the correct behaviour there.
+The issue work branch is the one upkeep promises never to reset — it can hold
+the only copy of something — so it is the only safe place to do the work.
+
+`patch:check --partial` would be worse than unavailable. It would run the suite
+against a half-applied patch and cache the result *as a verdict on the patch* —
+evidence the fast-lane gate reads.
 
 ## Turn a patch into a merge request
 
