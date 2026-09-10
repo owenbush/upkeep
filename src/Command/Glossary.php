@@ -202,6 +202,19 @@ final readonly class Glossary
                 'dashboard STATUS (-v)',
             ],
 
+            '.rej' => [
+                'A file `patch:promote --partial` leaves beside one it could not change, holding the hunks '
+                    . 'that did not fit. Resolving them by hand and deleting the .rej files is the re-roll. '
+                    . 'Nothing is committed until you do, because the commit carries the patch author\'s name.',
+                'patch:promote --partial output',
+            ],
+            'partial promotion' => [
+                'A patch that would not apply, promoted anyway: every hunk that still fits is applied to the '
+                    . 'issue work branch and the rest is left as .rej files. Exits 1 rather than 0 — the patch '
+                    . 'did not apply, and treating it as success would publish half of somebody\'s work.',
+                'patch:promote --partial',
+            ],
+
             // --------------------------------------------- drupal.org statuses
             'active' => [
                 'A drupal.org issue status: open, and waiting on nobody in particular. Where new work begins.',

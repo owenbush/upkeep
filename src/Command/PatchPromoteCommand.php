@@ -56,6 +56,7 @@ final class PatchPromoteCommand extends AbstractPatchCommand
               <info>upkeep patch:promote pathauto 3597857</info>
               <info>upkeep patch:promote pathauto 3597857 --latest</info>
               <info>upkeep patch:promote pathauto 3597857 --file=NAME</info>
+              <info>upkeep patch:promote pathauto 3597857 --partial</info>
 
             The commit credits whoever posted the patch, by name, in the message — promoting
             moves somebody else's work into history, and the commit is the durable record of
@@ -66,6 +67,13 @@ final class PatchPromoteCommand extends AbstractPatchCommand
             it made, and <info>upkeep dev <module></info> prints the site URL. A patch that only applied
             with reduced context is a weaker guarantee than a merge request implies, so
             checking before you publish is worth the minutes.
+
+            <info>--partial</info> is for a patch that will not apply at all. Every hunk that still fits
+            lands on the branch and the rest is left as <info><file>.rej</info> beside the file it could
+            not change, which is where a re-roll starts. Nothing is committed — the commit
+            carries the patch author's name, and half their patch is not what they wrote — so
+            resolve the rejects, delete the .rej files, commit, and publish. It exits 1,
+            because the patch did not apply.
             HELP);
 
         $this->configurePatchSurface();
