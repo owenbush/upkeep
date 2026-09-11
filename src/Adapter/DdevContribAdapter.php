@@ -45,6 +45,13 @@ final class DdevContribAdapter implements EngineAdapterInterface
         CheckType::Deprecation,
     ];
 
+    /**
+     * How long starting an *existing* environment may take. Not the one-hour
+     * default: that is for resolves and installs, and applied here it turned
+     * a wedged start into an hour of silence. See startStopped().
+     */
+    private const START_TIMEOUT = 600;
+
     /** Checks that need the dev toolchain (phpunit/phpstan/phpcs binaries) in vendor/. */
     private const TOOLCHAIN_CHECKS = [CheckType::PhpUnit, CheckType::PhpStan, CheckType::PhpCs];
 
@@ -854,8 +861,7 @@ final class DdevContribAdapter implements EngineAdapterInterface
         ));
 
         if ($described->stringOrNull('status') !== 'running') {
-            ($this->log)(sprintf('Environment %s is stopped — starting it.', $projectName));
-            $this->runner->run(['ddev', 'start', '-y'], $projectPath);
+            $this->startStopped($projectName, $projectPath);
             $described = $this->describe($projectName) ?? throw new AdapterException(sprintf(
                 'Project %s did not come back after start.',
                 $projectName,
@@ -875,6 +881,58 @@ final class DdevContribAdapter implements EngineAdapterInterface
             primaryUrl: $described->stringOrNull('primary_url') ?? '',
             reused: true,
         );
+    }
+
+    /**
+     * Starts an environment that already exists.
+     *
+     * Three things were wrong with doing this as a bare `run()`, all found
+     * together after a reboot, when `ddev start` stalled on
+     * "Starting Mutagen sync process..." and upkeep printed "starting it" and
+     * then nothing:
+     *
+     *   - It was silent. ddev's own output is shown only under -v, which is
+     *     right for composer and wrong for a step that can block, because
+     *     nothing distinguished stuck from slow.
+     *   - It inherited the one-hour default, which exists for composer
+     *     resolves and site installs. Starting a project whose images and
+     *     volumes already exist takes seconds; ten minutes covers an image
+     *     pull after a ddev upgrade and still fails long before anyone gives
+     *     up and kills it.
+     *   - When it did time out, nothing said why.
+     *
+     * The Mutagen case gets named outright. It is the common one on macOS —
+     * an unclean shutdown leaves the sync session wedged — and the fix is a
+     * single safe command, since the host files are the source of truth and
+     * only the synced copy inside Docker is rebuilt.
+     */
+    private function startStopped(string $projectName, string $projectPath): void
+    {
+        ($this->log)(sprintf(
+            'Environment %s is stopped — starting it. This usually takes under a minute; -v shows ddev\'s own '
+            . 'output.',
+            $projectName,
+        ));
+
+        try {
+            $this->runner->run(['ddev', 'start', '-y'], $projectPath, self::START_TIMEOUT);
+        } catch (AdapterException $e) {
+            if (!str_contains($e->getMessage(), 'Mutagen')) {
+                throw $e;
+            }
+
+            throw new AdapterException(
+                $e->getMessage() . sprintf(
+                    "\n\nddev stopped while starting Mutagen, its file sync on macOS — usually a session left "
+                    . "wedged by an unclean shutdown or a reboot. Reset it and re-run:\n"
+                    . "  cd %s && ddev mutagen reset\n"
+                    . 'That rebuilds only the synced copy inside Docker; the files on disk are untouched.',
+                    $projectPath,
+                ),
+                0,
+                $e,
+            );
+        }
     }
 
     private function provision(

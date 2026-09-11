@@ -219,6 +219,30 @@ final class ProcessRunnerTest extends TestCase
         $this->runner()->run(self::php(['sleep(30);']), null, 1);
     }
 
+    /**
+     * A timeout reports the last thing the command printed.
+     *
+     * A timeout is exactly the case where output is the only clue: the
+     * command did not fail, it stopped making progress, and its last line is
+     * where. `ddev start` stalling on "Starting Mutagen sync process..." after
+     * a reboot produced an error naming only the command.
+     */
+    public function testATimeoutSaysWhereTheCommandStopped(): void
+    {
+        try {
+            $this->runner()->run(
+                self::php(['echo "Starting Mutagen sync process...", PHP_EOL; flush(); sleep(30);']),
+                null,
+                1,
+            );
+            $this->fail('Expected a timeout.');
+        } catch (AdapterException $e) {
+            $this->assertStringContainsString('timed out', $e->getMessage());
+            $this->assertStringContainsString('Last output before it stopped', $e->getMessage());
+            $this->assertStringContainsString('Starting Mutagen sync process', $e->getMessage());
+        }
+    }
+
     public function testTryRunReturnsNullOnTimeoutInsteadOfThrowing(): void
     {
         $this->assertNull($this->runner()->tryRun(self::php(['sleep(30);']), null, 1));

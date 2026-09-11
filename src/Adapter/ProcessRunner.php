@@ -50,11 +50,20 @@ final readonly class ProcessRunner implements CommandRunner
         $timedOut = false;
         $process = $this->start($command, $cwd, $timeout, $timedOut);
 
+        // With what it said before it stopped. A timeout is precisely the
+        // case where the output is the only clue: the command did not fail,
+        // it stopped making progress, and the last line it printed is where.
+        // Found by `ddev start` stalling on "Starting Mutagen sync process..."
+        // after a reboot — an error naming only the command would have told
+        // the operator nothing they did not already know.
         if ($timedOut) {
+            $excerpt = $this->failureExcerpt($process->getErrorOutput() . "\n" . $process->getOutput());
+
             throw new AdapterException($this->redactor->redact(sprintf(
-                'Command timed out after %ds: %s',
+                "Command timed out after %ds: %s%s",
                 $timeout,
                 $process->getCommandLine(),
+                $excerpt === '' ? '' : "\nLast output before it stopped:\n" . $excerpt,
             )));
         }
 

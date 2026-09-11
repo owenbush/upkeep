@@ -244,6 +244,104 @@ final class DdevContribAdapterEnvironmentTest extends DdevAdapterTestCase
         self::assertTrue($this->loggedContaining('is stopped — starting it'));
     }
 
+    /**
+     * Starting an existing environment is bounded, and says it may take a
+     * moment — it used to be silent under the one-hour default, so a wedged
+     * start after a reboot looked identical to a slow one for an hour.
+     */
+    public function testStartingAStoppedEnvironmentIsAnnouncedAndBounded(): void
+    {
+        $this->writeEnvironmentMeta();
+        $started = false;
+
+        $runner = new ScriptedCommandRunner(
+            function (array $command) use (&$started): string {
+                $line = implode(' ', $command);
+                if (str_contains($line, 'ddev start')) {
+                    $started = true;
+
+                    return '';
+                }
+
+                return str_contains($line, 'ddev describe')
+                    ? self::describeJson($started ? 'running' : 'stopped')
+                    : '';
+            },
+        );
+
+        $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+
+        $starts = array_values(array_filter(
+            $runner->invocations,
+            static fn (array $call): bool => str_contains(implode(' ', $call['command']), 'ddev start'),
+        ));
+
+        self::assertTrue($this->loggedContaining('usually takes under a minute'));
+        self::assertTrue($this->loggedContaining('-v shows ddev'));
+        self::assertCount(1, $starts);
+        self::assertLessThanOrEqual(600, $starts[0]['timeout'], 'not the one-hour resolve default');
+    }
+
+    /**
+     * A start that stalls on Mutagen names the fix.
+     *
+     * The common case on macOS: an unclean shutdown leaves the sync session
+     * wedged, and `ddev mutagen reset` is the one safe command that clears it.
+     * Found by exactly that, after a reboot.
+     */
+    public function testAStartStalledOnMutagenNamesTheReset(): void
+    {
+        $this->writeEnvironmentMeta();
+
+        $runner = new ScriptedCommandRunner(
+            static function (array $command): string|AdapterException {
+                $line = implode(' ', $command);
+                if (str_contains($line, 'ddev start')) {
+                    return new AdapterException(
+                        "Command timed out after 600s: ddev start -y\n"
+                        . "Last output before it stopped:\nStarting Mutagen sync process...",
+                    );
+                }
+
+                return str_contains($line, 'ddev describe') ? self::describeJson('stopped') : '';
+            },
+        );
+
+        try {
+            $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+            self::fail('Expected the stalled start to be reported.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('Starting Mutagen sync process', $e->getMessage());
+            self::assertStringContainsString('ddev mutagen reset', $e->getMessage());
+            self::assertStringContainsString('files on disk are untouched', $e->getMessage());
+        }
+    }
+
+    /** Any other failure to start is passed through untouched, not given a Mutagen hint. */
+    public function testAStartFailingForAnotherReasonIsNotBlamedOnMutagen(): void
+    {
+        $this->writeEnvironmentMeta();
+
+        $runner = new ScriptedCommandRunner(
+            static function (array $command): string|AdapterException {
+                $line = implode(' ', $command);
+                if (str_contains($line, 'ddev start')) {
+                    return new AdapterException('Command failed (1): ddev start -y\nport 443 is already in use');
+                }
+
+                return str_contains($line, 'ddev describe') ? self::describeJson('stopped') : '';
+            },
+        );
+
+        try {
+            $this->adapter($runner)->ensureEnv(self::module(), self::CORE);
+            self::fail('Expected the failed start to be reported.');
+        } catch (AdapterException $e) {
+            self::assertStringContainsString('port 443 is already in use', $e->getMessage());
+            self::assertStringNotContainsString('mutagen reset', $e->getMessage());
+        }
+    }
+
     public function testAnEnvironmentThatDoesNotComeBackAfterStartIsRefused(): void
     {
         $this->writeEnvironmentMeta();
