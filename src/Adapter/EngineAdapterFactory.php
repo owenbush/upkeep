@@ -24,6 +24,8 @@ interface EngineAdapterFactory
      * @param ?string $projectsRootOption the raw --projects-root value, if any
      * @param \Closure(string): void $stageLog one line per orchestration stage
      * @param \Closure(string): void $processLog streamed child-process output
+     * @param ?\Closure(): void $processIdle called as each child process exits, which is
+     *                                       when a live status line must be cleared
      *
      * @throws AdapterException when the environment location cannot be resolved
      */
@@ -32,5 +34,6 @@ interface EngineAdapterFactory
         ?string $projectsRootOption,
         \Closure $stageLog,
         \Closure $processLog,
+        ?\Closure $processIdle = null,
     ): EngineAdapterInterface;
 }

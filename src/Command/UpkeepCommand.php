@@ -118,6 +118,24 @@ abstract class UpkeepCommand extends Command
         return $this;
     }
 
+    /**
+     * Where an engine's child-process output goes: a live status line on a
+     * terminal, every line under -v, nothing extra elsewhere.
+     *
+     * Deliberately not used by `env:path` or `exec`. The first prints a path
+     * meant to be captured — `cd $(upkeep env:path …)` — and the second hands
+     * back the output of your own command; a status line in either would end
+     * up inside the thing you asked for.
+     *
+     * @return array{\Closure(string): void, \Closure(): void} the line sink and the idle hook
+     */
+    protected static function liveProcessOutput(OutputInterface $output): array
+    {
+        $status = new LiveStatus($output);
+
+        return [$status->line(...), $status->clear(...)];
+    }
+
     protected function addModuleArgument(): static
     {
         // Any Drupal module, not only a registered one: the registry became a

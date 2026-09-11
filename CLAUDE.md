@@ -213,6 +213,26 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   would be a second exception to the no-token-in-children rule. A refused push
   names the SSH-key recovery, against the host actually in the remote, because
   git's own message suggests a password and GitLab will never accept one.
+- **Child-process output is progress, not payload.** ddev, composer and git
+  print through `Command\LiveStatus`: on a terminal, the latest line sits on
+  one line that overwrites itself and is erased when the child exits; under
+  `-v` every line is kept; anywhere that is not a terminal nothing extra is
+  written, because overwriting a line in a CI log produces escape codes, not
+  progress. It used to be all or nothing, and both ends were wrong for the
+  same reason. All of it buried the few lines a command exists to print — a
+  fresh provision is hundreds of lines and `dev`'s four-line answer scrolled
+  off the top. None of it, the fix for that, made a wedged `ddev start`
+  indistinguishable from a slow one: after a reboot it stalled on "Starting
+  Mutagen sync process..." and upkeep said "starting it" and then nothing.
+  The line is cleared from `ProcessRunner`'s `onIdle` hook, which fires in a
+  `finally` as each child exits, however it exits — the one moment nothing
+  can be mid-print, so a stage line or a results table never lands glued onto
+  the end of it. The indicator advances only when output arrives; frozen is
+  the point, since that is what waiting looks like, and a spinner on a timer
+  would keep turning while nothing happened. **`env:path` and `exec` stay
+  silent on purpose**: the first prints a path meant to be captured
+  (`cd $(upkeep env:path …)`) and the second passes through your own command's
+  output, so a status line in either would end up inside what you asked for.
 - `src/Command/` — one class per CLI command; thin, delegating to the
   namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.

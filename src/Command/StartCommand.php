@@ -126,7 +126,7 @@ final class StartCommand extends UpkeepCommand
             $cockpit,
             self::stringOption($input, 'projects-root'),
             static fn (string $line) => $io->writeln($line),
-            static fn (string $line) => $io->writeln($line, OutputInterface::VERBOSITY_VERBOSE),
+            ...self::liveProcessOutput($io),
         );
 
         $io->section('Environment');

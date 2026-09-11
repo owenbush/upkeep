@@ -243,6 +243,39 @@ final class ProcessRunnerTest extends TestCase
         }
     }
 
+    /**
+     * The idle hook fires as each child exits, however it exits.
+     *
+     * It is what clears a live status line, and it has to fire on the paths
+     * that matter most for that: a timeout is exactly when the last line on
+     * screen is the stall, and leaving it there would glue the error message
+     * onto the end of it.
+     */
+    public function testTheIdleHookFiresWhenEveryChildExitsHoweverItExits(): void
+    {
+        $idle = 0;
+        $runner = new ProcessRunner(
+            static function (): void {
+            },
+            null,
+            static function () use (&$idle): void {
+                ++$idle;
+            },
+        );
+
+        $runner->run(self::php(['echo "ok";']));
+        self::assertSame(1, $idle, 'a clean run');
+
+        $runner->tryRun(self::php(['exit(3);']));
+        self::assertSame(2, $idle, 'a failed run');
+
+        $runner->capture(self::php(['echo "captured";']));
+        self::assertSame(3, $idle, 'a capture');
+
+        $runner->tryRun(self::php(['sleep(30);']), null, 1);
+        self::assertSame(4, $idle, 'a timeout — the case the status line matters most in');
+    }
+
     public function testTryRunReturnsNullOnTimeoutInsteadOfThrowing(): void
     {
         $this->assertNull($this->runner()->tryRun(self::php(['sleep(30);']), null, 1));

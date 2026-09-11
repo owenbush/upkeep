@@ -49,11 +49,12 @@ final class DevCommand extends UpkeepCommand
             $cockpit,
             self::stringOption($input, 'projects-root'),
             static fn (string $line) => $io->text($line),
-            // The engine's raw process output, which is a wall of it — behind
-            // -v like everywhere else. `dev`'s payload is four lines telling
-            // you where the site is; burying them under the provisioning
-            // transcript defeats the command.
-            static fn (string $line) => $io->writeln($line, OutputInterface::VERBOSITY_VERBOSE),
+            // The engine's raw process output, which is a wall of it: one live
+            // line on a terminal, all of it under -v. `dev`'s payload is four
+            // lines telling you where the site is, and burying them under the
+            // provisioning transcript defeated the command — but hiding the
+            // transcript entirely made a stalled start look like a slow one.
+            ...self::liveProcessOutput($io),
         );
 
         $environment = $adapter->ensureEnv($module, $coreMajor);
