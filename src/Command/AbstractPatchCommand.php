@@ -321,7 +321,7 @@ abstract class AbstractPatchCommand extends UpkeepCommand
             $this->cockpit($input),
             self::stringOption($input, 'projects-root'),
             static fn (string $line) => $output->writeln($line),
-            static fn (string $line) => $output->writeln($line, OutputInterface::VERBOSITY_VERBOSE),
+            ...self::liveProcessOutput($output),
         );
     }
 }

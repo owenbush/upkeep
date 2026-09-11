@@ -175,9 +175,9 @@ final class PruneCommand extends UpkeepCommand
             $cockpit,
             self::stringOption($input, 'projects-root'),
             static fn (string $line) => $io->writeln($line),
-            // Raw engine output behind -v: what was reclaimed is the report,
-            // and teardown's transcript is not it.
-            static fn (string $line) => $io->writeln($line, OutputInterface::VERBOSITY_VERBOSE),
+            // What was reclaimed is the report; teardown's transcript is not
+            // it. One live line on a terminal, all of it under -v.
+            ...self::liveProcessOutput($io),
         );
 
         $outcome = (new PruneExecutor(

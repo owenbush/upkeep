@@ -33,6 +33,7 @@ final class StubEngineAdapterFactory implements EngineAdapterFactory
         ?string $projectsRootOption,
         \Closure $stageLog,
         \Closure $processLog,
+        ?\Closure $processIdle = null,
     ): EngineAdapterInterface {
         if ($this->stageLine !== null) {
             $stageLog($this->stageLine);

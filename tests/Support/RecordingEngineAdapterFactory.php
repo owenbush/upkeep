@@ -37,6 +37,7 @@ final class RecordingEngineAdapterFactory implements EngineAdapterFactory
         ?string $projectsRootOption,
         \Closure $stageLog,
         \Closure $processLog,
+        ?\Closure $processIdle = null,
     ): EngineAdapterInterface {
         $this->cockpitRoot = $cockpit->root;
         $this->projectsRoot = ProjectsRoot::resolve($projectsRootOption, $cockpit->root);

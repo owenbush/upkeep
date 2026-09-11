@@ -32,11 +32,12 @@ final readonly class DdevContribAdapterFactory implements EngineAdapterFactory
         ?string $projectsRootOption,
         \Closure $stageLog,
         \Closure $processLog,
+        ?\Closure $processIdle = null,
     ): EngineAdapterInterface {
         return new DdevContribAdapter(
             new ArtifactLayout($cockpit->baseArtifactsPath()),
             ProjectsRoot::resolve($projectsRootOption, $cockpit->root),
-            new ProcessRunner($processLog, $this->redactor),
+            new ProcessRunner($processLog, $this->redactor, $processIdle),
             $stageLog,
         );
     }

@@ -35,8 +35,17 @@ final readonly class ProcessRunner implements CommandRunner
     /**
      * @param \Closure(string): void $log
      */
-    public function __construct(private \Closure $log, ?SecretRedactor $redactor = null)
-    {
+    /**
+     * @param \Closure(string): void $log    every line a child prints, redacted
+     * @param ?\Closure(): void      $onIdle called when each child exits, however it exits —
+     *                                       the one moment nothing is mid-print, which is
+     *                                       when a live status line has to go
+     */
+    public function __construct(
+        private \Closure $log,
+        ?SecretRedactor $redactor = null,
+        private ?\Closure $onIdle = null,
+    ) {
         $this->redactor = $redactor ?? SecretRedactor::fromEnvironment();
     }
 
@@ -114,6 +123,8 @@ final readonly class ProcessRunner implements CommandRunner
             });
         } catch (ProcessTimedOutException) {
             $timedOut = true;
+        } finally {
+            $this->idle();
         }
 
         return new CapturedProcess(
@@ -139,6 +150,8 @@ final readonly class ProcessRunner implements CommandRunner
             });
         } catch (ProcessTimedOutException) {
             $timedOut = true;
+        } finally {
+            $this->idle();
         }
 
         return $process;
@@ -163,6 +176,13 @@ final readonly class ProcessRunner implements CommandRunner
         $exitCode = $process->getExitCode();
 
         return $exitCode === null ? 'no exit status' : (string) $exitCode;
+    }
+
+    private function idle(): void
+    {
+        if ($this->onIdle !== null) {
+            ($this->onIdle)();
+        }
     }
 
     private function stream(string $buffer): void
