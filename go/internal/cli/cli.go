@@ -343,3 +343,13 @@ func Execute(root *cobra.Command, stderr io.Writer) int {
 
 	return CodeOf(err)
 }
+
+// noEnvironment is the refusal when a (module, core) pair has no provisioned
+// environment, naming the commands that make one.
+func noEnvironment(moduleName, coreMajor string) error {
+	return fmt.Errorf(
+		"no provisioned environment for %s on Drupal %s. "+
+			"Run `upkeep check` or `upkeep review` to create one",
+		moduleName, coreMajor,
+	)
+}

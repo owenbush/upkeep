@@ -221,3 +221,7 @@ func (b *syncBuffer) String() string {
 
 	return b.buf.String()
 }
+
+// errNothingToRun is an empty command line, which every caller's own argument
+// handling should have refused first.
+var errNothingToRun = errors.New("no command to run")

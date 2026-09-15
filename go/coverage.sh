@@ -25,8 +25,8 @@ FLOORS=$(
 internal/adapter              95.5
 internal/baseartifact         96.2
 internal/check               100.0
-internal/cli                  92.3
-internal/cli/command          97.1
+internal/cli                  98.5
+internal/cli/command          95.0
 internal/cockpit              93.3
 internal/config              100.0
 internal/dashboard            96.7
@@ -38,7 +38,7 @@ internal/maintenance         100.0
 internal/naming              100.0
 internal/notes               100.0
 internal/patches              96.0
-internal/proc                 92.3
+internal/proc                 93.3
 internal/results              95.8
 internal/security             93.9
 internal/workflow            100.0

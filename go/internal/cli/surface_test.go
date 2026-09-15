@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -275,4 +276,193 @@ func stripColour(line string) string {
 	}
 
 	return out.String()
+}
+
+// stubFactory hands back a scripted engine and records how it was wired.
+type stubFactory struct {
+	engine    adapter.Engine
+	err       error
+	stageLog  adapter.Log
+	processed func(string)
+	idled     func()
+	root      string
+}
+
+func (f *stubFactory) Build(
+	_ *cockpit.Cockpit, projectsRootOption string,
+	stageLog adapter.Log, processLog func(string), onIdle func(),
+) (adapter.Engine, error) {
+	f.root, f.stageLog, f.processed, f.idled = projectsRootOption, stageLog, processLog, onIdle
+
+	return f.engine, f.err
+}
+
+// stubEngine answers only what these tests ask of it.
+type stubEngine struct {
+	adapter.Engine
+	paths map[string]string
+}
+
+func (e stubEngine) ResolveEnvPath(moduleName, coreMajor string) string {
+	return e.paths[moduleName+"/"+coreMajor]
+}
+
+// A built engine reports its progress where the command's diagnostics go, and
+// its children's output through the status line.
+func TestABuiltEnginesProgressGoesToStderr(t *testing.T) {
+	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
+	cmd := &cobra.Command{Use: "thing"}
+	AddProjectsRoot(cmd)
+	AddVerbose(cmd)
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+
+	factory := &stubFactory{engine: stubEngine{}}
+	if _, err := Engine(cmd, factory, &cockpit.Cockpit{Root: "/cockpit"}); err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+
+	factory.stageLog("Provisioning environment upkeep-pathauto-d11 ...")
+
+	if out.Len() != 0 {
+		t.Errorf("progress landed in the answer: %q", out)
+	}
+	if !strings.Contains(errOut.String(), "Provisioning") {
+		t.Errorf("progress went nowhere: %q", errOut)
+	}
+	// Every hook is wired: an engine with no idle hook leaves the last status
+	// line on screen under whatever prints next.
+	if factory.processed == nil || factory.idled == nil {
+		t.Error("the child's output or the idle hook was not wired")
+	}
+}
+
+// The two pass-through commands get an engine that reports nothing at all.
+func TestAQuietEngineIsWiredToNothing(t *testing.T) {
+	cmd := &cobra.Command{Use: "thing"}
+	AddProjectsRoot(cmd)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	factory := &stubFactory{engine: stubEngine{}}
+	if _, err := QuietEngine(cmd, factory, &cockpit.Cockpit{Root: "/cockpit"}); err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+
+	if factory.stageLog != nil || factory.processed != nil || factory.idled != nil {
+		t.Error("a quiet engine was given somewhere to print")
+	}
+}
+
+// A factory that cannot build is the command's failure, not a nil engine
+// somebody then calls a method on.
+func TestAFactoryThatRefusesIsReported(t *testing.T) {
+	cmd := &cobra.Command{Use: "thing"}
+	AddProjectsRoot(cmd)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	factory := &stubFactory{err: errors.New("the projects root is outside your home directory")}
+
+	if _, err := Engine(cmd, factory, &cockpit.Cockpit{Root: "/cockpit"}); err == nil {
+		t.Error("a refused build reported success")
+	}
+	if _, err := QuietEngine(cmd, factory, &cockpit.Cockpit{Root: "/cockpit"}); err == nil {
+		t.Error("a refused quiet build reported success")
+	}
+}
+
+// An environment that is not there is refused, naming the commands that make
+// one — never provisioned by a command that only meant to look.
+func TestRequiringAnEnvironmentRefusesRatherThanBuildingOne(t *testing.T) {
+	engine := stubEngine{paths: map[string]string{"pathauto/11": "/projects/upkeep-pathauto-d11"}}
+
+	path, err := RequireEnvironment(engine, "pathauto", "11")
+	if err != nil || path != "/projects/upkeep-pathauto-d11" {
+		t.Errorf("got %q (%v)", path, err)
+	}
+
+	_, err = RequireEnvironment(engine, "token", "11")
+	if err == nil {
+		t.Fatal("a missing environment resolved")
+	}
+	for _, expected := range []string{"token", "Drupal 11", "upkeep check", "upkeep review"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Errorf("the refusal does not mention %q: %v", expected, err)
+		}
+	}
+}
+
+// -v asks for the transcript, and is off unless asked for.
+func TestVerboseIsOffUnlessAskedFor(t *testing.T) {
+	if Verbose(withFlags(t, AddVerbose)) {
+		t.Error("the transcript was on by default")
+	}
+	if !Verbose(withFlags(t, AddVerbose, "-v")) {
+		t.Error("-v did not ask for the transcript")
+	}
+	if !Verbose(withFlags(t, AddVerbose, "--verbose")) {
+		t.Error("--verbose did not ask for the transcript")
+	}
+}
+
+// The command's own output goes to its own stream, so a redirected stdout
+// carries the answer and nothing else.
+func TestOutputGoesToTheCommandsOwnStream(t *testing.T) {
+	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
+	cmd := &cobra.Command{Use: "thing"}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+
+	Printf(cmd, "answer %d\n", 1)
+	Println(cmd, "answer 2")
+
+	if out.String() != "answer 1\nanswer 2\n" {
+		t.Errorf("stdout %q", out)
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("an answer reached stderr: %q", errOut)
+	}
+}
+
+// A nil error is the successful exit code, so a command that returns nothing
+// exits 0.
+func TestNoErrorIsSuccess(t *testing.T) {
+	if got := CodeOf(nil); got != 0 {
+		t.Errorf("exit %d", got)
+	}
+}
+
+// --projects-root describes where it looks, because the order is not
+// guessable and the failure when it is wrong is a refusal about the home
+// directory.
+func TestTheProjectsRootFlagDescribesItsFallbacks(t *testing.T) {
+	usage := withFlags(t, AddProjectsRoot).Flags().Lookup(FlagProjectsRoot).Usage
+
+	for _, expected := range []string{adapter.ProjectsRootEnvVar, "projects", "~/.upkeep/projects"} {
+		if !strings.Contains(usage, expected) {
+			t.Errorf("the usage does not mention %q: %q", expected, usage)
+		}
+	}
+}
+
+// --no-open exists on the commands that would otherwise open a browser.
+func TestTheNoOpenFlagIsOffByDefault(t *testing.T) {
+	if Switched(withFlags(t, AddNoOpen), FlagNoOpen) {
+		t.Error("it was on by default")
+	}
+	if !Switched(withFlags(t, AddNoOpen, "--no-open"), FlagNoOpen) {
+		t.Error("--no-open did nothing")
+	}
+}
+
+// A cell already at or past the width is not padded, so a table does not grow
+// a column for nothing.
+func TestPaddingLeavesAFullCellAlone(t *testing.T) {
+	if got := pad("exactly-ten", 5); got != "exactly-ten" {
+		t.Errorf("got %q", got)
+	}
+	if got := pad("ab", 5); got != "ab   " {
+		t.Errorf("got %q", got)
+	}
 }

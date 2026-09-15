@@ -35,6 +35,9 @@ func NewRoot(engines adapter.Factory, volumes Volumes, sizer maintenance.Sizer) 
 
 	root.AddCommand(
 		NewBaseArtifactsStatus(),
+		NewDev(engines),
+		NewEnvPath(engines),
+		NewExec(engines),
 		NewExplain(),
 		NewInit(),
 		NewModules(),
