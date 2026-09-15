@@ -199,3 +199,29 @@ abc123def456   3         900MB
 		t.Errorf("a build-cache row was offered as a volume: %v", sizes)
 	}
 }
+
+// Engine project names are injective over machine names, which is what lets a
+// reverse lookup stop at its first match: the only transformation is
+// underscore to hyphen, and a hyphen is not a legal machine name, so no two
+// distinct modules can produce the same project.
+func TestTwoModulesCanNeverShareAnEngineProjectName(t *testing.T) {
+	// The collision that would exist if hyphens were legal.
+	if _, err := EngineProjectName("field-tokens", "11"); err == nil {
+		t.Fatal("a hyphenated name was accepted — project names are no longer injective")
+	}
+
+	seen := map[string]string{}
+	for _, name := range []string{
+		"pathauto", "token", "field_tokens", "fieldtokens", "field_visibility_conditions",
+		"a", "a_b", "ab", "a_b_c", "a1_b2",
+	} {
+		project, err := EngineProjectName(name, "11")
+		if err != nil {
+			t.Fatalf("%q: %v", name, err)
+		}
+		if clash, taken := seen[project]; taken {
+			t.Errorf("%q and %q both produce %q", clash, name, project)
+		}
+		seen[project] = name
+	}
+}
