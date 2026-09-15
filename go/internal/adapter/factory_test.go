@@ -123,3 +123,63 @@ func TestABuiltEngineWithNoLogsStillWorks(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// The artifact builder is assembled here for the same reason the engine is:
+// it needs a throwaway project, which is engine knowledge, and it must filter
+// child output through the same redactor.
+func TestTheFactoryBuildsAnArtifactBuilderThatRedactsToo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
+	scratch := filepath.Join(home, ".upkeep", "scratch")
+
+	var printed []string
+	builder := NewDdevContribFactory(security.NewRedactor("s3cr3t-token-value")).BuildArtifacts(
+		where, scratch,
+		nil,
+		func(line string) { printed = append(printed, line) },
+		nil,
+	)
+	if builder == nil {
+		t.Fatal("no builder")
+	}
+
+	// A stand-in composer that prints the credential, so redaction is
+	// observable rather than merely absent: the real one is not here, and a
+	// child that prints nothing would let an unredacted runner pass.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "composer"),
+		[]byte("#!/bin/sh\necho token=s3cr3t-token-value\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+
+	// The resolve is the build's first child, so a failing one is the
+	// cheapest way to reach the runner the factory wired in.
+	if _, err := builder.Build("11", false, ""); err == nil {
+		t.Error("a build over a failing composer succeeded")
+	}
+	if printed == nil {
+		t.Fatal("the child's output never reached the log")
+	}
+	if strings.Contains(strings.Join(printed, "\n"), "s3cr3t-token-value") {
+		t.Errorf("a credential reached the log unredacted: %v", printed)
+	}
+}
+
+// A nil log is the caller not wanting progress here too.
+func TestABuiltArtifactBuilderWithNoLogsStillWorks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
+
+	builder := NewDdevContribFactory(nil).BuildArtifacts(
+		where, filepath.Join(home, "scratch"), nil, nil, nil,
+	)
+
+	// An impossible core major refuses before anything runs, which is enough
+	// to reach the log on the way past.
+	if _, err := builder.Build("eleven", false, ""); err == nil {
+		t.Error("it built artifacts for a core major that cannot name a directory")
+	}
+}

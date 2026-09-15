@@ -49,3 +49,31 @@ func (f *DdevContribFactory) Build(
 		stageLog,
 	), nil
 }
+
+// BuildArtifacts is the base-artifact builder for one cockpit.
+//
+// On the factory for the same reason Build is: assembling it needs a
+// ThrowawaySite, which is engine-specific (it configures and starts a
+// disposable project to run the install in), and nothing outside this package
+// may name one.
+//
+// A second method on the same interface rather than a second factory, because
+// the two share the decision that matters — the redactor every child's output
+// is filtered through — and a separate seam is a second place to forget it.
+func (f *DdevContribFactory) BuildArtifacts(
+	where *cockpit.Cockpit,
+	scratchDir string,
+	stageLog Log,
+	processLog func(string),
+	onIdle func(),
+) *baseartifact.Builder {
+	runner := proc.New(processLog, onIdle, f.redactor)
+
+	return baseartifact.NewBuilder(
+		baseartifact.NewLayout(where.BaseArtifactsPath()),
+		NewThrowawaySite(runner, stageLog),
+		scratchDir,
+		runner,
+		stageLog,
+	)
+}

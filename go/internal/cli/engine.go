@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/cockpit"
 )
 
@@ -95,4 +96,35 @@ func RequireEnvironment(engine adapter.Engine, moduleName, coreMajor string) (st
 	}
 
 	return path, nil
+}
+
+// ArtifactBuilder builds the base-artifact builder for this invocation, with
+// its progress wired where the command wants it.
+//
+// The scratch directory is held to the same $HOME containment rule as the
+// projects root, and for the same functional reason: the throwaway install
+// project is bind-mounted into the Docker VM, and macOS providers share only
+// the home directory — a scratch directory outside it produces an install that
+// cannot start, with an error about the container rather than about the path.
+func ArtifactBuilder(
+	cmd *cobra.Command, engines adapter.Factory, where *cockpit.Cockpit,
+) (*baseartifact.Builder, error) {
+	scratchDir, err := adapter.RequireUnderHome(
+		Flag(cmd, FlagScratchDir), "scratch directory", "--scratch-dir")
+	if err != nil {
+		return nil, err
+	}
+
+	status := NewLiveStatus(cmd.ErrOrStderr(), IsTerminal(cmd.ErrOrStderr()), Verbose(cmd))
+
+	return engines.BuildArtifacts(
+		where,
+		scratchDir,
+		func(line string) {
+			status.Clear()
+			fmt.Fprintln(cmd.ErrOrStderr(), line)
+		},
+		status.Line,
+		status.Clear,
+	), nil
 }

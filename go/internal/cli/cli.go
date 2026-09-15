@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -115,6 +117,7 @@ const (
 	FlagVersion      = "version"
 	FlagNoOpen       = "no-open"
 	FlagNoUpdate     = "no-update"
+	FlagScratchDir   = "scratch-dir"
 )
 
 // AddCockpit adds --cockpit.
@@ -132,6 +135,34 @@ func AddProjectsRoot(cmd *cobra.Command) {
 			"if it exists, then ~/.upkeep/projects)",
 		adapter.ProjectsRootEnvVar,
 	))
+}
+
+// AddScratchDir adds --scratch-dir.
+//
+// Under $HOME by default, not the system temp directory: the throwaway install
+// project is bind-mounted into the container runtime's VM, and the macOS
+// providers share only the home directory — the temp directories are not
+// mounted and the install simply fails. Which providers those are is the
+// adapter's business; that it must be under $HOME is this flag's.
+func AddScratchDir(cmd *cobra.Command) {
+	cmd.Flags().String(FlagScratchDir, DefaultScratchDir(),
+		"Directory for the throwaway site-install project (must be a path your container "+
+			"runtime mounts, e.g. under your home directory)")
+}
+
+// DefaultScratchDir is where the throwaway install project goes when nobody
+// says.
+//
+// The temp directory only when there is no home to put it under, which is a
+// shape the containment rule will refuse a moment later — deliberately, since
+// a default that cannot work should fail naming the flag rather than fail
+// inside a container.
+func DefaultScratchDir() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return filepath.Join(home, ".upkeep", "scratch")
+	}
+
+	return os.TempDir()
 }
 
 // AddTargetCore adds --version as the *target core selector*: which core major

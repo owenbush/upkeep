@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/check"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/gitlab"
@@ -144,6 +145,19 @@ type Factory interface {
 		processLog func(string),
 		onIdle func(),
 	) (Engine, error)
+
+	// BuildArtifacts is the base-artifact builder for a cockpit.
+	//
+	// On the same interface as Build because assembling one needs engine
+	// knowledge — the throwaway project the clean install runs in — and
+	// because both must filter child output through the same redactor.
+	BuildArtifacts(
+		where *cockpit.Cockpit,
+		scratchDir string,
+		stageLog Log,
+		processLog func(string),
+		onIdle func(),
+	) *baseartifact.Builder
 }
 
 // The one implementation, asserted here so a signature that drifts is a

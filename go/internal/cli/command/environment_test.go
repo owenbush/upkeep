@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/check"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/gitlab"
+	"github.com/owenbush/upkeep/internal/proc"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -68,6 +70,25 @@ type fakeFactory struct {
 	// quiet is whether the engine was built with nowhere to report progress,
 	// which is what keeps a status line out of a path meant to be captured.
 	quiet bool
+
+	// The base-artifact half: what the builder was handed, and what it builds
+	// against.
+	scratchDir string
+	site       baseartifact.InstallSite
+	runner     proc.Runner
+}
+
+// BuildArtifacts hands back a builder over a real layout and no engine: the
+// commands under test here never run one, and a builder that tried would be a
+// test starting containers.
+func (f *fakeFactory) BuildArtifacts(
+	where *cockpit.Cockpit, scratchDir string,
+	stageLog adapter.Log, _ func(string), _ func(),
+) *baseartifact.Builder {
+	f.scratchDir = scratchDir
+
+	return baseartifact.NewBuilder(
+		baseartifact.NewLayout(where.BaseArtifactsPath()), f.site, scratchDir, f.runner, stageLog)
 }
 
 func (f *fakeFactory) Build(

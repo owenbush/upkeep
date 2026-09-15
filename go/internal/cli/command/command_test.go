@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/drupal"
@@ -377,6 +378,14 @@ func (f recordingFactory) Build(
 	*f.built = append(*f.built, where.Root)
 
 	return nil, nil
+}
+
+func (f recordingFactory) BuildArtifacts(
+	where *cockpit.Cockpit, _ string, _ adapter.Log, _ func(string), _ func(),
+) *baseartifact.Builder {
+	*f.built = append(*f.built, where.Root)
+
+	return nil
 }
 
 // writeFile replaces a file's contents.

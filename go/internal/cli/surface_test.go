@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/cockpit"
 )
 
@@ -286,6 +287,7 @@ type stubFactory struct {
 	processed func(string)
 	idled     func()
 	root      string
+	scratch   string
 }
 
 func (f *stubFactory) Build(
@@ -295,6 +297,17 @@ func (f *stubFactory) Build(
 	f.root, f.stageLog, f.processed, f.idled = projectsRootOption, stageLog, processLog, onIdle
 
 	return f.engine, f.err
+}
+
+func (f *stubFactory) BuildArtifacts(
+	where *cockpit.Cockpit, scratchDir string,
+	stageLog adapter.Log, processLog func(string), onIdle func(),
+) *baseartifact.Builder {
+	f.scratch = scratchDir
+	f.stageLog, f.processed, f.idled = stageLog, processLog, onIdle
+
+	return baseartifact.NewBuilder(
+		baseartifact.NewLayout(where.BaseArtifactsPath()), nil, scratchDir, nil, nil)
 }
 
 // stubEngine answers only what these tests ask of it.
