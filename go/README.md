@@ -34,6 +34,12 @@ difference that 161 real ones did not.
 | `internal/proc` | The shell-out seam every engine interaction goes through |
 | `internal/drupal` | drupal.org: version semantics, issue models, and the api-d7 client |
 | `internal/gitlab` | git.drupalcode.org: the REST client, the failure taxonomy, merge-request and project models, token resolution |
+| `internal/check` | What a check suite run amounts to: type, status, output excerpt, aggregate verdict |
+| `internal/workflow` | The exit-code contract — 0 did what was asked, 1 the work failed, 2 upkeep could not do the job |
+| `internal/config` | The Project Update Bot pattern, defined once |
+| `internal/results` | The file-backed store of local check results, and what a row knows across its cores |
+| `internal/gate` | The fast-lane classifier: READY-AUTO, REVIEW, BLOCKED |
+| `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
 
 ### The version semantics
@@ -99,6 +105,16 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **The gate trusts that its two arguments describe the same cores.** It takes
+  the cores a row applies to and the evidence separately, and checks only that
+  the evidence is non-empty — never that it covers them. The PHP row factory
+  builds both from one list, so they agree by construction and nothing is
+  broken today. But what the gap would produce is exactly the failure the row
+  model exists to prevent: a merge request green on 11, never asked about 10,
+  reading as fully green. The Go gate checks (`LocalEvidence.Covers`), which
+  makes the invariant structural rather than conventional. Worth doing on the
+  PHP side too.
+
 - **`url.PathEscape` already escapes a slash.** I wrote a helper to add that,
   with a comment asserting the opposite, and the mutation test that should have
   caught a bare interpolation reported the helper itself as dead weight instead.
