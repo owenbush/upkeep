@@ -258,3 +258,34 @@ func TestBaseArtifactsStatusProvesTheRegistryParses(t *testing.T) {
 		t.Error("it failed silently")
 	}
 }
+
+// An artifact directory that cannot be read is a failure naming it, not an
+// empty listing: "nothing is built" and "I could not look" send somebody to
+// different places.
+func TestAnUnreadableArtifactDirectoryIsAFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory regardless of its mode")
+	}
+
+	root := filepath.Join(t.TempDir(), "cockpit")
+	if code, _, stderr := invoke(t, "init", root); code != workflow.OK {
+		t.Fatalf("init: %s", stderr)
+	}
+	where, _ := cockpit.New(root)
+	if err := os.Chmod(where.BaseArtifactsPath(), 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(where.BaseArtifactsPath(), 0o755) })
+
+	code, stdout, stderr := invoke(t, "base-artifacts:status", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d", code)
+	}
+	if strings.Contains(stdout, "No base artifacts built yet") {
+		t.Errorf("an unreadable directory read as an empty one:\n%s", stdout)
+	}
+	if stderr == "" {
+		t.Error("it failed silently")
+	}
+}

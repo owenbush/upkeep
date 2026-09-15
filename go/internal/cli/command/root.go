@@ -50,6 +50,7 @@ func NewRoot(
 		NewInit(),
 		NewMerge(clients, prompts),
 		NewModules(),
+		NewPrune(engines, volumes, sizer),
 		NewReview(engines, clients),
 		NewStatus(volumes, sizer),
 		NewVersion(),

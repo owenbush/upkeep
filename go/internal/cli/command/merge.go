@@ -205,6 +205,9 @@ type offer struct {
 	row          dashboard.Row
 	mergeRequest gitlab.MergeRequest
 	project      gitlab.Project
+	// key is where this merge request's evidence is filed, resolved here so
+	// the re-check cannot fail on it half way through a merge.
+	key results.Key
 }
 
 // offerFor is the offer a row makes, or false when the lane must not present
@@ -222,8 +225,12 @@ func offerFor(row dashboard.Row) (offer, bool) {
 	if err != nil {
 		return offer{}, false
 	}
+	key, err := results.MergeRequestKey(mergeRequest.IID)
+	if err != nil {
+		return offer{}, false
+	}
 
-	return offer{row: row, mergeRequest: mergeRequest, project: project}, true
+	return offer{row: row, mergeRequest: mergeRequest, project: project, key: key}, true
 }
 
 // mergeOne is one approved merge: the freshness re-check against a live
@@ -248,7 +255,7 @@ func mergeOne(
 		return
 	}
 
-	if reasons := demotionReasons(client, cache, row, mergeRequest, *fresh, project); len(reasons) > 0 {
+	if reasons := demotionReasons(client, cache, candidate, *fresh); len(reasons) > 0 {
 		counts.demoted++
 		cli.Printf(cmd, "Demoted %s !%d to REVIEW (%s) — not merging.\n",
 			row.Module, mergeRequest.IID, strings.Join(reasons, ", "))
@@ -276,10 +283,11 @@ func mergeOne(
 func demotionReasons(
 	client *gitlab.Client,
 	cache *results.Cache,
-	row dashboard.Row,
-	classified, fresh gitlab.MergeRequest,
-	project gitlab.Project,
+	candidate offer,
+	fresh gitlab.MergeRequest,
 ) []string {
+	row, classified, project := candidate.row, candidate.mergeRequest, candidate.project
+
 	var reasons []string
 
 	if fresh.State != "opened" {
@@ -290,14 +298,10 @@ func demotionReasons(
 	}
 
 	cores := row.Local.Cores()
-	key, err := results.MergeRequestKey(classified.IID)
-	if err != nil {
-		return append(reasons, "unusable-result-key")
-	}
 
 	byCore := map[string]*results.CachedResult{}
 	for _, core := range cores {
-		latest, err := cache.Latest(row.Module, key, core)
+		latest, err := cache.Latest(row.Module, candidate.key, core)
 		if err != nil {
 			// An unreadable results directory is not "never checked": it is a
 			// question that could not be asked, and merging on the strength of

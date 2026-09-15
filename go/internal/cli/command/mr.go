@@ -110,6 +110,9 @@ func renderCheckSummary(cmd *cobra.Command, run check.RunResult) {
 	// by hand to find out what it said.
 	for _, failure := range run.Failures() {
 		cli.Printf(cmd, "\nFAILED: %s\n", failure.Type)
+		// A failure with no output at all still gets a line, because a blank
+		// under a "FAILED" heading reads as the report being broken rather
+		// than as the check having said nothing.
 		excerpt := failure.OutputExcerpt(check.ExcerptBytes)
 		if excerpt == "" {
 			excerpt = "(no output captured)"

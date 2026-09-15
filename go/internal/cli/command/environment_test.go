@@ -71,13 +71,22 @@ type fakeFactory struct {
 }
 
 func (f *fakeFactory) Build(
-	_ *cockpit.Cockpit, projectsRootOption string,
+	where *cockpit.Cockpit, projectsRootOption string,
 	stageLog adapter.Log, processLog func(string), onIdle func(),
 ) (adapter.Engine, error) {
 	f.builds++
 	f.projectsRoot = projectsRootOption
 	f.quiet = stageLog == nil && processLog == nil && onIdle == nil
 	f.engine.stage = stageLog
+
+	// The first thing the real factory does, and the reason it can refuse: a
+	// projects root outside the home directory is bind-mounted into a VM that
+	// cannot see it, so an environment there could never start. A fake that
+	// skipped this would let every command look like it enforces a rule none
+	// of them had to pass through.
+	if _, err := adapter.ResolveProjectsRoot(projectsRootOption, where.Root); err != nil {
+		return nil, err
+	}
 
 	if f.replace != nil {
 		if recording, isRecording := f.replace.(*checkingEngine); isRecording {
@@ -385,11 +394,15 @@ func TestTheProjectsRootFlagReachesTheEngine(t *testing.T) {
 	// Written out rather than appended to, because on exec everything after
 	// "--" belongs to the wrapped command: a flag appended there would be
 	// handed to the child, and the test would be asserting nothing.
+	// Under the home directory, because the factory refuses anything else —
+	// which is a different property, tested next to it.
+	elsewhere := filepath.Join(os.Getenv("HOME"), "elsewhere")
+
 	for name, args := range map[string][]string{
-		"env:path": {"env:path", "pathauto", "--cockpit=" + root, "--projects-root=/somewhere"},
-		"dev":      {"dev", "pathauto", "--cockpit=" + root, "--projects-root=/somewhere"},
+		"env:path": {"env:path", "pathauto", "--cockpit=" + root, "--projects-root=" + elsewhere},
+		"dev":      {"dev", "pathauto", "--cockpit=" + root, "--projects-root=" + elsewhere},
 		"exec": {
-			"exec", "pathauto", "--cockpit=" + root, "--projects-root=/somewhere", "--", "true",
+			"exec", "pathauto", "--cockpit=" + root, "--projects-root=" + elsewhere, "--", "true",
 		},
 	} {
 		engine := &fakeEngine{
@@ -398,7 +411,7 @@ func TestTheProjectsRootFlagReachesTheEngine(t *testing.T) {
 		}
 		_, _, _, factory := runWithEngine(t, engine, args...)
 
-		if factory.projectsRoot != "/somewhere" {
+		if factory.projectsRoot != elsewhere {
 			t.Errorf("%s built an engine for %q", name, factory.projectsRoot)
 		}
 	}

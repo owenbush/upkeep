@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"os"
+	"path/filepath"
+
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/check"
 	"github.com/owenbush/upkeep/internal/cockpit"
@@ -151,6 +154,7 @@ func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
 		"modules":  {"modules", "--cockpit=" + root},
 		"status":   {"status", "--cockpit=" + root},
 		"merge":    {"merge", "--fast-lane", "--cockpit=" + root},
+		"prune":    {"prune", "--all", "--cockpit=" + root},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 
@@ -183,6 +187,7 @@ func TestNoCommandFallsBackFromAnUnusableCockpit(t *testing.T) {
 		"status":                {"status", "--cockpit="},
 		"base-artifacts:status": {"base-artifacts:status", "--cockpit="},
 		"merge":                 {"merge", "--fast-lane", "--cockpit="},
+		"prune":                 {"prune", "--all", "--cockpit="},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 
@@ -208,6 +213,7 @@ func TestAMissingRegistryIsReportedTheSameWayEverywhere(t *testing.T) {
 		"status":                {"status", "--cockpit=" + empty},
 		"base-artifacts:status": {"base-artifacts:status", "--cockpit=" + empty},
 		"check":                 {"check", "pathauto", "--working-copy", "--cockpit=" + empty},
+		"prune":                 {"prune", "--all", "--cockpit=" + empty},
 	} {
 		code, _, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 
@@ -217,5 +223,81 @@ func TestAMissingRegistryIsReportedTheSameWayEverywhere(t *testing.T) {
 		if !strings.Contains(stderr, "upkeep init") {
 			t.Errorf("%s did not say how to make a cockpit: %q", name, stderr)
 		}
+	}
+}
+
+// A projects root that could never work is refused by every command that
+// needs an environment.
+//
+// The tree is bind-mounted into the container runtime's VM and the macOS
+// providers only share the home directory, so one outside it can never start.
+// Refused before any work rather than discovered at provisioning time.
+func TestNoCommandWorksWithAProjectsRootThatCouldNeverStart(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	root := filepath.Join(home, "cockpit")
+	if code, _, stderr := invoke(t, "init", root); code != workflow.OK {
+		t.Fatalf("init: %s", stderr)
+	}
+	where, _ := cockpit.New(root)
+	registry := "modules:\n  pathauto:\n    project: project/pathauto\n    core_versions: [\"11\"]\n"
+	if err := os.WriteFile(where.RegistryPath(), []byte(registry), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	outside := t.TempDir()
+
+	for name, args := range map[string][]string{
+		"check":    {"check", "pathauto", "--working-copy"},
+		"dev":      {"dev", "pathauto"},
+		"env:path": {"env:path", "pathauto"},
+		"status":   {"status"},
+		"prune":    {"prune", "--all"},
+	} {
+		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil,
+			append(args, "--cockpit="+root, "--projects-root="+outside)...)
+
+		if code != workflow.Infrastructure {
+			t.Errorf("%s: exit %d", name, code)
+		}
+		if !strings.Contains(stderr, "home directory") {
+			t.Errorf("%s: the refusal does not say the rule: %q", name, stderr)
+		}
+		if stdout != "" {
+			t.Errorf("%s produced output anyway: %q", name, stdout)
+		}
+	}
+}
+
+// A check with no output at all still gets a line: a blank under a "FAILED"
+// heading reads as the report being broken rather than as the check having
+// said nothing.
+func TestAFailingCheckWithNoOutputStillSaysSomething(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "cockpit")
+	if code, _, stderr := invoke(t, "init", root); code != workflow.OK {
+		t.Fatalf("init: %s", stderr)
+	}
+	where, _ := cockpit.New(root)
+	if err := os.WriteFile(where.RegistryPath(),
+		[]byte("modules:\n  pathauto:\n    project: project/pathauto\n    core_versions: [\"11\"]\n"),
+		0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	engine := aCheckingEngine()
+	engine.statusOK = true
+	one := 1
+	engine.run = check.RunResult{Results: []check.Result{
+		{Type: check.PhpUnit, Status: check.Failed, ExitCode: &one, Output: ""},
+	}}
+
+	_, stdout, _ := runCheckCommand(t, engine, nil,
+		"check", "pathauto", "--working-copy", "--cockpit="+root)
+
+	if !strings.Contains(stdout, "(no output captured)") {
+		t.Errorf("a silent failure printed a blank:\n%s", stdout)
 	}
 }

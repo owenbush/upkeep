@@ -391,3 +391,54 @@ func TestExplainCompletesItsTerms(t *testing.T) {
 		t.Errorf("a second argument completed: %v", extra)
 	}
 }
+
+// A cockpit that cannot be written is a failure naming the path, not a
+// half-scaffolded directory reported as created.
+func TestInitReportsADirectoryItCannotWrite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into every directory regardless of its mode")
+	}
+
+	locked := t.TempDir()
+	if err := os.Chmod(locked, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	code, stdout, stderr := invoke(t, "init", filepath.Join(locked, "cockpit"))
+
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d", code)
+	}
+	if stdout != "" {
+		t.Errorf("it reported a cockpit it could not create: %q", stdout)
+	}
+	if !strings.Contains(stderr, "could not scaffold") {
+		t.Errorf("stderr: %q", stderr)
+	}
+}
+
+// A registry that cannot be written takes the whole scaffold with it: a
+// cockpit reported as created but missing its registry is the worst outcome
+// here, because the next command then reports a missing registry rather than a
+// failed init.
+func TestInitFailsWhenTheRegistryCannotBeWritten(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into every directory regardless of its mode")
+	}
+
+	root := t.TempDir()
+	// A directory where the registry has to go.
+	if err := os.MkdirAll(filepath.Join(root, cockpit.RegistryFilename), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	code, stdout, _ := invoke(t, "init", root)
+
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d", code)
+	}
+	if strings.Contains(stdout, "Cockpit created") {
+		t.Errorf("it reported a cockpit with no registry:\n%s", stdout)
+	}
+}
