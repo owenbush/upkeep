@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/maintenance"
 	"github.com/owenbush/upkeep/internal/workflow"
@@ -100,10 +101,11 @@ func runPruneCommand(
 ) (int, string, string) {
 	t.Helper()
 
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		noClients{}, noIssues{}, noPrompts, volumes, func(string) int64 { return 1024 }, nil,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}, replace: engine},
+		Clients: noClients{}, Issues: noIssues{}, Prompts: noPrompts, Volumes: volumes,
+		Sizer: func(string) int64 { return 1024 }, Browser: cli.NoBrowser{},
+	})
 
 	return invokeWith(t, root, args...)
 }

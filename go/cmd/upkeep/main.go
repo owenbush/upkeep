@@ -38,13 +38,15 @@ func main() {
 	// "every child" is the rule and an exception is how a rule stops holding.
 	quiet := proc.New(nil, nil, redactor)
 
-	os.Exit(cli.Execute(command.NewRoot(
-		adapter.NewDdevContribFactory(redactor),
-		cli.NewResolvedClients(func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) }),
-		command.NewDrupalClients(),
-		func(cmd *cobra.Command) cli.Prompt { return cli.NewTerminalPrompt(cmd) },
-		adapter.NewVolumeProbe(quiet),
-		maintenance.DiskSizer(quiet),
-		&http.Client{Timeout: patchDownloadTimeout},
-	), os.Stderr))
+	os.Exit(cli.Execute(command.NewRoot(command.Surface{
+		Engines: adapter.NewDdevContribFactory(redactor),
+		Clients: cli.NewResolvedClients(
+			func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) }),
+		Issues:     command.NewDrupalClients(),
+		Prompts:    func(cmd *cobra.Command) cli.Prompt { return cli.NewTerminalPrompt(cmd) },
+		Volumes:    adapter.NewVolumeProbe(quiet),
+		Sizer:      maintenance.DiskSizer(quiet),
+		Downloader: &http.Client{Timeout: patchDownloadTimeout},
+		Browser:    cli.SystemBrowser{},
+	}), os.Stderr))
 }

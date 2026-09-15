@@ -135,10 +135,11 @@ func runCheckRecording(
 	t.Helper()
 
 	asked := []string{}
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		scriptedClients{client: client, asked: &asked}, noIssues{}, noPrompts, noVolumes{}, noSizer, nil,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}, replace: engine},
+		Clients: scriptedClients{client: client, asked: &asked}, Issues: noIssues{},
+		Prompts: noPrompts, Volumes: noVolumes{}, Sizer: noSizer, Browser: cli.NoBrowser{},
+	})
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
 	root.SetErr(errOut)

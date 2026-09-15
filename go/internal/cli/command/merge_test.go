@@ -225,13 +225,13 @@ func runMergeCommand(
 	at := 0
 	prompt.at = &at
 
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}},
-		scriptedClients{client: scene.client()},
-		noIssues{},
-		func(*cobra.Command) cli.Prompt { return prompt },
-		noVolumes{}, noSizer, nil,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}},
+		Clients: scriptedClients{client: scene.client()},
+		Issues:  noIssues{},
+		Prompts: func(*cobra.Command) cli.Prompt { return prompt },
+		Volumes: noVolumes{}, Sizer: noSizer, Browser: cli.NoBrowser{},
+	})
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
 	root.SetErr(errOut)

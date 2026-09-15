@@ -107,12 +107,13 @@ func runPatchCommand(
 	at := 0
 	prompt.at = &at
 
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		noClients{}, issues,
-		func(*cobra.Command) cli.Prompt { return prompt },
-		someVolumes(nil), noSizer, http.DefaultClient,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}, replace: engine},
+		Clients: noClients{}, Issues: issues,
+		Prompts: func(*cobra.Command) cli.Prompt { return prompt },
+		Volumes: someVolumes(nil), Sizer: noSizer, Downloader: http.DefaultClient,
+		Browser: cli.NoBrowser{},
+	})
 
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
@@ -675,12 +676,13 @@ func runPatchWithGitlab(
 ) (int, string, string) {
 	t.Helper()
 
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		scriptedClients{client: gitlabClientFor(server)}, issues,
-		func(*cobra.Command) cli.Prompt { return scriptedPrompt{} },
-		someVolumes(nil), noSizer, http.DefaultClient,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}, replace: engine},
+		Clients: scriptedClients{client: gitlabClientFor(server)}, Issues: issues,
+		Prompts: func(*cobra.Command) cli.Prompt { return scriptedPrompt{} },
+		Volumes: someVolumes(nil), Sizer: noSizer, Downloader: http.DefaultClient,
+		Browser: cli.NoBrowser{},
+	})
 
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
@@ -890,12 +892,13 @@ func runPatchWithPrompt(
 ) (int, string, string) {
 	t.Helper()
 
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		noClients{}, issues,
-		func(*cobra.Command) cli.Prompt { return prompt },
-		someVolumes(nil), noSizer, http.DefaultClient,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}, replace: engine},
+		Clients: noClients{}, Issues: issues,
+		Prompts: func(*cobra.Command) cli.Prompt { return prompt },
+		Volumes: someVolumes(nil), Sizer: noSizer, Downloader: http.DefaultClient,
+		Browser: cli.NoBrowser{},
+	})
 
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)

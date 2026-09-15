@@ -217,11 +217,12 @@ func runDashboardCommand(
 ) (int, string, string) {
 	t.Helper()
 
-	root := NewRoot(
-		&fakeFactory{engine: &fakeEngine{}},
-		scriptedClients{client: gitlabClientFor(server)},
-		issues, noPrompts, someVolumes(nil), noSizer, nil,
-	)
+	root := NewRoot(Surface{
+		Engines: &fakeFactory{engine: &fakeEngine{}},
+		Clients: scriptedClients{client: gitlabClientFor(server)},
+		Issues:  issues, Prompts: noPrompts, Volumes: someVolumes(nil), Sizer: noSizer,
+		Browser: cli.NoBrowser{},
+	})
 
 	return invokeWith(t, root, args...)
 }

@@ -26,7 +26,7 @@ internal/adapter              95.5
 internal/baseartifact         96.2
 internal/check               100.0
 internal/cli                  99.2
-internal/cli/command          97.2
+internal/cli/command          97.3
 internal/cockpit              93.3
 internal/config              100.0
 internal/dashboard            97.0
@@ -38,7 +38,7 @@ internal/maintenance         100.0
 internal/naming              100.0
 internal/notes               100.0
 internal/patches              96.0
-internal/proc                 93.3
+internal/proc                 93.4
 internal/results              95.8
 internal/security             93.9
 internal/workflow            100.0

@@ -10,6 +10,7 @@ import (
 
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/check"
+	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
@@ -93,6 +94,28 @@ func (e *refusingEngine) PromotePatch(
 	return e.patchingEngine.PromotePatch(environment, patch, branch, message, refresh, partial)
 }
 
+func (e *refusingEngine) StartWork(
+	_ adapter.Environment, _ adapter.IssueBranch, _ string, _ adapter.BaseRefresh,
+) (bool, error) {
+	if e.refuse == "StartWork" {
+		return false, errors.New("StartWork refused")
+	}
+
+	return false, nil
+}
+
+func (e *refusingEngine) PushWork(
+	_ adapter.Environment, _ adapter.IssueBranch, _ adapter.GitRemote,
+) (string, error) {
+	if e.refuse == "PushWork" {
+		return "", errors.New("PushWork refused")
+	}
+
+	return "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", nil
+}
+
+func (e *refusingEngine) RecordedBaseBranch(adapter.Environment) string { return "2.0.x" }
+
 // No engine failure may be swallowed.
 //
 // Every one of these calls is a `return err` away from a command reporting a
@@ -129,6 +152,22 @@ func TestNoEngineFailureIsSwallowed(t *testing.T) {
 	for name, run := range patchRuns(t, root) {
 		runs[name] = run
 	}
+	// The issue loop's own two, which reach the engine through a different
+	// harness because they need drupal.org and an issue fork to get there.
+	runs["start"] = struct {
+		args  []string
+		calls []string
+	}{
+		args:  []string{"start", "pathauto", "3223746", "--cockpit=" + root},
+		calls: []string{"EnsureEnv", "StartWork"},
+	}
+	runs["publish"] = struct {
+		args  []string
+		calls []string
+	}{
+		args:  []string{"publish", "pathauto", "3223746", "--cockpit=" + root},
+		calls: []string{"EnsureEnv", "PushWork"},
+	}
 
 	var swallowed []string
 	for name, run := range runs {
@@ -139,10 +178,14 @@ func TestNoEngineFailureIsSwallowed(t *testing.T) {
 
 			var code int
 			var stdout, stderr string
-			if strings.HasPrefix(name, "patch:") {
+			switch {
+			case strings.HasPrefix(name, "patch:"):
 				code, stdout, stderr = runPatchCommand(
 					t, engine, patchIssues, scriptedPrompt{}, run.args...)
-			} else {
+			case name == "start" || name == "publish":
+				code, stdout, stderr = runIssueLoop(t, engine, someIssues(),
+					scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{}, run.args...)
+			default:
 				client, done := aResolvableGitlab(t, nil)
 				code, stdout, stderr = runCheckCommand(t, engine, client, run.args...)
 				done()
@@ -226,6 +269,9 @@ func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
 		"patch:apply":   {"patch:apply", "pathauto", "3597857", "--cockpit=" + root},
 		"patch:check":   {"patch:check", "pathauto", "3597857", "--cockpit=" + root},
 		"patch:promote": {"patch:promote", "pathauto", "3597857", "--cockpit=" + root},
+		"issue":         {"issue", "pathauto", "9", "--cockpit=" + root},
+		"start":         {"start", "pathauto", "3223746", "--cockpit=" + root},
+		"publish":       {"publish", "pathauto", "3223746", "--cockpit=" + root},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 

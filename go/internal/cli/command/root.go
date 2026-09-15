@@ -13,23 +13,37 @@ import (
 // Version is the application version, stamped at build time.
 var Version = "dev"
 
+// Surface is every seam the command tree reaches the world through: the
+// engine, the two APIs, the operator's terminal and browser, the disk.
+//
+// A struct rather than a parameter list. Each command takes only the seams it
+// uses — that is what makes them testable — but the *root* takes all of them,
+// and as a positional list it had reached the length where adding one meant
+// editing a dozen call sites that each said nothing about which argument was
+// which. `PatchSurface` is the subset the patch commands share.
+type Surface struct {
+	Engines    adapter.Factory
+	Clients    cli.GitlabClients
+	Issues     IssueClients
+	Prompts    func(*cobra.Command) cli.Prompt
+	Volumes    Volumes
+	Sizer      maintenance.Sizer
+	Downloader *http.Client
+	Browser    cli.Browser
+}
+
 // NewRoot assembles the command tree.
 //
 // Every command that needs an environment is handed the engine factory here
 // and never constructs one itself. This function and the factory it is given
 // are the only places engine selection happens.
-func NewRoot(
-	engines adapter.Factory,
-	clients cli.GitlabClients,
-	issues IssueClients,
-	prompts func(*cobra.Command) cli.Prompt,
-	volumes Volumes,
-	sizer maintenance.Sizer,
-	downloader *http.Client,
-) *cobra.Command {
+func NewRoot(surface Surface) *cobra.Command {
+	engines, clients, issues := surface.Engines, surface.Clients, surface.Issues
+	volumes, sizer := surface.Volumes, surface.Sizer
+
 	patchSurface := PatchSurface{
 		Engines: engines, Clients: clients, Issues: issues,
-		Prompts: prompts, Downloader: downloader,
+		Prompts: surface.Prompts, Downloader: surface.Downloader,
 	}
 
 	root := &cobra.Command{
@@ -58,13 +72,16 @@ func NewRoot(
 		NewExec(engines),
 		NewExplain(),
 		NewInit(),
-		NewMerge(clients, prompts),
+		NewIssue(clients, issues, surface.Browser),
+		NewMerge(clients, surface.Prompts),
 		NewModules(),
 		NewPatchApply(patchSurface),
 		NewPatchCheck(patchSurface),
 		NewPatchPromote(patchSurface),
 		NewPrune(engines, volumes, sizer),
+		NewPublish(engines, clients, issues),
 		NewReview(engines, clients),
+		NewStart(engines, issues),
 		NewStatus(volumes, sizer),
 		NewVersion(),
 	)

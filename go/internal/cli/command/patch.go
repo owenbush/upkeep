@@ -78,18 +78,9 @@ func resolvePatchContext(
 		return nil, workflow.PatchContext{}, err
 	}
 
-	nid, err := issueNid(rawNid)
+	issue, err := requireIssue(cmd, surface.Issues, rawNid)
 	if err != nil {
 		return nil, workflow.PatchContext{}, err
-	}
-
-	cli.Progressf(cmd, "Resolving issue #%d via drupal.org ...", nid)
-	issue, found := surface.Issues.Issues().Issue(nid)
-	if !found {
-		return nil, workflow.PatchContext{}, fmt.Errorf(
-			"drupal.org issue #%d could not be read. Check the node id "+
-				"(it is the number in the issue URL)", nid,
-		)
 	}
 
 	patch, err := choosePatch(cmd, surface, issue)
@@ -104,7 +95,7 @@ func resolvePatchContext(
 	// nothing can take differently.
 	cli.Progressf(cmd, "Patch: %s", patches.Describe(patch))
 	localPath, err := patches.NewFetcher(surface.Downloader, where.PatchCachePath()).
-		Fetch(nid, patch.Name, patch.URL)
+		Fetch(issue.Nid, patch.Name, patch.URL)
 	if err != nil {
 		return nil, workflow.PatchContext{}, err
 	}

@@ -45,7 +45,10 @@ func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, st
 // NewRootFor is the command tree with a stubbed engine factory, for the
 // commands that do not need one.
 func NewRootFor(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
-	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, noIssues{}, noPrompts, volumes, sizer, nil)
+	return NewRoot(Surface{
+		Engines: adapter.NewDdevContribFactory(nil), Clients: noClients{}, Issues: noIssues{},
+		Prompts: noPrompts, Volumes: volumes, Sizer: sizer, Browser: cli.NoBrowser{},
+	})
 }
 
 // noIssues stands in for drupal.org where a command under test never reaches
@@ -317,7 +320,10 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 // that needs one is handed the factory.
 func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 	var built []string
-	root := NewRoot(recordingFactory{built: &built}, noClients{}, noIssues{}, noPrompts, noVolumes{}, noSizer, nil)
+	root := NewRoot(Surface{
+		Engines: recordingFactory{built: &built}, Clients: noClients{}, Issues: noIssues{},
+		Prompts: noPrompts, Volumes: noVolumes{}, Sizer: noSizer, Browser: cli.NoBrowser{},
+	})
 
 	if root.Use != "upkeep" {
 		t.Errorf("root %q", root.Use)

@@ -61,3 +61,14 @@ func Passthrough(
 
 	return nil, runErr
 }
+
+// TryPassthrough runs a command whose output nobody wants and whose failure is
+// an answer rather than a problem.
+//
+// For the browser opener: whether it launched is the only thing the caller
+// asks, and its chatter on a headless machine is not the operator's business.
+func TryPassthrough(command []string) bool {
+	code, err := Passthrough(command, "", nil, io.Discard, io.Discard)
+
+	return err == nil && code != nil && *code == 0
+}

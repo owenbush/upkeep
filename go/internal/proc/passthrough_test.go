@@ -2,6 +2,7 @@ package proc
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,4 +171,45 @@ func itoa(n int) string {
 	}
 
 	return string(digits)
+}
+
+// TryPassthrough is the "did it work?" form: a clean exit is yes, and every
+// other outcome — a non-zero exit, a binary that is not there — is no rather
+// than an error the caller has to translate.
+func TestTryPassthroughAnswersWhetherItWorked(t *testing.T) {
+	for _, run := range []struct {
+		name    string
+		command []string
+		want    bool
+	}{
+		{"a clean exit", []string{"sh", "-c", "exit 0"}, true},
+		{"a refusal", []string{"sh", "-c", "exit 3"}, false},
+		{"nothing to run at all", []string{"upkeep-no-such-binary"}, false},
+		{"an empty command", nil, false},
+	} {
+		if got := TryPassthrough(run.command); got != run.want {
+			t.Errorf("%s: got %v, want %v", run.name, got, run.want)
+		}
+	}
+}
+
+// Its output is nobody's business: the caller wants a yes or a no, and a
+// browser opener's chatter on a headless machine would land in the middle of
+// whatever the command was printing.
+func TestTryPassthroughSwallowsTheOutput(t *testing.T) {
+	stdout, stderr := os.Stdout, os.Stderr
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout, os.Stderr = write, write
+	defer func() { os.Stdout, os.Stderr = stdout, stderr }()
+
+	TryPassthrough([]string{"sh", "-c", "echo noise; echo more >&2"})
+
+	_ = write.Close()
+	leaked, _ := io.ReadAll(read)
+	if len(leaked) != 0 {
+		t.Errorf("it printed %q", leaked)
+	}
 }
