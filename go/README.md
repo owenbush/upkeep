@@ -33,6 +33,7 @@ difference that 161 real ones did not.
 | `internal/security` | Credential scrubbing and output redaction |
 | `internal/proc` | The shell-out seam every engine interaction goes through |
 | `internal/drupal` | drupal.org: version semantics, issue models, and the api-d7 client |
+| `internal/gitlab` | git.drupalcode.org: the REST client, the failure taxonomy, merge-request and project models, token resolution |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
 
 ### The version semantics
@@ -98,6 +99,11 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **`url.PathEscape` already escapes a slash.** I wrote a helper to add that,
+  with a comment asserting the opposite, and the mutation test that should have
+  caught a bare interpolation reported the helper itself as dead weight instead.
+  The helper is gone; the escaping is still pinned by a test.
+
 - **Map iteration order is random in Go**, so a rendered list of statuses had
   to become a declared slice rather than a map walk.
 
