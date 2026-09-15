@@ -353,12 +353,12 @@ func TestIssuesReportsWhatTheScanCouldNotRead(t *testing.T) {
 }
 
 // rowFor is the table line for one issue, so an assertion about a cell cannot
-// be satisfied by the footer.
+// be satisfied by the header, the footer, or another issue's row.
 func rowFor(t *testing.T, table, nid string) string {
 	t.Helper()
 
 	for _, line := range strings.Split(table, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), nid) {
+		if strings.Contains(line, nid) {
 			return line
 		}
 	}

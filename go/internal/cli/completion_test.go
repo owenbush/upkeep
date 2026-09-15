@@ -321,3 +321,37 @@ func TestAFileInTheProjectsRootIsNotAModule(t *testing.T) {
 		}
 	}
 }
+
+// The survey commands take the module as a flag, so it completes there too —
+// same values, different place on the line, and wired by its own call because
+// AddModuleCompletion wires an *argument*.
+func TestAModuleFlagCompletesLikeAModuleArgument(t *testing.T) {
+	root := aCompletableCockpit(t)
+
+	cmd := &cobra.Command{Use: "survey"}
+	AddCockpit(cmd)
+	AddProjectsRoot(cmd)
+	cmd.Flags().String("module", "", "")
+	AddModuleFlagCompletion(cmd)
+
+	complete, registered := completionForFlag(cmd, "module")
+	if !registered {
+		t.Fatal("the --module flag has no completion")
+	}
+
+	if suggestions := completing(t, complete, root, nil, ""); len(suggestions) == 0 {
+		t.Fatal("no module was suggested")
+	}
+}
+
+// completionForFlag is the function cobra will call for a flag's values.
+func completionForFlag(cmd *cobra.Command, flag string) (
+	func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective), bool,
+) {
+	complete := cmd.GetFlagCompletionFunc
+	if complete == nil {
+		return nil, false
+	}
+
+	return complete(flag)
+}

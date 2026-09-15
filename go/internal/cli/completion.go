@@ -267,3 +267,12 @@ func keysOf(set map[string]bool) []string {
 // outcome than no suggestions. Anything that gets here is a bug, and the
 // ordinary command run a moment later will hit it properly.
 func recoverCompletion() { _ = recover() }
+
+// AddModuleFlagCompletion makes a --module flag complete as a module name.
+//
+// The survey commands take the module as a flag rather than an argument, so
+// they get this instead of AddModuleCompletion — same values, different place
+// on the line.
+func AddModuleFlagCompletion(cmd *cobra.Command) {
+	registerFlagCompletion(cmd, "module", CompleteModule)
+}

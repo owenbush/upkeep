@@ -79,6 +79,7 @@ func NewRoot(surface Surface) *cobra.Command {
 		NewPatchApply(patchSurface),
 		NewPatchCheck(patchSurface),
 		NewPatchPromote(patchSurface),
+		NewPatches(clients, issues),
 		NewPrune(engines, volumes, sizer),
 		NewPublish(engines, clients, issues),
 		NewReview(engines, clients),

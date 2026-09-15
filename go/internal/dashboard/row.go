@@ -354,9 +354,14 @@ func FailureCell(failure *gitlab.Failure) string {
 // Counted in runes rather than bytes, which is what mb_substr does on the PHP
 // side: a title with an accented character must not lose a byte and become
 // invalid UTF-8 in the middle of a table.
+// DefaultTitleWidth is how wide a title cell is when a caller has no reason to
+// choose: wide enough that most drupal.org issue titles survive whole, narrow
+// enough that the columns after it stay on one line.
+const DefaultTitleWidth = 44
+
 func Truncate(title string, max int) string {
 	if max <= 0 {
-		max = 44
+		max = DefaultTitleWidth
 	}
 	if utf8.RuneCountInString(title) <= max {
 		return title
