@@ -62,6 +62,8 @@ artifacts for that core: upkeep base-artifacts:build --version=11.`,
 	cmd.Flags().String("fixture", "",
 		"Load this named fixture into the database before running checks")
 	addMrSurface(cmd)
+	cli.AddModuleCompletion(cmd)
+	cli.AddFixtureCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
 		return runCheck(cmd, engines, clients, args)

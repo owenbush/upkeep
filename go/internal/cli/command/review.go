@@ -27,6 +27,7 @@ func NewReview(engines adapter.Factory, clients cli.GitlabClients) *cobra.Comman
 		Args: cobra.ExactArgs(2),
 	}
 	addMrSurface(cmd)
+	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
 		return runReview(cmd, engines, clients, args[0], args[1])

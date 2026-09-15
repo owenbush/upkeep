@@ -31,6 +31,24 @@ func NewExplain() *cobra.Command {
 			"Matches on the term and on its meaning, so a half-remembered word still finds it.",
 		Args: cobra.MaximumNArgs(1),
 	}
+	// The glossary is data on disk here, so completing it costs nothing and
+	// turns "what was that word?" into two keystrokes.
+	cmd.ValidArgsFunction = func(
+		_ *cobra.Command, args []string, typed string,
+	) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		terms := make([]string, 0, len(Glossary))
+		for _, definition := range Glossary {
+			if strings.HasPrefix(definition.Term, typed) {
+				terms = append(terms, definition.Term)
+			}
+		}
+
+		return terms, cobra.ShellCompDirectiveNoFileComp
+	}
 	cmd.RunE = cli.Run(runExplain)
 
 	return cmd

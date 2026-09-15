@@ -330,3 +330,64 @@ func (f recordingFactory) Build(
 func writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o644)
 }
+
+// Every command that takes a module completes it, and every one that takes
+// --version completes that too.
+//
+// Wired per command rather than centrally, so this is the thing that catches a
+// new command forgetting: without completion the machine name is the longest
+// and most mistyped part of every invocation.
+func TestEverySubjectCommandCompletesItsValues(t *testing.T) {
+	root := NewRootFor(noVolumes{}, noSizer)
+
+	// The commands whose first argument is a module.
+	subjects := map[string]bool{
+		"check": true, "review": true, "dev": true, "env:path": true, "exec": true,
+	}
+
+	for _, command := range root.Commands() {
+		if !subjects[command.Name()] {
+			continue
+		}
+		if command.ValidArgsFunction == nil {
+			t.Errorf("%s does not complete its module argument", command.Name())
+		}
+		if command.Flags().Lookup("version") == nil {
+			continue
+		}
+		if _, wired := command.GetFlagCompletionFunc("version"); !wired {
+			t.Errorf("%s does not complete --version", command.Name())
+		}
+	}
+}
+
+// The glossary completes, because it is data on disk and "what was that word?"
+// should be two keystrokes.
+func TestExplainCompletesItsTerms(t *testing.T) {
+	root := NewRootFor(noVolumes{}, noSizer)
+
+	var explain *cobra.Command
+	for _, command := range root.Commands() {
+		if command.Name() == "explain" {
+			explain = command
+		}
+	}
+	if explain == nil || explain.ValidArgsFunction == nil {
+		t.Fatal("explain does not complete its term")
+	}
+
+	terms, _ := explain.ValidArgsFunction(explain, nil, "sta")
+	if len(terms) == 0 {
+		t.Error("no terms completed")
+	}
+	for _, term := range terms {
+		if !strings.HasPrefix(term, "sta") {
+			t.Errorf("%q does not match what was typed", term)
+		}
+	}
+
+	// And a second argument is not a term.
+	if extra, _ := explain.ValidArgsFunction(explain, []string{"stale"}, ""); len(extra) != 0 {
+		t.Errorf("a second argument completed: %v", extra)
+	}
+}

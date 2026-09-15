@@ -79,6 +79,7 @@ func addEnvironmentFlags(cmd *cobra.Command) {
 	cli.AddTargetCore(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddProjectsRoot(cmd)
+	cli.AddModuleCompletion(cmd)
 }
 
 // resolveSubject is the module and core an environment command acts on.
