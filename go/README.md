@@ -39,6 +39,7 @@ difference that 161 real ones did not.
 | `internal/config` | The Project Update Bot pattern, defined once |
 | `internal/results` | The file-backed store of local check results, and what a row knows across its cores |
 | `internal/gate` | The fast-lane classifier: READY-AUTO, REVIEW, BLOCKED |
+| `internal/baseartifact` | The per-core base tree and dump: layout, the meta.yml sidecar, the status scan, and the core constraint |
 | `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
@@ -59,6 +60,12 @@ wording: the two word their refusals differently, and what has to agree is
 because the "did you mean" threshold is an edit distance, and an implementation
 that disagrees about one suggests a different module name than the tool it
 replaces.
+
+`meta.yml` gets the same treatment (`meta_expect.php`, 16 fixtures), and both
+directions are covered: the PHP rendering is in the answers file and read back
+here, and this implementation's own rendering is committed as fixtures that
+`meta_expect.php` loads — so each side is proved to read what the other writes.
+A base artifact set outlives whichever binary built it.
 
 ### The version semantics
 
@@ -123,6 +130,15 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **The base-artifact size measure does not stay inside the tree.** Its own
+  doc comment says it does, and for symlinked *directories* that is true —
+  `FOLLOW_SYMLINKS` is unset. But a symlinked *file* is a leaf, and
+  `SplFileInfo::getSize()` follows the link: measured on a tree holding 1000
+  bytes plus one link to a 5000-byte file outside it, PHP reports 7000. Every
+  `vendor/bin/*` entry is also counted a second time on top of the real file it
+  points at. It is only a size report, so nothing downstream breaks — but the
+  Go version follows no symlink at all, and the divergence is deliberate.
+
 - **The gate trusts that its two arguments describe the same cores.** It takes
   the cores a row applies to and the evidence separately, and checks only that
   the evidence is non-empty — never that it covers them. The PHP row factory
