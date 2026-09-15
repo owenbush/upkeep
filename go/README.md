@@ -39,8 +39,26 @@ difference that 161 real ones did not.
 | `internal/config` | The Project Update Bot pattern, defined once |
 | `internal/results` | The file-backed store of local check results, and what a row knows across its cores |
 | `internal/gate` | The fast-lane classifier: READY-AUTO, REVIEW, BLOCKED |
+| `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
+
+### registry.yml is shared, so its parsing is held to PHP's
+
+Both implementations read and write the same registry, so a disagreement about
+which files are valid is a disagreement about the user's own config — and YAML
+parsers differ at exactly the edges this file lives on: an unquoted number, a
+null mapping, a scalar where a list belongs.
+
+`registry_expect.php` loads 28 fixtures through the real PHP loader and commits
+the answers. The Go test compares accept/reject and the parsed content, not the
+wording: the two word their refusals differently, and what has to agree is
+*which* registries are accepted.
+
+`levenshtein` is held to PHP's the same way — 3,012 cases in `corpus.json` —
+because the "did you mean" threshold is an edit distance, and an implementation
+that disagrees about one suggests a different module name than the tool it
+replaces.
 
 ### The version semantics
 

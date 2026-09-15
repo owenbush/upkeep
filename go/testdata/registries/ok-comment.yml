@@ -1,0 +1,5 @@
+# the watchlist
+modules:
+  pathauto:
+    project: project/pathauto  # the canonical one
+    core_versions: ['11']

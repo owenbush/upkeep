@@ -1,0 +1,4 @@
+modules:
+  pathauto:
+   project: x
+     core_versions: ['11']

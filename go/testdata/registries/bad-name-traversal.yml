@@ -1,0 +1,4 @@
+modules:
+  '../escape':
+    project: project/escape
+    core_versions: ['11']

@@ -134,10 +134,44 @@ foreach (['12.0.0-alpha1', '11.4.6', '13.0.0-beta2', '12.0.0-rc1', '12.x-dev', '
     $stability[$v] = VersionParser::parseStability($v);
 }
 
+// Edit distances from PHP's own levenshtein(), because the "did you mean"
+// threshold is a distance and an implementation that disagrees about one
+// suggests a different module name than the tool it is replacing.
+$distances = [];
+mt_srand(4242);
+$alphabet = 'abcdefghijklmnopqrstuvwxyz_0123456789';
+$word = static function () use ($alphabet): string {
+    $length = mt_rand(0, 14);
+    $word = '';
+    for ($i = 0; $i < $length; ++$i) {
+        $word .= $alphabet[mt_rand(0, \strlen($alphabet) - 1)];
+    }
+
+    return $word;
+};
+$pairs = [
+    ['pathauto', 'pathuato'], ['pathauto', 'pathaut'], ['pathauto', 'pathauto'],
+    ['', ''], ['', 'pathauto'], ['pathauto', ''], ['token', 'tolken'],
+    ['field_visibility_conditions', 'field_visibilty_conditions'],
+    ['kitten', 'sitting'], ['webform', 'webfrom'], ['a', 'b'], ['flaw', 'lawn'],
+];
+for ($i = 0; $i < 3000; ++$i) {
+    $pairs[] = [$word(), $word()];
+}
+foreach ($pairs as [$a, $b]) {
+    $distances[] = ['a' => $a, 'b' => $b, 'distance' => levenshtein($a, $b)];
+}
+
 $corpus = [
     'intersects' => array_merge(rows($parser, REAL), rows($parser, NARROW)),
     'stability' => $stability,
+    'distances' => $distances,
 ];
 
 file_put_contents(__DIR__ . '/corpus.json', json_encode($corpus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-printf("corpus.json: %d intersection cases, %d stability cases\n", \count($corpus['intersects']), \count($stability));
+printf(
+    "corpus.json: %d intersection cases, %d stability cases, %d edit distances\n",
+    \count($corpus['intersects']),
+    \count($stability),
+    \count($distances),
+);
