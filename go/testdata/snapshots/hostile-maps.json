@@ -1,0 +1,38 @@
+{
+  "fetched_at": "2026-06-12T10:00:00+00:00",
+  "project": {
+    "id": 11,
+    "path_with_namespace": "project/pathauto"
+  },
+  "merge_requests": [
+    {
+      "iid": 12,
+      "state": "opened"
+    },
+    "not an object",
+    42
+  ],
+  "patch_issues": [
+    "not an object"
+  ],
+  "merged_merge_requests": null,
+  "fork_nids": {
+    "501": 3603341,
+    "not-a-number": 1,
+    "502": "3597808",
+    "503": 1.5
+  },
+  "core_constraints": {
+    "2.0.x": "^11",
+    "1.0.x": "",
+    "0.x": 42,
+    "9.x": null
+  },
+  "merge_ref_shas": {
+    "12": "deadbeefcafe",
+    "13": "../../escape",
+    "14": "ABCDEF1",
+    "x": "abc1234",
+    "15": 42
+  }
+}

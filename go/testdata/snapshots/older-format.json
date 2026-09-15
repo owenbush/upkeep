@@ -1,0 +1,13 @@
+{
+  "fetched_at": "2026-01-01T00:00:00+00:00",
+  "project": {
+    "id": 11,
+    "path_with_namespace": "project/pathauto"
+  },
+  "merge_requests": [
+    {
+      "iid": 12,
+      "state": "opened"
+    }
+  ]
+}

@@ -125,14 +125,14 @@ func mergeRequestsFrom(payloads []map[string]any) []gitlab.MergeRequest {
 // format that wrote it, and a half-shaped one must read as "no cache" — the
 // caller then refetches — rather than reach the models as anything else.
 type snapshotFile struct {
-	FetchedAt           string           `json:"fetched_at"`
-	Project             map[string]any   `json:"project"`
-	MergeRequests       []any            `json:"merge_requests"`
-	PatchIssues         []any            `json:"patch_issues"`
-	MergedMergeRequests []any            `json:"merged_merge_requests"`
-	ForkNids            map[string]any   `json:"fork_nids"`
-	CoreConstraints     map[string]any   `json:"core_constraints"`
-	MergeRefSHAs        map[string]any   `json:"merge_ref_shas"`
+	FetchedAt           string         `json:"fetched_at"`
+	Project             map[string]any `json:"project"`
+	MergeRequests       []any          `json:"merge_requests"`
+	PatchIssues         []any          `json:"patch_issues"`
+	MergedMergeRequests []any          `json:"merged_merge_requests"`
+	ForkNids            map[string]any `json:"fork_nids"`
+	CoreConstraints     map[string]any `json:"core_constraints"`
+	MergeRefSHAs        map[string]any `json:"merge_ref_shas"`
 }
 
 // ToJSON renders the snapshot.

@@ -1,0 +1,143 @@
+{
+    "bad-a-list.json": {
+        "read": false
+    },
+    "bad-fetched-at-garbage.json": {
+        "read": false
+    },
+    "bad-merge-requests-scalar.json": {
+        "read": false
+    },
+    "bad-no-fetched-at.json": {
+        "read": false
+    },
+    "bad-no-merge-requests.json": {
+        "read": false
+    },
+    "bad-no-project.json": {
+        "read": false
+    },
+    "bad-not-json.json": {
+        "read": false
+    },
+    "go-written.json": {
+        "read": true,
+        "fetched_at": "2026-06-12T10:00:00+00:00",
+        "project_id": 11,
+        "project_path": "project/pathauto",
+        "merge_request_iids": [
+            12
+        ],
+        "merged_iids": [
+            9
+        ],
+        "issue_nids": [
+            3603341
+        ],
+        "issue_patch_counts": [
+            2
+        ],
+        "fork_nids": {
+            "501": 3603341,
+            "502": 3597808
+        },
+        "core_constraints": {
+            "1.0.x": "^10",
+            "2.0.x": "^10.2 || ^11 || ^12"
+        },
+        "merge_ref_shas": {
+            "12": "deadbeefcafe",
+            "9": "abc1234"
+        },
+        "age_labels": {
+            "just now": "just now",
+            "minutes": "45m ago",
+            "hours": "5h ago",
+            "days": "9d ago"
+        }
+    },
+    "hostile-maps.json": {
+        "read": true,
+        "fetched_at": "2026-06-12T10:00:00+00:00",
+        "project_id": 11,
+        "project_path": "project/pathauto",
+        "merge_request_iids": [
+            12
+        ],
+        "merged_iids": [],
+        "issue_nids": [],
+        "issue_patch_counts": [],
+        "fork_nids": {
+            "501": 3603341
+        },
+        "core_constraints": {
+            "2.0.x": "^11"
+        },
+        "merge_ref_shas": {
+            "12": "deadbeefcafe"
+        },
+        "age_labels": {
+            "just now": "just now",
+            "minutes": "45m ago",
+            "hours": "5h ago",
+            "days": "9d ago"
+        }
+    },
+    "older-format.json": {
+        "read": true,
+        "fetched_at": "2026-01-01T00:00:00+00:00",
+        "project_id": 11,
+        "project_path": "project/pathauto",
+        "merge_request_iids": [
+            12
+        ],
+        "merged_iids": [],
+        "issue_nids": [],
+        "issue_patch_counts": [],
+        "fork_nids": {},
+        "core_constraints": {},
+        "merge_ref_shas": {},
+        "age_labels": {
+            "just now": "just now",
+            "minutes": "45m ago",
+            "hours": "5h ago",
+            "days": "9d ago"
+        }
+    },
+    "php-written.json": {
+        "read": true,
+        "fetched_at": "2026-06-12T10:00:00+00:00",
+        "project_id": 11,
+        "project_path": "project/pathauto",
+        "merge_request_iids": [
+            12
+        ],
+        "merged_iids": [
+            9
+        ],
+        "issue_nids": [
+            3603341
+        ],
+        "issue_patch_counts": [
+            2
+        ],
+        "fork_nids": {
+            "501": 3603341,
+            "502": 3597808
+        },
+        "core_constraints": {
+            "2.0.x": "^10.2 || ^11 || ^12",
+            "1.0.x": "^10"
+        },
+        "merge_ref_shas": {
+            "12": "deadbeefcafe",
+            "9": "abc1234"
+        },
+        "age_labels": {
+            "just now": "just now",
+            "minutes": "45m ago",
+            "hours": "5h ago",
+            "days": "9d ago"
+        }
+    }
+}
