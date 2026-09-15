@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/maintenance"
 )
 
 // Version is the application version, stamped at build time.
@@ -14,7 +15,7 @@ var Version = "dev"
 // Every command that needs an environment is handed the engine factory here
 // and never constructs one itself. This function and the factory it is given
 // are the only places engine selection happens.
-func NewRoot(engines adapter.Factory) *cobra.Command {
+func NewRoot(engines adapter.Factory, volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
 	root := &cobra.Command{
 		Use:     "upkeep",
 		Short:   "Maintenance orchestrator for contributed Drupal modules",
@@ -33,9 +34,11 @@ func NewRoot(engines adapter.Factory) *cobra.Command {
 	_ = root.Flags().MarkHidden("version")
 
 	root.AddCommand(
+		NewBaseArtifactsStatus(),
 		NewExplain(),
 		NewInit(),
 		NewModules(),
+		NewStatus(volumes, sizer),
 		NewVersion(),
 	)
 

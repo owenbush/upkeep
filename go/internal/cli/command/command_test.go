@@ -7,9 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
+	"github.com/owenbush/upkeep/internal/maintenance"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -18,8 +21,15 @@ import (
 func invoke(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 
+	return invokeWith(t, NewRootFor(noVolumes{}, noSizer), args...)
+}
+
+// invokeWith runs a given tree, for the commands whose behaviour depends on
+// what they were wired to.
+func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
+
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
-	root := NewRoot(adapter.NewDdevContribFactory(nil))
 	root.SetOut(out)
 	root.SetErr(errOut)
 	root.SetArgs(args)
@@ -27,6 +37,12 @@ func invoke(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	code = cli.Execute(root, errOut)
 
 	return code, out.String(), errOut.String()
+}
+
+// NewRootFor is the command tree with a stubbed engine factory, for the
+// commands that do not need one.
+func NewRootFor(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
+	return NewRoot(adapter.NewDdevContribFactory(nil), volumes, sizer)
 }
 
 // A fresh cockpit is every directory the tool reads from plus a registry that
@@ -215,7 +231,7 @@ func TestCompletionIsGeneratedForEveryShell(t *testing.T) {
 // Every command is reachable and describes itself: the command list is the
 // first thing anybody reads.
 func TestEveryCommandIsDescribed(t *testing.T) {
-	root := NewRoot(adapter.NewDdevContribFactory(nil))
+	root := NewRootFor(noVolumes{}, noSizer)
 
 	for _, command := range root.Commands() {
 		if command.Short == "" {
@@ -231,7 +247,7 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 // that needs one is handed the factory.
 func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 	var built []string
-	root := NewRoot(recordingFactory{built: &built})
+	root := NewRoot(recordingFactory{built: &built}, noVolumes{}, noSizer)
 
 	if root.Use != "upkeep" {
 		t.Errorf("root %q", root.Use)
@@ -242,6 +258,15 @@ func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 		t.Errorf("building the command tree built an engine: %v", built)
 	}
 }
+
+// noVolumes stands in for the engine's volume listing: a status run in a test
+// has no container runtime and must not need one.
+type noVolumes struct{}
+
+func (noVolumes) Volumes() []adapter.ProjectVolume { return nil }
+
+// noSizer measures nothing, so a listing test is about the listing.
+func noSizer(string) int64 { return 0 }
 
 // recordingFactory stands in for the engine factory.
 type recordingFactory struct{ built *[]string }
