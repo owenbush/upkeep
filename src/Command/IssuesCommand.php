@@ -366,9 +366,16 @@ final class IssuesCommand extends UpkeepCommand
             return IssueStatus::open();
         }
 
+        // Compared case-insensitively on both sides. It used to lowercase the
+        // argument and compare it against the label as printed, which can
+        // never match "RTBC" — the one open status whose label carries
+        // capitals, and one this command's own help offers. Because an
+        // unrecognised value falls back to the whole queue rather than
+        // refusing, `--status=rtbc` looked like it worked.
+        $wanted = strtolower($requested);
         $matched = array_values(array_filter(
             IssueStatus::open(),
-            static fn (IssueStatus $s): bool => str_replace(' ', '-', $s->shortLabel()) === strtolower($requested),
+            static fn (IssueStatus $s): bool => strtolower(str_replace(' ', '-', $s->shortLabel())) === $wanted,
         ));
 
         return $matched === [] ? IssueStatus::open() : $matched;

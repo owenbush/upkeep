@@ -11,6 +11,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 use Upkeep\Adapter\AdapterException;
 use Upkeep\Adapter\Environment;
 use Upkeep\Drupal\DrupalOrgClient;
+use Upkeep\Drupal\IssueStatus;
 use Upkeep\Gitlab\GitlabClient;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -928,6 +929,54 @@ final class IssueWorkflowTest extends TestCase
 
         self::assertStringContainsString('#1001', $cli->display());
         self::assertStringNotContainsString('#1002', $cli->display());
+    }
+
+    /**
+     * Every open status is selectable by the word the table prints for it.
+     *
+     * Written over the whole set rather than one example because one example
+     * is what there was: `--status=active` was covered and passed, while
+     * `--status=rtbc` — documented in the command's own help — silently
+     * matched nothing and fell back to showing the entire queue. RTBC is the
+     * only open status whose label carries capitals, so a case-sensitive
+     * comparison failed on exactly one of them and nothing noticed.
+     */
+    public function testEveryOpenStatusIsSelectableByItsOwnLabel(): void
+    {
+        foreach (IssueStatus::open() as $status) {
+            $others = array_values(array_filter(
+                IssueStatus::open(),
+                static fn (IssueStatus $s): bool => $s->shortLabel() !== $status->shortLabel(),
+            ));
+            $wanted = self::issue(1001, (string) $status->value);
+            $unwanted = self::issue(1002, (string) $others[0]->value);
+            $cli = $this->withIssues([$wanted, $unwanted]);
+
+            $flag = str_replace(' ', '-', $status->shortLabel());
+            $cli->run('issues', 'widget', '--status=' . $flag);
+
+            self::assertStringContainsString(
+                '#1001',
+                $cli->display(),
+                sprintf('--status=%s did not select %s', $flag, $status->name),
+            );
+            self::assertStringNotContainsString(
+                '#1002',
+                $cli->display(),
+                sprintf('--status=%s was ignored and showed the whole queue', $flag),
+            );
+
+            // And as the help spells it, which for RTBC is not as the table
+            // prints it. Somebody typing what they read in `--help` is the
+            // case that was broken.
+            $lower = $this->withIssues([$wanted, $unwanted]);
+            $lower->run('issues', 'widget', '--status=' . strtolower($flag));
+            self::assertStringNotContainsString(
+                '#1002',
+                $lower->display(),
+                sprintf('--status=%s was ignored', strtolower($flag)),
+            );
+        }
     }
 
     /** An unrecognised status falls back to everything open, not to nothing. */
