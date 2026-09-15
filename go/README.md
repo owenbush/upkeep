@@ -40,6 +40,7 @@ difference that 161 real ones did not.
 | `internal/results` | The file-backed store of local check results, and what a row knows across its cores |
 | `internal/gate` | The fast-lane classifier: READY-AUTO, REVIEW, BLOCKED |
 | `internal/baseartifact` | The per-core base tree and dump: layout, the meta.yml sidecar, the status scan, and the core constraint |
+| `internal/patches` | The patch surface: which patch was meant, fetching it safely, what identifies it, and how an issue's work was delivered |
 | `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
@@ -130,6 +131,15 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **`preg_replace` works on bytes; Go's `regexp` works on runes.** The
+  filename an untrusted API supplies is reduced to a safe path segment by
+  replacing everything outside `[A-Za-z0-9._-]` with an underscore. PHP runs
+  that without the `/u` modifier, so a two-byte `é` becomes **two**
+  underscores; the obvious Go translation makes one. Both are safe, but both
+  implementations cache the downloaded patch under the name this produces, so
+  the difference would put the same patch at two paths. The Go version is
+  byte-wise, held to `safenames.json`.
+
 - **The base-artifact size measure does not stay inside the tree.** Its own
   doc comment says it does, and for symlinked *directories* that is true —
   `FOLLOW_SYMLINKS` is unset. But a symlinked *file* is a leaf, and
