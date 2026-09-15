@@ -25,8 +25,8 @@ FLOORS=$(
 internal/adapter              95.5
 internal/baseartifact         96.2
 internal/check               100.0
-internal/cli                  98.5
-internal/cli/command          95.0
+internal/cli                  98.6
+internal/cli/command          96.5
 internal/cockpit              93.3
 internal/config              100.0
 internal/dashboard            96.7

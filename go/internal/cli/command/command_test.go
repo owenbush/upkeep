@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
+	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/maintenance"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
@@ -42,7 +44,17 @@ func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, st
 // NewRootFor is the command tree with a stubbed engine factory, for the
 // commands that do not need one.
 func NewRootFor(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
-	return NewRoot(adapter.NewDdevContribFactory(nil), volumes, sizer)
+	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, volumes, sizer)
+}
+
+// noClients stands in for the GitLab client source where a command under test
+// never reaches one.
+type noClients struct{}
+
+func (noClients) ReadOnly(gitlab.Report) *gitlab.Client { return gitlab.NewClient(nil, "", "", "") }
+
+func (noClients) Authenticated(gitlab.Report) (*gitlab.Client, error) {
+	return nil, errors.New("no GitLab token is configured")
 }
 
 // A fresh cockpit is every directory the tool reads from plus a registry that
@@ -247,7 +259,7 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 // that needs one is handed the factory.
 func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 	var built []string
-	root := NewRoot(recordingFactory{built: &built}, noVolumes{}, noSizer)
+	root := NewRoot(recordingFactory{built: &built}, noClients{}, noVolumes{}, noSizer)
 
 	if root.Use != "upkeep" {
 		t.Errorf("root %q", root.Use)
@@ -278,4 +290,9 @@ func (f recordingFactory) Build(
 	*f.built = append(*f.built, where.Root)
 
 	return nil, nil
+}
+
+// writeFile replaces a file's contents.
+func writeFile(path, contents string) error {
+	return os.WriteFile(path, []byte(contents), 0o644)
 }

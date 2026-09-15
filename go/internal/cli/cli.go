@@ -353,3 +353,12 @@ func noEnvironment(moduleName, coreMajor string) error {
 		moduleName, coreMajor,
 	)
 }
+
+// Progressf reports a stage of a long-running command.
+//
+// Stage lines are progress, not results: they go to stderr with the rest of
+// the diagnostics, so redirecting a command's output captures its verdict
+// rather than the transcript of how it got there.
+func Progressf(cmd *cobra.Command, format string, args ...any) {
+	fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
+}

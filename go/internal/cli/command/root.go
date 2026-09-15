@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/owenbush/upkeep/internal/adapter"
+	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/maintenance"
 )
 
@@ -15,7 +16,12 @@ var Version = "dev"
 // Every command that needs an environment is handed the engine factory here
 // and never constructs one itself. This function and the factory it is given
 // are the only places engine selection happens.
-func NewRoot(engines adapter.Factory, volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
+func NewRoot(
+	engines adapter.Factory,
+	clients cli.GitlabClients,
+	volumes Volumes,
+	sizer maintenance.Sizer,
+) *cobra.Command {
 	root := &cobra.Command{
 		Use:     "upkeep",
 		Short:   "Maintenance orchestrator for contributed Drupal modules",
@@ -35,12 +41,14 @@ func NewRoot(engines adapter.Factory, volumes Volumes, sizer maintenance.Sizer) 
 
 	root.AddCommand(
 		NewBaseArtifactsStatus(),
+		NewCheck(engines, clients),
 		NewDev(engines),
 		NewEnvPath(engines),
 		NewExec(engines),
 		NewExplain(),
 		NewInit(),
 		NewModules(),
+		NewReview(engines, clients),
 		NewStatus(volumes, sizer),
 		NewVersion(),
 	)

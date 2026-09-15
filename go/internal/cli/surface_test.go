@@ -466,3 +466,31 @@ func TestPaddingLeavesAFullCellAlone(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// Progress is not a result: it goes to stderr, so redirecting a command's
+// output captures its verdict rather than the transcript of how it got there.
+func TestProgressGoesToTheDiagnosticStream(t *testing.T) {
+	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
+	cmd := &cobra.Command{Use: "thing"}
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+
+	Progressf(cmd, "Resolving MR !%d ...", 12)
+
+	if out.Len() != 0 {
+		t.Errorf("progress landed in the answer: %q", out)
+	}
+	if strings.TrimSpace(errOut.String()) != "Resolving MR !12 ..." {
+		t.Errorf("stderr: %q", errOut)
+	}
+}
+
+// A cockpit that cannot be resolved stops RequireCockpit before it reaches the
+// registry, so the failure names the path rather than a file inside it.
+func TestRequiringACockpitReportsAnUnresolvableOneFirst(t *testing.T) {
+	cmd := withFlags(t, AddCockpit, "--cockpit=")
+
+	if _, err := RequireCockpit(cmd); err == nil {
+		t.Error("an empty --cockpit resolved")
+	}
+}

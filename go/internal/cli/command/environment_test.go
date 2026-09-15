@@ -59,7 +59,10 @@ func (e *fakeEngine) RunChecks(adapter.Environment, []check.Type) (check.RunResu
 
 // fakeFactory hands out one engine and remembers what it was asked for.
 type fakeFactory struct {
-	engine       *fakeEngine
+	engine *fakeEngine
+	// replace stands in for the engine entirely, for the commands whose flow
+	// needs more than the shared fake answers.
+	replace      adapter.Engine
 	projectsRoot string
 	builds       int
 	// quiet is whether the engine was built with nowhere to report progress,
@@ -75,6 +78,14 @@ func (f *fakeFactory) Build(
 	f.projectsRoot = projectsRootOption
 	f.quiet = stageLog == nil && processLog == nil && onIdle == nil
 	f.engine.stage = stageLog
+
+	if f.replace != nil {
+		if recording, isRecording := f.replace.(*checkingEngine); isRecording {
+			recording.stage = stageLog
+		}
+
+		return f.replace, nil
+	}
 
 	return f.engine, nil
 }
@@ -107,7 +118,7 @@ func runWithEngine(
 	t.Helper()
 
 	factory := &fakeFactory{engine: engine}
-	root := NewRoot(factory, noVolumes{}, noSizer)
+	root := NewRoot(factory, noClients{}, noVolumes{}, noSizer)
 
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
@@ -428,7 +439,7 @@ func TestExecHandsStdinToTheWrappedCommand(t *testing.T) {
 	engine := &fakeEngine{envPaths: map[string]string{"pathauto/11": dir}}
 
 	factory := &fakeFactory{engine: engine}
-	tree := NewRoot(factory, noVolumes{}, noSizer)
+	tree := NewRoot(factory, noClients{}, noVolumes{}, noSizer)
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	tree.SetOut(out)
 	tree.SetErr(errOut)

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/owenbush/upkeep/internal/adapter"
@@ -29,6 +30,7 @@ func main() {
 
 	os.Exit(cli.Execute(command.NewRoot(
 		adapter.NewDdevContribFactory(redactor),
+		cli.NewResolvedClients(func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) }),
 		adapter.NewVolumeProbe(quiet),
 		maintenance.DiskSizer(quiet),
 	), os.Stderr))
