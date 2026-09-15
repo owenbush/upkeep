@@ -131,10 +131,21 @@ type Engine interface {
 // from the contract is a compile error in this package, where the fix is.
 var _ Engine = (*DdevContrib)(nil)
 
-// Factory builds an engine bound to a projects root.
+// Factory builds an engine for a cockpit.
 //
 // Commands receive one of these and never construct an engine themselves,
-// which is what keeps engine selection to a single composition root.
+// which is what keeps engine selection to a single composition root — and what
+// makes the boundary check meaningful rather than merely satisfied.
 type Factory interface {
-	ForProjectsRoot(projectsRoot string) Engine
+	Build(
+		where *cockpit.Cockpit,
+		projectsRootOption string,
+		stageLog Log,
+		processLog func(string),
+		onIdle func(),
+	) (Engine, error)
 }
+
+// The one implementation, asserted here so a signature that drifts is a
+// compile error in this package.
+var _ Factory = (*DdevContribFactory)(nil)

@@ -22,9 +22,11 @@ cd "$(dirname "$0")"
 # package                     floor  why it is not higher
 FLOORS=$(
 	cat <<'EOF'
-internal/adapter              95.4
+internal/adapter              95.5
 internal/baseartifact         96.2
 internal/check               100.0
+internal/cli                  92.3
+internal/cli/command          93.8
 internal/cockpit              93.3
 internal/config              100.0
 internal/dashboard            96.7
@@ -43,6 +45,12 @@ internal/workflow            100.0
 EOF
 )
 
+# cmd/upkeep is excluded: it is the composition root, and every line of it is
+# either wiring asserted where it lives (the factory's redaction and
+# projects-root rules in internal/adapter, the command tree in
+# internal/cli/command) or the os.Exit a test cannot call. Keeping it at four
+# lines is what makes that exclusion honest, so anything that grows here wants
+# moving into a package that can be tested.
 # cmd/livecheck is excluded: it is a live-verification tool that talks to
 # drupal.org and git.drupalcode.org, so the only thing a test could cover is a
 # mock of the thing it exists to not mock.
@@ -76,7 +84,7 @@ done <<<"$FLOORS"
 
 # A package nobody listed is a package nobody is holding to anything.
 for package in $(go list ./... | sed 's#github.com/owenbush/upkeep/##' |
-	grep -v '^cmd/livecheck$' | grep -v '^internal/invariant$'); do
+	grep -v '^cmd/livecheck$' | grep -v '^cmd/upkeep$' | grep -v '^internal/invariant$'); do
 	if ! grep -q "^$package  *[0-9]" <<<"$FLOORS"; then
 		printf 'FAIL  %-28s is not listed in coverage.sh\n' "$package"
 		status=1
