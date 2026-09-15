@@ -103,3 +103,29 @@ func OpenStatuses() []IssueStatus {
 func AwaitingReviewStatuses() []IssueStatus {
 	return []IssueStatus{StatusNeedsReview, StatusRtbc}
 }
+
+// shortLabels are the words the dashboard's ISSUE cell prints.
+//
+// Shorter than the full label because the cell is one column of ten, and the
+// distinction that matters there is what the status asks of a maintainer:
+// "review" and "RTBC" call for different things, and the dashboard used to
+// print the same cell for both.
+var shortLabels = map[IssueStatus]string{
+	StatusActive:                "active",
+	StatusFixed:                 "fixed",
+	StatusClosedDuplicate:       "closed",
+	StatusClosedWontFix:         "closed",
+	StatusClosedWorksAsDesigned: "closed",
+	StatusClosedFixed:           "closed",
+	StatusClosedOutdated:        "closed",
+	StatusClosedCannotReproduce: "closed",
+	StatusPostponed:             "postponed",
+	StatusPostponedNeedsInfo:    "postponed",
+	StatusNeedsReview:           "review",
+	StatusNeedsWork:             "needs work",
+	StatusRtbc:                  "RTBC",
+	StatusPatchToBePorted:       "to port",
+}
+
+// ShortLabel is the status as the dashboard's ISSUE cell prints it.
+func (s IssueStatus) ShortLabel() string { return shortLabels[s] }

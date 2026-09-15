@@ -40,6 +40,7 @@ difference that 161 real ones did not.
 | `internal/results` | The file-backed store of local check results, and what a row knows across its cores |
 | `internal/gate` | The fast-lane classifier: READY-AUTO, REVIEW, BLOCKED |
 | `internal/baseartifact` | The per-core base tree and dump: layout, the meta.yml sidecar, the status scan, and the core constraint |
+| `internal/dashboard` | The row model, the snapshot, and the phrase-plus-command every row carries |
 | `internal/patches` | The patch surface: which patch was meant, fetching it safely, what identifies it, and how an issue's work was delivered |
 | `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
