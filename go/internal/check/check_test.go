@@ -150,3 +150,30 @@ func TestAnEmptyRunIsGreen(t *testing.T) {
 		t.Error("a run of nothing was not green")
 	}
 }
+
+// The closed set, enumerated once because three consumers have to agree on
+// it: the results cache refuses a status not on this list, the merge-request
+// comment gives each one a word, and the console report colours them.
+func TestStatusesIsEveryStatusAndOnlyOpenOnes(t *testing.T) {
+	statuses := Statuses()
+
+	for _, status := range []Status{Passed, Failed, NoTests, Unavailable} {
+		found := false
+		for _, known := range statuses {
+			found = found || known == status
+		}
+		if !found {
+			t.Errorf("%q is missing from Statuses()", status)
+		}
+	}
+	if len(statuses) != 4 {
+		t.Errorf("Statuses() has %d entries: %v", len(statuses), statuses)
+	}
+	// Only Failed blocks: NoTests and Unavailable are honest, visible
+	// non-answers rather than failures.
+	for _, status := range statuses {
+		if status.Passed() != (status != Failed) {
+			t.Errorf("%q passes: %v", status, status.Passed())
+		}
+	}
+}

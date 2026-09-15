@@ -270,7 +270,7 @@ func knownType(value string) (check.Type, bool) {
 }
 
 func knownStatus(value string) (check.Status, bool) {
-	for _, known := range []check.Status{check.Passed, check.Failed, check.NoTests, check.Unavailable} {
+	for _, known := range check.Statuses() {
 		if string(known) == value {
 			return known, true
 		}

@@ -274,6 +274,7 @@ func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
 		"publish":       {"publish", "pathauto", "3223746", "--cockpit=" + root},
 		"issues":        {"issues", "pathauto", "--cockpit=" + root},
 		"patches":       {"patches", "--cockpit=" + root},
+		"needs-work":    {"needs-work", "pathauto", "12", "--cockpit=" + root},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 

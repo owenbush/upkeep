@@ -117,6 +117,14 @@ func NotAvailable(checkType Type, reason string) Result {
 // Passed reports whether this result permits an all-green verdict.
 func (r Result) Passed() bool { return r.Status.Passed() }
 
+// Statuses is every status a check can hold.
+//
+// Enumerated here rather than at each consumer, because there are three that
+// have to agree: the cache refuses a status not on this list, the
+// merge-request comment gives each one a word, and the console report colours
+// them. A status added without this list would be accepted by none of them.
+func Statuses() []Status { return []Status{Passed, Failed, NoTests, Unavailable} }
+
 // OutputExcerpt is the trailing excerpt of this check's output — what the
 // console report echoes and what the merge-request comment quotes.
 //

@@ -31,6 +31,17 @@ func addMrSurface(cmd *cobra.Command) {
 func resolveMrContext(
 	cmd *cobra.Command, clients cli.GitlabClients, moduleName, rawIID string,
 ) (*cockpit.Cockpit, workflow.MrContext, error) {
+	return resolveMrContextWith(cmd, cli.ReadingClient(cmd, clients), moduleName, rawIID)
+}
+
+// resolveMrContextWith is the same resolution against a caller-chosen client.
+//
+// The one command that posts — needs-work — resolves the same context but
+// needs a credential, and finding that out *after* the resolution would mean
+// two round trips before the refusal.
+func resolveMrContextWith(
+	cmd *cobra.Command, client workflow.MrReader, moduleName, rawIID string,
+) (*cockpit.Cockpit, workflow.MrContext, error) {
 	where, err := cli.Cockpit(cmd)
 	if err != nil {
 		return nil, workflow.MrContext{}, err
@@ -54,7 +65,7 @@ func resolveMrContext(
 	// request is a subject like any other, and gating it on the watchlist was
 	// the half of that split that got missed.
 	context, err := workflow.NewMrResolver(
-		modules, cli.ReadingClient(cmd, clients), cli.CoresOnDisk(where),
+		modules, client, cli.CoresOnDisk(where),
 	).Resolve(moduleName, iid, cli.Flag(cmd, cli.FlagVersion))
 	if err != nil {
 		return nil, workflow.MrContext{}, err
