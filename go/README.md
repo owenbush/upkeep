@@ -43,6 +43,7 @@ difference that 161 real ones did not.
 | `internal/dashboard` | The row model, the snapshot, and the phrase-plus-command every row carries |
 | `internal/patches` | The patch surface: which patch was meant, fetching it safely, what identifies it, and how an issue's work was delivered |
 | `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
+| `internal/adapter` | Engine specifics: branch naming, the git remote, push diagnosis, shell quoting (the ddev engine itself is still to come) |
 | `internal/maintenance` | The disk inventory and the prune selector — what is disposable, and what may never be |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
