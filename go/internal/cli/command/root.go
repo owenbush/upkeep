@@ -33,6 +33,7 @@ func NewRoot(engines adapter.Factory) *cobra.Command {
 	_ = root.Flags().MarkHidden("version")
 
 	root.AddCommand(
+		NewExplain(),
 		NewInit(),
 		NewModules(),
 		NewVersion(),
