@@ -152,3 +152,103 @@ func TestInputEndingMidListFallsToTheDefault(t *testing.T) {
 		t.Errorf("after input ended, answer %q — want the default", got)
 	}
 }
+
+// A multi-select answer takes several, by name or by the number shown.
+//
+// Numbers because a list of Drupal machine names is tedious to type correctly,
+// and names because a number is meaningless once the list has scrolled away.
+func TestChooseManyTakesNamesAndNumbers(t *testing.T) {
+	options := []string{"field_helper", "pathauto", "token"}
+
+	for name, run := range map[string]struct {
+		reply string
+		want  string
+	}{
+		"by name":               {"token\n", "token"},
+		"by number":             {"2\n", "pathauto"},
+		"several":               {"token, field_helper\n", "field_helper,token"},
+		"mixed":                 {"3,1\n", "field_helper,token"},
+		"untidy spacing":        {"  token ,, pathauto  \n", "pathauto,token"},
+		"different case":        {"TOKEN\n", "token"},
+		"the same one twice":    {"token,3\n", "token"},
+		"nothing":               {"\n", ""},
+		"end of input":          {"", ""},
+		"input with no newline": {"token", "token"},
+	} {
+		prompt, _ := aPrompt(run.reply)
+
+		chosen := prompt.ChooseMany("Which?", options)
+
+		if strings.Join(chosen, ",") != run.want {
+			t.Errorf("%s: chose %v, want %q", name, chosen, run.want)
+		}
+	}
+}
+
+// Whatever order the answer is typed in, the result is the order the options
+// were offered — so the run reads the same way the list did.
+func TestChooseManyAnswersInTheOrderOffered(t *testing.T) {
+	prompt, _ := aPrompt("token,field_helper\n")
+
+	chosen := prompt.ChooseMany("Which?", []string{"field_helper", "pathauto", "token"})
+
+	if strings.Join(chosen, ",") != "field_helper,token" {
+		t.Errorf("chose %v", chosen)
+	}
+}
+
+// An answer that matches nothing is reported and skipped, never guessed at:
+// this writes to a registry, and a near-match chosen on somebody's behalf is
+// an entry they did not ask for.
+func TestChooseManySkipsWhatItCannotMatch(t *testing.T) {
+	options := []string{"field_helper", "token"}
+
+	for name, reply := range map[string]string{
+		"a word that is not an option": "tokens,token\n",
+		// A strict prefix of a real option. Prefix matching would be a
+		// convenience here and a hazard: "to" would silently pick whichever
+		// module happened to sort first.
+		"a prefix of an option": "fie,token\n",
+		"a number past the end": "9,token\n",
+		"zero":                  "0,token\n",
+		"a negative number":     "-1,token\n",
+	} {
+		prompt, asked := aPrompt(reply)
+
+		chosen := prompt.ChooseMany("Which?", options)
+
+		if strings.Join(chosen, ",") != "token" {
+			t.Errorf("%s: chose %v", name, chosen)
+		}
+		if !strings.Contains(asked.String(), "skipped") {
+			t.Errorf("%s: it was skipped silently: %q", name, asked)
+		}
+	}
+}
+
+// The options are shown, numbered, before the question is answerable — a
+// prompt that asked for names without listing them would be a guessing game.
+func TestChooseManyShowsWhatThereIsToChoose(t *testing.T) {
+	prompt, asked := aPrompt("\n")
+
+	prompt.ChooseMany("Which modules?", []string{"field_helper", "token"})
+
+	shown := asked.String()
+	for _, expected := range []string{"Which modules?", "1) field_helper", "2) token", "blank for none"} {
+		if !strings.Contains(shown, expected) {
+			t.Errorf("the prompt is missing %q:\n%s", expected, shown)
+		}
+	}
+}
+
+// Nothing to choose from asks nothing.
+func TestChooseManyWithNoOptionsAsksNothing(t *testing.T) {
+	prompt, asked := aPrompt("token\n")
+
+	if chosen := prompt.ChooseMany("Which?", nil); len(chosen) != 0 {
+		t.Errorf("chose %v from nothing", chosen)
+	}
+	if asked.String() != "" {
+		t.Errorf("it asked anyway: %q", asked)
+	}
+}

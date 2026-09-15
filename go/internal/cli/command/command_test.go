@@ -83,6 +83,29 @@ type scriptedPrompt struct {
 
 func (p scriptedPrompt) Interactive() bool { return p.interactive }
 
+// ChooseMany answers from the same list, matched against what is offered, so
+// one script drives both kinds of question.
+func (p scriptedPrompt) ChooseMany(question string, options []string) []string {
+	if p.asked != nil {
+		*p.asked = append(*p.asked, question)
+	}
+	if p.at == nil {
+		return nil
+	}
+
+	chosen := []string{}
+	for _, option := range options {
+		for _, answer := range p.answers {
+			if answer == option {
+				chosen = append(chosen, option)
+			}
+		}
+	}
+	*p.at = len(p.answers)
+
+	return chosen
+}
+
 func (p scriptedPrompt) Choose(question string, _ []string) string {
 	if p.asked != nil {
 		*p.asked = append(*p.asked, question)

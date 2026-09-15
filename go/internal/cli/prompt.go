@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -25,6 +26,15 @@ type Prompt interface {
 	// answer is the default, taken on an empty reply — so it must always be
 	// the harmless one.
 	Choose(question string, answers []string) string
+
+	// ChooseMany asks for any number of the given options and returns those
+	// chosen, in the order they were offered.
+	//
+	// Separate from Choose because the defaults point opposite ways: Choose
+	// takes its first answer when nobody replies, while an empty reply here
+	// means *nothing* was chosen — a list of things to opt into must never
+	// opt somebody into the first one by their saying nothing.
+	ChooseMany(question string, options []string) []string
 }
 
 // TerminalPrompt reads answers from a stream.
@@ -82,6 +92,77 @@ func (p *TerminalPrompt) Choose(question string, answers []string) string {
 	}
 
 	return answers[0]
+}
+
+// ChooseMany asks and reads any number of answers.
+//
+// Answers are given by name or by the number shown beside them, separated by
+// commas — a list of module names is tedious to type correctly and a typo that
+// silently registers nothing is worse than one that is refused. Anything
+// unrecognised is reported and skipped rather than guessed at: this writes to
+// the registry, and a near-match chosen on the operator's behalf is an entry
+// they did not ask for.
+func (p *TerminalPrompt) ChooseMany(question string, options []string) []string {
+	if len(options) == 0 {
+		return nil
+	}
+
+	fmt.Fprintln(p.out, question)
+	for i, option := range options {
+		fmt.Fprintf(p.out, "  %d) %s\n", i+1, option)
+	}
+	fmt.Fprint(p.out, "Answer (comma-separated, blank for none): ")
+
+	line, err := p.in.ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		fmt.Fprintln(p.out)
+
+		return nil
+	}
+
+	chosen := map[string]bool{}
+	for _, reply := range strings.Split(line, ",") {
+		reply = strings.TrimSpace(reply)
+		if reply == "" {
+			continue
+		}
+		if option, matched := matchOption(reply, options); matched {
+			chosen[option] = true
+
+			continue
+		}
+		fmt.Fprintf(p.out, "  (no option %q — skipped)\n", reply)
+	}
+
+	// In the order they were offered, so the run reads the same way the list
+	// did however the answer was typed.
+	picked := make([]string, 0, len(chosen))
+	for _, option := range options {
+		if chosen[option] {
+			picked = append(picked, option)
+		}
+	}
+
+	return picked
+}
+
+// matchOption resolves one reply to an option, by its number or its name.
+func matchOption(reply string, options []string) (string, bool) {
+	if at, err := strconv.Atoi(reply); err == nil {
+		if at >= 1 && at <= len(options) {
+			return options[at-1], true
+		}
+
+		return "", false
+	}
+
+	for _, option := range options {
+		if strings.EqualFold(reply, option) {
+			return option, true
+		}
+	}
+
+	return "", false
 }
 
 // isTerminalReader reports whether a stream is a terminal a human is typing

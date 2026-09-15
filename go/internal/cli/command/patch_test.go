@@ -886,6 +886,9 @@ func (p answeringPrompt) Choose(question string, answers []string) string {
 	return p.choose(question, answers)
 }
 
+// This prompt exists for the patch chooser, which never asks for several.
+func (p answeringPrompt) ChooseMany(string, []string) []string { return nil }
+
 // runPatchWithPrompt is runPatchCommand with a prompt that reads the labels.
 func runPatchWithPrompt(
 	t *testing.T, engine adapter.Engine, issues IssueClients, prompt cli.Prompt, args ...string,
