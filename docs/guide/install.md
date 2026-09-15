@@ -4,7 +4,7 @@ What upkeep needs, how to install it from a clone, and how to get tab completion
 
 ## Requirements
 
-- PHP >= 8.2 and Composer
+- PHP >= 8.2 and Composer — or Go >= 1.24 for [the Go build](#the-go-build)
 - ddev >= 1.24.10 with a working Docker provider
 - A [git.drupalcode.org](https://git.drupalcode.org) personal access token
   (next section)
@@ -81,6 +81,23 @@ Sanity check, however you installed:
 ```bash
 upkeep list --raw
 ```
+
+### The Go build
+
+A full rewrite in Go lives in `go/`, on the `go-port` branch, with every
+command ported. It needs no PHP and no Composer — one static binary — but it
+wants the same ddev and the same token, and it reads and writes the same
+cockpit, registry and base artifacts.
+
+```bash
+cd go
+go build -o upkeep ./cmd/upkeep
+./upkeep --help
+```
+
+Requires Go >= 1.24. Everything else in this documentation applies to it
+unchanged; where it deliberately differs, [its own
+README](../../go/README.md) says so and why.
 
 ## Shell completion
 

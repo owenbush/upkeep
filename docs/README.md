@@ -36,6 +36,16 @@ module — registered or not.
 - [Disk housekeeping](reference/disk.md) — where the space goes, and reclaiming it
 - [Upgrading a cockpit](reference/upgrading.md)
 
+## The Go rewrite
+
+A full rewrite in Go lives in `go/`, on the `go-port` branch, with every
+command ported. It is the same tool — same commands, same cockpit, same
+registry and base artifacts — so everything in this documentation applies to
+it, and the few places it deliberately differs are recorded in its own README
+rather than duplicated here.
+
+- [The Go port](../go/README.md) — how it is being done, what it has found, and the defects it found in the PHP
+
 ## Design
 
 Why upkeep is shaped the way it is, rather than how to use it.

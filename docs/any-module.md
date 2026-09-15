@@ -46,12 +46,18 @@ at is catching a typo, and that is worth keeping (§5).
 Two kinds of command, and the split is already latent in the code:
 
 **Subject commands** take a module and act on it. They stop requiring
-registration: `check`, `review`, `dev`, `exec`, `env:path`, `issue`,
-`needs-work`, `patch:apply`, `patch:check`, `patch:promote`, `start`,
-`publish`.
+registration: `check`, `review`, `dev`, `exec`, `env:path`, `issue`, `issues`,
+`needs-work`, `notes`, `patch:apply`, `patch:check`, `patch:promote`, `start`,
+`publish`, `api:probe`.
 
 **Survey commands** iterate the watchlist and are unchanged: `dashboard`,
-`issues`, `patches`, `notes`, `modules`, `status`, `prune`, the browser UI.
+`patches`, `modules`, `status`, `prune`.
+
+`notes` and `api:probe` were on the survey side of this list for a while and
+never belonged there: neither iterates anything, and both accept a bare
+project path — `upkeep notes project/conditions_helper` is a supported way to
+run it from outside a cockpit entirely. `issues` moved for the reason the rest
+did.
 
 What this buys is not a feature so much as the removal of an obstacle. Today a
 fresh cockpit cannot do anything until a registry entry exists. After:
