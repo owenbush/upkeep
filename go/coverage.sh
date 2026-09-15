@@ -34,6 +34,7 @@ internal/gate                 97.3
 internal/gitlab               88.5
 internal/maintenance         100.0
 internal/naming              100.0
+internal/notes               100.0
 internal/patches              96.0
 internal/proc                 92.3
 internal/results              95.8
