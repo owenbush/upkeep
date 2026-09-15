@@ -27,8 +27,17 @@ difference that 161 real ones did not.
 
 ## What is here
 
-`internal/drupal` — the version semantics upkeep gets from `composer/semver`
-today, which is the dependency a Go port cannot simply take with it.
+| Package | What it covers |
+| --- | --- |
+| `internal/filesystem` | The single write path — atomic temp-then-rename — and path canonicalisation and containment |
+| `internal/security` | Credential scrubbing and output redaction |
+| `internal/proc` | The shell-out seam every engine interaction goes through |
+| `internal/drupal` | drupal.org: version semantics, issue models, and the api-d7 client |
+| `internal/invariant` | Checks over the source itself, for properties no single code path shows |
+
+### The version semantics
+
+This is the dependency a Go port cannot simply take with it.
 
 | Question | Where |
 | --- | --- |
@@ -66,6 +75,31 @@ php testdata_gen.php --fuzz=20000     # corpus-fuzz.json, not committed — rand
 
 The random corpus is skipped when it has not been generated. It is seeded, so a
 failure reproduces exactly.
+
+## What the port has found so far
+
+Every one of these is a Go runtime difference, not a domain mistake, and every
+one was caught by a test rather than by reading the code.
+
+- **`filepath.Join` calls `Clean`**, which folds `..` into the segment before
+  it — the exact escape `PathGuard` exists to refuse. It hid a test first (the
+  test passed while asserting nothing), then turned out to be in the
+  implementation too: the walk up to the deepest existing ancestor rebuilt each
+  candidate parent with `Join`, so the function performed the escape it exists
+  to refuse.
+- **`exec.CommandContext` kills only the direct child.** Every command upkeep
+  runs is a launcher, and the grandchildren hold the output pipes open, so
+  `cmd.Wait` blocks however long the timeout said. The suite took sixty seconds
+  because two timeout tests waited out `sleep 30`s they had already timed out;
+  a `ddev start` timeout would have waited for ddev regardless. Fixed with
+  process groups and `WaitDelay`.
+- **Chunked output splits lines.** The PHP splits each chunk on a newline, so a
+  line arriving in two writes becomes two lines. Harmless for a transcript,
+  wrong for a status line that overwrites itself.
+- **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
+  found by the random corpus and not by the real one.
+- **Map iteration order is random in Go**, so a rendered list of statuses had
+  to become a declared slice rather than a map walk.
 
 ## Scope, honestly
 
