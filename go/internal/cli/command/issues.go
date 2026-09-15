@@ -384,12 +384,21 @@ func statusFlagName(status drupal.IssueStatus) string {
 
 // registerStatusCompletion suggests the statuses, which are the one set of
 // values this tool can enumerate without a network.
+//
+// Deduplicated, because two of drupal.org's open statuses share the short
+// label "postponed" — and a prompt offering the same word twice reads as a
+// bug in the tool rather than as a fact about drupal.org. Selecting it takes
+// both, which is what the flag does.
 func registerStatusCompletion(cmd *cobra.Command) {
 	_ = cmd.RegisterFlagCompletionFunc("status",
 		func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+			seen := map[string]bool{}
 			names := make([]string, 0, len(drupal.OpenStatuses()))
 			for _, status := range drupal.OpenStatuses() {
-				names = append(names, statusFlagName(status))
+				if name := statusFlagName(status); !seen[name] {
+					seen[name] = true
+					names = append(names, name)
+				}
 			}
 			sort.Strings(names)
 

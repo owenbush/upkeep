@@ -545,8 +545,15 @@ func TestTheStatusFlagCompletes(t *testing.T) {
 		t.Fatalf("exit %d (%s)", code, stderr)
 	}
 	for _, status := range drupal.OpenStatuses() {
-		if !strings.Contains(stdout, statusFlagName(status)) {
-			t.Errorf("%q is not suggested:\n%s", statusFlagName(status), stdout)
+		name := statusFlagName(status)
+		if !strings.Contains(stdout, name) {
+			t.Errorf("%q is not suggested:\n%s", name, stdout)
+		}
+		// Once each: two of drupal.org's open statuses are both called
+		// "postponed", and a prompt offering the same word twice reads as a
+		// bug in the tool rather than a fact about drupal.org.
+		if strings.Count(stdout, name+"\n") > 1 {
+			t.Errorf("%q is suggested more than once:\n%s", name, stdout)
 		}
 	}
 }
