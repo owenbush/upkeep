@@ -23,10 +23,13 @@ import (
 type recordingRunner struct {
 	ran      []string
 	timeouts []time.Duration
-	keys     []string
-	answers  map[string]string
-	fail     map[string]bool
-	stall    map[string]bool
+	// via is how each command was invoked: Run means it must succeed, TryRun
+	// and Capture mean its failure is an answer rather than a problem.
+	via     []string
+	keys    []string
+	answers map[string]string
+	fail    map[string]bool
+	stall   map[string]bool
 	// effects are side effects a command has on the filesystem, so a test of
 	// a sequence can be a test of what each step leaves for the next.
 	effects []struct {
@@ -103,10 +106,11 @@ func (r *recordingRunner) does(key string, effect func()) *recordingRunner {
 	return r
 }
 
-func (r *recordingRunner) record(command []string, timeout time.Duration) string {
+func (r *recordingRunner) record(command []string, timeout time.Duration, via string) string {
 	line := strings.Join(command, " ")
 	r.ran = append(r.ran, line)
 	r.timeouts = append(r.timeouts, timeout)
+	r.via = append(r.via, via)
 
 	if !r.failing(line) {
 		for _, effect := range r.effects {
@@ -117,6 +121,19 @@ func (r *recordingRunner) record(command []string, timeout time.Duration) string
 	}
 
 	return line
+}
+
+// mustSucceed is every command the run made through Run — the ones whose
+// failure is fatal, as opposed to the probes whose failure is an answer.
+func (r *recordingRunner) mustSucceed() []string {
+	var required []string
+	for i, line := range r.ran {
+		if r.via[i] == "Run" {
+			required = append(required, line)
+		}
+	}
+
+	return required
 }
 
 // timeoutOf is the timebox the given command was run under.
@@ -130,7 +147,7 @@ func (r *recordingRunner) timeoutOf(fragments ...string) time.Duration {
 }
 
 func (r *recordingRunner) Run(command []string, _ string, timeout time.Duration) (string, error) {
-	line := r.record(command, timeout)
+	line := r.record(command, timeout, "Run")
 	answer, _ := r.match(line)
 	if r.failing(line) {
 		// With what it said, as the real runner does: a failure's output is
@@ -143,7 +160,7 @@ func (r *recordingRunner) Run(command []string, _ string, timeout time.Duration)
 }
 
 func (r *recordingRunner) TryRun(command []string, _ string, timeout time.Duration) (string, bool) {
-	line := r.record(command, timeout)
+	line := r.record(command, timeout, "TryRun")
 	if r.failing(line) {
 		return "", false
 	}
@@ -152,7 +169,7 @@ func (r *recordingRunner) TryRun(command []string, _ string, timeout time.Durati
 }
 
 func (r *recordingRunner) Capture(command []string, _ string, timeout time.Duration) proc.Captured {
-	line := r.record(command, timeout)
+	line := r.record(command, timeout, "Capture")
 	if r.stalling(line) {
 		answer, _ := r.match(line)
 
@@ -846,5 +863,230 @@ func TestAMirroredModuleIsARefusal(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ownership constraint") {
 		t.Errorf("the refusal does not say what was violated: %v", err)
+	}
+}
+
+// The base a previous apply recorded, so a later command can cut from the same
+// branch without asking again.
+func TestTheRecordedBaseBranchIsReadFromTheWorkingCopy(t *testing.T) {
+	runner := newRunner().answer("config --get upkeep.base-branch", "2.0.x\n")
+
+	if got := engineWith(runner).RecordedBaseBranch(anEnvironment(t)); got != "2.0.x" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// Nothing recorded is "" rather than a guess: the caller falls back to
+// resolving one, and a wrong answer here would cut a branch from the wrong
+// place.
+func TestNoRecordedBaseBranchIsEmptyRatherThanAGuess(t *testing.T) {
+	runner := newRunner()
+	runner.fails("config --get upkeep.base-branch")
+
+	if got := engineWith(runner).RecordedBaseBranch(anEnvironment(t)); got != "" {
+		t.Errorf("got %q, want none", got)
+	}
+}
+
+// Switching branches syncs the composer pin: a stale pin — "1.0.x-dev" while
+// the checkout is mr-2 — makes every later composer resolution in the project
+// unsatisfiable.
+func TestSwitchingBranchesSyncsTheComposerPin(t *testing.T) {
+	runner := cleanOn("2.0.x")
+
+	if err := engineWith(runner).CheckoutBranch(anEnvironment(t), "3.0.x"); err != nil {
+		t.Fatalf("checkout: %v\n%s", err, runner.transcript())
+	}
+
+	checkout := runner.indexOfCommand("checkout 3.0.x")
+	pin := runner.indexOfCommand("composer require", "drupal/pathauto:3.0.x-dev")
+	if checkout < 0 || pin < 0 {
+		t.Fatalf("missing steps:\n%s", runner.transcript())
+	}
+	if checkout > pin {
+		t.Errorf("the pin was synced before the branch moved:\n%s", runner.transcript())
+	}
+}
+
+// Uncommitted changes stop the switch: git would carry them across, and the
+// checks that follow would then be judging a branch plus somebody's work.
+func TestSwitchingBranchesRefusesOverUncommittedChanges(t *testing.T) {
+	runner := cleanOn("2.0.x").answer("status --porcelain", " M src/PathautoGenerator.php\n")
+
+	err := engineWith(runner).CheckoutBranch(anEnvironment(t), "3.0.x")
+	if err == nil {
+		t.Fatal("it switched branches over uncommitted changes")
+	}
+	if !strings.Contains(err.Error(), "Unstaged changes") {
+		t.Errorf("the refusal does not say what is in the way: %v", err)
+	}
+	if runner.didRun("checkout 3.0.x") {
+		t.Errorf("it switched anyway:\n%s", runner.transcript())
+	}
+}
+
+// A branch that does not exist is git's refusal, passed through rather than
+// followed by a pin to a branch nothing is on.
+func TestSwitchingToABranchThatIsNotThereDoesNotSyncThePin(t *testing.T) {
+	runner := cleanOn("2.0.x")
+	runner.fails("checkout 4.0.x")
+
+	if err := engineWith(runner).CheckoutBranch(anEnvironment(t), "4.0.x"); err == nil {
+		t.Fatal("it reported success for a branch that does not exist")
+	}
+	if runner.didRun("composer require", "drupal/pathauto:4.0.x-dev") {
+		t.Errorf("it pinned to a branch it never reached:\n%s", runner.transcript())
+	}
+}
+
+// A checkout that did not stick is a refusal, not a check run against whatever
+// the working copy happens to hold.
+func TestAnMrCheckoutThatDidNotStickIsARefusal(t *testing.T) {
+	runner := cleanOn("2.0.x").
+		answer("ls-remote origin", "abc\t"+MergeRef(12)+"\n").
+		answer("rev-parse --abbrev-ref HEAD", "2.0.x\n")
+
+	err := engineWith(runner).ApplyMr(anEnvironment(t), anMr(12, "2.0.x"))
+	if err == nil {
+		t.Fatal("it reported an MR applied while the working copy was elsewhere")
+	}
+	if !strings.Contains(err.Error(), "did not stick") {
+		t.Errorf("the refusal does not say what happened: %v", err)
+	}
+}
+
+// A head that moved since the model was fetched is worth saying — on the head
+// ref, which is the only place the comparison means anything.
+func TestAMovedHeadIsNotedWhenTheHeadRefWasUsed(t *testing.T) {
+	runner := cleanOn("2.0.x").
+		// No merge ref: GitLab computes none for an MR that conflicts.
+		answer("ls-remote origin", "def\t"+HeadRef(12)+"\n").
+		answer("rev-parse --abbrev-ref HEAD", "mr-12\n").
+		answer("rev-parse HEAD", "moved999\n")
+
+	engine, said := logging(nil, runner)
+	if err := engine.ApplyMr(anEnvironment(t), anMr(12, "2.0.x")); err != nil {
+		t.Fatalf("apply: %v\n%s", err, runner.transcript())
+	}
+
+	if !strings.Contains(strings.Join(*said, "\n"), "may have moved") {
+		t.Errorf("a moved head was not noted:\n%s", strings.Join(*said, "\n"))
+	}
+}
+
+// And never on the merge ref: the checked-out commit there is one GitLab made
+// by merging the branch into the target, so it is never the MR's head SHA and
+// comparing them would warn on every healthy run.
+func TestAMergeRefCheckoutIsNeverReportedAsAMovedHead(t *testing.T) {
+	runner := cleanOn("2.0.x").
+		answer("ls-remote origin", "abc\t"+MergeRef(12)+"\ndef\t"+HeadRef(12)+"\n").
+		answer("rev-parse --abbrev-ref HEAD", "mr-12\n").
+		answer("rev-parse HEAD", "merge222\n")
+
+	engine, said := logging(nil, runner)
+	if err := engine.ApplyMr(anEnvironment(t), anMr(12, "2.0.x")); err != nil {
+		t.Fatalf("apply: %v\n%s", err, runner.transcript())
+	}
+
+	if strings.Contains(strings.Join(*said, "\n"), "may have moved") {
+		t.Errorf("every healthy merge-ref run would warn:\n%s", strings.Join(*said, "\n"))
+	}
+}
+
+// Applying a patch resets its branch from the base, so uncommitted work in the
+// way is a refusal rather than something to carry across.
+func TestApplyingAPatchRefusesOverUncommittedChanges(t *testing.T) {
+	runner := cleanOn("2.0.x").answer("status --porcelain", "?? notes.txt\n")
+
+	err := engineWith(runner).ApplyPatch(
+		anEnvironment(t), PatchApplication{IssueNid: 3601234, LocalPath: "/tmp/p.patch"}, RefreshUpdate,
+	)
+	if err == nil {
+		t.Fatal("it reset a branch over uncommitted work")
+	}
+	if !strings.Contains(err.Error(), "Untracked files") {
+		t.Errorf("the refusal does not say what is in the way: %v", err)
+	}
+}
+
+// An existing work branch is resumed exactly as it stands: `checkout -B`, which
+// the disposable paths use, would silently discard commits held nowhere else.
+func TestAnExistingWorkBranchIsResumedAndNeverReset(t *testing.T) {
+	branch := IssueBranchFor(3601234, "Fix the thing")
+	runner := cleanOn("2.0.x").answer("rev-parse --verify "+branch.Name, "abc\n")
+
+	resumed, err := engineWith(runner).StartWork(anEnvironment(t), branch, "", RefreshUpdate)
+	if err != nil {
+		t.Fatalf("start: %v\n%s", err, runner.transcript())
+	}
+
+	if !resumed {
+		t.Error("resuming an existing branch did not report itself as a resume")
+	}
+	if !runner.didRun("checkout " + branch.Name) {
+		t.Errorf("the branch was not checked out:\n%s", runner.transcript())
+	}
+	if runner.didRun("checkout -B") || runner.didRun("checkout -b") {
+		t.Errorf("an existing work branch was reset:\n%s", runner.transcript())
+	}
+}
+
+// A branch pushed from another machine — or from the environment for another
+// core — is fetched and resumed rather than cut afresh over the top of it.
+func TestAWorkBranchThatExistsOnlyOnOriginIsResumedFromThere(t *testing.T) {
+	branch := IssueBranchFor(3601234, "Fix the thing")
+	runner := cleanOn("2.0.x").
+		answer("ls-remote --exit-code --heads origin "+branch.Name, "abc\trefs/heads/"+branch.Name+"\n")
+
+	resumed, err := engineWith(runner).StartWork(anEnvironment(t), branch, "", RefreshUpdate)
+	if err != nil {
+		t.Fatalf("start: %v\n%s", err, runner.transcript())
+	}
+
+	if !resumed {
+		t.Error("resuming from origin did not report itself as a resume")
+	}
+	if !runner.didRun("fetch origin "+branch.Name) ||
+		!runner.didRun("checkout -b "+branch.Name+" FETCH_HEAD") {
+		t.Errorf("it did not resume from origin:\n%s", runner.transcript())
+	}
+}
+
+// Starting work on a dirty working copy would mix somebody's changes into the
+// new branch.
+func TestStartingWorkRefusesOverUncommittedChanges(t *testing.T) {
+	branch := IssueBranchFor(3601234, "Fix the thing")
+	runner := cleanOn("2.0.x").answer("status --porcelain", "M  src/Thing.php\n")
+
+	if _, err := engineWith(runner).StartWork(anEnvironment(t), branch, "", RefreshUpdate); err == nil {
+		t.Fatal("it started a branch over uncommitted changes")
+	}
+	if runner.didRun("checkout -b") {
+		t.Errorf("it cut the branch anyway:\n%s", runner.transcript())
+	}
+}
+
+// Publishing pushes the branch you are looking at, so a working copy sitting
+// somewhere else is a refusal rather than a surprise push.
+func TestPublishingFromTheWrongPlaceIsARefusalThatSaysWhereYouAre(t *testing.T) {
+	branch := IssueBranchFor(3601234, "Fix the thing")
+	remote := IssueForkRemote(3601234, "git@git.drupal.org:issue/pathauto-3601234.git")
+
+	for where, expected := range map[string]string{"2.0.x\n": `"2.0.x"`, "": "a detached HEAD"} {
+		runner := cleanOn("2.0.x").answer("symbolic-ref --short HEAD", where)
+		if where == "" {
+			runner.fails("symbolic-ref --short HEAD")
+		}
+
+		_, err := engineWith(runner).PushWork(anEnvironment(t), branch, remote)
+		if err == nil {
+			t.Fatalf("%q: it pushed a branch nobody was on", where)
+		}
+		if !strings.Contains(err.Error(), expected) {
+			t.Errorf("%q: the refusal does not say where you are: %v", where, err)
+		}
+		if runner.didRun("push") {
+			t.Errorf("%q: it pushed anyway:\n%s", where, runner.transcript())
+		}
 	}
 }
