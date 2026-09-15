@@ -176,3 +176,50 @@ func TestIsWithinRejectsASymlinkEscapeThatNoPatternMatchOnDotDotWouldCatch(t *te
 		t.Error("a symlink out of the root reported as inside it")
 	}
 }
+
+// A "." segment resolves to the directory it sits in, so a path carrying one
+// points at the same place as the path without it — and containment has to
+// agree, or a protected root fails to match a path spelled through itself.
+//
+// Only reachable for a path that does not exist yet: an existing one is
+// normalised when the symlinks are evaluated. The PHP side keeps the "." and
+// so answers "not contained" here; this is a deliberate, strictly-safer
+// divergence, because unlike ".." a "." cannot move a path anywhere.
+func TestADotSegmentDoesNotDefeatContainment(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "protected")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	for _, spelling := range []string{
+		filepath.Join(root, "missing", "child"),
+		root + "/./missing/child",
+		root + "/missing/./child",
+		filepath.Dir(root) + "/./protected/missing/child",
+	} {
+		within, err := IsWithin(root, spelling)
+		if err != nil {
+			t.Fatalf("%q: %v", spelling, err)
+		}
+		if !within {
+			t.Errorf("%q read as outside %q", spelling, root)
+		}
+	}
+}
+
+// And a ".." is still the escape it always was: it is not folded away, so a
+// path that climbs out of the root reads as outside.
+func TestADotDotStillEscapes(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "protected")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	within, err := IsWithin(root, root+"/../elsewhere/file")
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if within {
+		t.Error("a path climbing out of the root read as contained")
+	}
+}

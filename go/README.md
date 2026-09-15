@@ -43,6 +43,7 @@ difference that 161 real ones did not.
 | `internal/dashboard` | The row model, the snapshot, and the phrase-plus-command every row carries |
 | `internal/patches` | The patch surface: which patch was meant, fetching it safely, what identifies it, and how an issue's work was delivered |
 | `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
+| `internal/maintenance` | The disk inventory and the prune selector — what is disposable, and what may never be |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
 
@@ -140,6 +141,15 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **A `.` path segment defeats containment for a path that does not exist.**
+  `PathGuard::canonicalize` drops empty segments and keeps `.` ones, so
+  `/root/./child` does not compare as inside `/root` — while `/root/../root/child`
+  does, because the ancestor walk resolves it. Only reachable for a path that
+  does not exist yet (an existing one is normalised by `realpath`), so nothing
+  in upkeep reaches it today; the prune selector's protected-root check is the
+  place it would matter. The Go version drops `.` as well as `""`, which is
+  strictly safer — unlike `..`, a `.` cannot move a path anywhere.
+
 - **JSON narrowing helpers that only accept `float64` break on their own
   output.** `encoding/json` decodes every number as `float64`, so readers
   written against a decoded payload work — until a model is rendered *back*

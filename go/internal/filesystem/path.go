@@ -30,7 +30,19 @@ func Canonicalize(path string) (string, error) {
 
 	segments := []string{}
 	for _, segment := range strings.Split(absolute, string(filepath.Separator)) {
-		if segment != "" {
+		// "." is dropped as well as "", which the PHP side does not do.
+		// A "." resolves to the directory it sits in on every filesystem, so
+		// removing it changes nothing about where the path points — where
+		// removing a ".." would, which is why that one is left for the
+		// ancestor walk below to handle honestly.
+		//
+		// It matters for containment: a protected root compared against
+		// "/root/./child" would otherwise fail to match, and this function's
+		// contract is that a differently-spelled path to the same place is the
+		// same place. Only reachable for a path that does not exist — an
+		// existing one is normalised by EvalSymlinks above — so nothing in
+		// upkeep reaches it today.
+		if segment != "" && segment != "." {
 			segments = append(segments, segment)
 		}
 	}
