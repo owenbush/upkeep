@@ -1,0 +1,105 @@
+name: Go
+
+on:
+  push:
+    branches: [main, go-port]
+    paths: ["go/**", ".github/workflows/go.yml"]
+  pull_request:
+    paths: ["go/**", ".github/workflows/go.yml"]
+
+defaults:
+  run:
+    working-directory: go
+
+jobs:
+  # The port's own gates, matching what the PHP side runs: formatting,
+  # static analysis, the suite, the per-package coverage floor, and the
+  # binary still booting.
+  #
+  # `go test ./...` is deliberately not the whole gate. The floor lives in
+  # coverage.sh so that running it locally enforces exactly what CI does —
+  # the same property that puts the PHP threshold in phpunit.xml.dist rather
+  # than in a CI flag.
+  gates:
+    name: Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The version in go.mod, and the one after it: a toolchain bump
+        # should be a decision rather than a surprise on somebody's machine.
+        go: ["1.24", "1.25"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go/go.sum
+
+      # gofmt is not advisory here. Formatting drift makes every later diff
+      # noisier than the change in it, and the fix is one command.
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            echo
+            echo "Run: gofmt -w cmd internal"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Tests and the per-package coverage floor
+        run: ./coverage.sh
+
+      # The invariants are in the suite above, but naming them here is what
+      # makes a red build legible: these are the structural rules — only
+      # internal/proc starts a child, and engine specifics stay inside
+      # internal/adapter — and a failure in one is a different kind of
+      # problem from a failing behaviour test.
+      - name: Structural invariants
+        run: go test ./internal/invariant/ -v
+
+      - name: Race detector
+        run: go test -race ./...
+
+      - name: The binary still boots
+        run: go run ./cmd/upkeep --help
+
+  # Reproducibility, which the PHP side gets from a committed lock file.
+  #
+  # Go's equivalent is go.mod plus go.sum, and the failure mode is the same:
+  # a dependency added without the sum updated leaves every fresh checkout
+  # broken, and nothing in the suite notices because the module cache is
+  # already warm.
+  tidy:
+    name: Dependencies are declared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: go/go.sum
+
+      - name: go mod tidy leaves nothing to do
+        run: |
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo
+            echo "go.mod or go.sum is out of date. Run: cd go && go mod tidy"
+            exit 1
+          fi
+
+      - name: Modules verify against their recorded hashes
+        run: go mod verify

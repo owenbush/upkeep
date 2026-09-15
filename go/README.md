@@ -1,6 +1,14 @@
-# upkeep, in Go — a port in progress
+# upkeep, in Go
 
-An exploration, on a branch. Nothing here is wired to a command yet.
+A full rewrite, on a branch. **Every command in the PHP implementation is
+ported** — all 26, plus cobra's own `completion`, `help` and `version`:
+
+```
+api:probe  base-artifacts:build  base-artifacts:status  check  dashboard
+dev  env:path  exec  explain  init  issue  issues  merge  modules
+modules:add  needs-work  notes  patch:apply  patch:check  patch:promote
+patches  prune  publish  review  start  status
+```
 
 ## How the port is being done
 
@@ -43,7 +51,9 @@ difference that 161 real ones did not.
 | `internal/dashboard` | The row model, the snapshot, and the phrase-plus-command every row carries |
 | `internal/patches` | The patch surface: which patch was meant, fetching it safely, what identifies it, and how an issue's work was delivered |
 | `internal/cockpit` | The control directory, the module watchlist, and resolving a module whether or not it is watched |
-| `internal/adapter` | Engine specifics: branch naming, the git remote, push diagnosis, shell quoting (the ddev engine itself is still to come) |
+| `internal/adapter` | Engine specifics: the ddev engine itself, provisioning, MR and patch checkout, branch naming, the git remote, push diagnosis, shell quoting |
+| `internal/cli` | The command surface: the exit-code contract, the shared flag set, the resolution seam, tables, colour, prompts and shell completion |
+| `internal/cli/command` | One file per command, thin, delegating to the packages above |
 | `internal/maintenance` | The disk inventory and the prune selector — what is disposable, and what may never be |
 | `internal/naming` | The module-name and core-version rules shared by everything that builds a path segment |
 | `internal/invariant` | Checks over the source itself, for properties no single code path shows |
@@ -142,6 +152,40 @@ newest posted after the merge request last moved.
 
 ```bash
 cd go
+go run ./cmd/upkeep --help
+go build -o upkeep ./cmd/upkeep
+```
+
+## The gates
+
+Four, matching the PHP side's, and all of them run in CI
+(`.github/workflows/go.yml`, on Go 1.24 and 1.25):
+
+```bash
+gofmt -l cmd internal   # must print nothing
+go vet ./...
+./coverage.sh           # the suite, and the per-package coverage floor
+go run ./cmd/upkeep --help
+```
+
+**The coverage floor is per package, not one number.** `coverage.sh` is the
+port of the PHP's 100%-line PHPUnit threshold extension, and it is deliberately
+not a single figure: statement coverage is not line coverage, and one overall
+number lets a well-covered package pay for a bare one. Each floor is where that
+package actually stands, so the only direction it can move is up — the script
+fails a package that drops below its floor **and** one that rises above it
+without the floor being raised, because a floor left behind stops being a gate.
+Three packages are excluded, each with a written reason.
+
+**Mutation testing is the verification discipline.** After each package, the
+behaviours it claims are deliberately broken one at a time and the suite must
+catch each one. A survivor is either a missing test — written — or a genuinely
+equivalent mutant, documented at the code. It has been worth it: it found five
+assertions of mine that could never fail, including one searching a table row
+for `"keep"` when every path in it contains "up**keep**", and one measuring
+column offsets in bytes while the table pads in runes.
+
+```bash
 go test ./...
 
 php testdata_gen.php                  # corpus.json, committed — real and awkward cases
@@ -250,8 +294,45 @@ one was caught by a test rather than by reading the code.
 - **Map iteration order is random in Go**, so a rendered list of statuses had
   to become a declared slice rather than a map walk.
 
-## Scope, honestly
+## Defects the port found in the PHP
 
-`internal/drupal` is one of 163 classes in `src/`. The PHP side is ~22,000
-lines of source and ~33,000 lines of tests, and the tests are where most of the
-hard-won behaviour is written down.
+Porting a specification is a close reading of it, and a close reading finds
+things. Each of these was demonstrated against the real PHP classes rather than
+inferred from the code.
+
+1. **`isOnCustomBranch()` misses `8.x-1.x`** — the convention a great many
+   contrib modules still use, pathauto among them. Every guard keyed on
+   `hasLocalWork()` refuses on such a working copy.
+2. **`FastLaneGate` does not check that evidence covers the applicable cores**
+   — a merge request green on 11 and never asked about 10 reads as fully green.
+3. **A `.` segment defeats `PathGuard` containment** for a path that does not
+   exist yet.
+4. **`ArtifactScanner` follows symlinked files**, so a size report counts bytes
+   outside the tree, and every `vendor/bin/*` entry twice.
+5. **`merge --fast-lane` can never offer anything.** `check` files its verdict
+   under the merge ref's SHA; `RowAssembler` passes no snapshot, so `RowFactory`
+   compares that evidence against the *head* SHA, every row reads as stale,
+   `FastLaneGate` turns stale into `local-stale`, and nothing is ever
+   `ReadyAuto` — which is the only thing `MergeCommand` offers. The design notes
+   measure 23 of 25 open pathauto merge requests as having a merge tree that
+   differs from head.
+6. **`upkeep issues --status=rtbc` is documented and silently ignored.**
+   `selectedStatuses()` compares each status's short label against a
+   *lowercased* argument, and RTBC's label is the only one with capitals. An
+   unrecognised value falls back to every open status, so the flag appears to
+   work and prints the whole queue.
+7. **`needs-work` warns of staleness on every healthy run**, and posts a public
+   comment naming a SHA that is not the branch head. Same root cause as 5, one
+   level down: it looks the cached result up by the head SHA when `check` filed
+   it under the merge ref's.
+
+1–4 are fixed in PHP (PR #53). 5–7 are fixed here and still stand there.
+
+## Scope
+
+The PHP side is ~22,000 lines of source across 163 classes and ~33,000 lines of
+tests, and the tests are where most of the hard-won behaviour is written down.
+That is what the differential corpora and the per-package floors are for: the
+port is held to the PHP's answers entry-for-entry wherever a shared artefact or
+a shared user-visible rule makes a disagreement a bug, and to its own tests
+everywhere else.
