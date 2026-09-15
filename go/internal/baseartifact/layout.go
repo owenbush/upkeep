@@ -123,3 +123,33 @@ func assertVersion(coreMajor string) error {
 
 	return nil
 }
+
+// Paths is every path in one core's artifact set.
+type Paths struct {
+	VersionDir      string
+	Tree            string
+	Dump            string
+	Meta            string
+	CanonicalMarker string
+}
+
+// PathsFor resolves the whole set at once, validating the core major once.
+//
+// The individual accessors each validate, which means a caller that needs
+// several of them gets several identical error branches that cannot all be
+// reached — the first one already refused. One call, one branch, and the rest
+// of the code reads as the sequence it is.
+func (l *Layout) PathsFor(coreMajor string) (Paths, error) {
+	versionDir, err := l.VersionDir(coreMajor)
+	if err != nil {
+		return Paths{}, err
+	}
+
+	return Paths{
+		VersionDir:      versionDir,
+		Tree:            filepath.Join(versionDir, TreeDir),
+		Dump:            filepath.Join(versionDir, DumpFilename),
+		Meta:            filepath.Join(versionDir, MetaFilename),
+		CanonicalMarker: filepath.Join(versionDir, CanonicalMarker),
+	}, nil
+}
