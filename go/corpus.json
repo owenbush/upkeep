@@ -1,0 +1,1168 @@
+{
+    "intersects": [
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^10 || ^11 || ^12",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^10 || ^11",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^10.1 || ^11 || ^12",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^10.3 || ^11 || ^12",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^11",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^11",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^11",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^11",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "^11",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^11",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^11",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^7",
+            "core": "7",
+            "applies": true
+        },
+        {
+            "constraint": "^7",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^7",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^7",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "^7",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^7",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^7",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "8",
+            "applies": true
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "9",
+            "applies": true
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^8 || ^9",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "9",
+            "applies": true
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^9.2 || ^10",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^10.2 || ^11 || ^12 || ^13",
+            "core": "13",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "7",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "8",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "9",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "*",
+            "core": "13",
+            "applies": true
+        },
+        {
+            "constraint": "^12",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^12",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^12",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^12",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "^12",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^12",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^12",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^13",
+            "core": "13",
+            "applies": true
+        },
+        {
+            "constraint": "11.x",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "11.x",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "11.x",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "11.x",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "11.x",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "11.x",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "11.x",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "10.*",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "10.*",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "10.*",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "10.*",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "10.*",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "10.*",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "10.*",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": "^11 || ^12",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "~10.1",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "~10.1.0",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "9",
+            "applies": true
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": ">=9.2",
+            "core": "13",
+            "applies": true
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.2 <11",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": ">=10 <10.2",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "12",
+            "applies": true
+        },
+        {
+            "constraint": ">=11.1",
+            "core": "13",
+            "applies": true
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.50 <10.51",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "~10.4.0",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "10.4.*",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.7 <10.8",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "~10.11.0",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": ">=10.123 <10.124",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "^10.4.5",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "10",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "11",
+            "applies": true
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": ">=11.2.1 <11.2.9",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "10.6.*",
+            "core": "13",
+            "applies": false
+        },
+        {
+            "constraint": "~10.50",
+            "core": "7",
+            "applies": false
+        },
+        {
+            "constraint": "~10.50",
+            "core": "8",
+            "applies": false
+        },
+        {
+            "constraint": "~10.50",
+            "core": "9",
+            "applies": false
+        },
+        {
+            "constraint": "~10.50",
+            "core": "10",
+            "applies": true
+        },
+        {
+            "constraint": "~10.50",
+            "core": "11",
+            "applies": false
+        },
+        {
+            "constraint": "~10.50",
+            "core": "12",
+            "applies": false
+        },
+        {
+            "constraint": "~10.50",
+            "core": "13",
+            "applies": false
+        }
+    ],
+    "stability": {
+        "12.0.0-alpha1": "alpha",
+        "11.4.6": "stable",
+        "13.0.0-beta2": "beta",
+        "12.0.0-rc1": "RC",
+        "12.x-dev": "dev",
+        "1.0.2": "stable",
+        "8.x-1.0-alpha3": "alpha"
+    }
+}
