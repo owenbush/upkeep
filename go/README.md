@@ -142,6 +142,16 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **The legacy contrib branch convention is not recognised as a base branch.**
+  `WorkingCopyStatus::isOnCustomBranch()` matches `1.0.x` and `2.x` and
+  nothing else, so `8.x-1.x` — the convention a great many contrib modules
+  still use, pathauto among them — reads as a developer branch. That makes
+  `hasLocalWork()` true for every working copy on one, so every guard keyed on
+  it refuses: stale teardown, prune, and the dirty-copy check before applying.
+  Verified against the PHP directly. The Go port matches it rather than
+  quietly fixing it, because the change loosens a guard on destructive
+  operations and that is a decision to take deliberately.
+
 - **A `.` path segment defeats containment for a path that does not exist.**
   `PathGuard::canonicalize` drops empty segments and keeps `.` ones, so
   `/root/./child` does not compare as inside `/root` — while `/root/../root/child`
