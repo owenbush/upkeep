@@ -25,10 +25,13 @@ type recordingRunner struct {
 	keys    []string
 	answers map[string]string
 	fail    map[string]bool
+	stall   map[string]bool
 }
 
 func newRunner() *recordingRunner {
-	return &recordingRunner{answers: map[string]string{}, fail: map[string]bool{}}
+	return &recordingRunner{
+		answers: map[string]string{}, fail: map[string]bool{}, stall: map[string]bool{},
+	}
 }
 
 func (r *recordingRunner) answer(key, value string) *recordingRunner {
@@ -44,6 +47,23 @@ func (r *recordingRunner) fails(key string) *recordingRunner {
 	r.fail[key] = true
 
 	return r
+}
+
+// stalls scripts a command that runs past its timebox.
+func (r *recordingRunner) stalls(key string) *recordingRunner {
+	r.stall[key] = true
+
+	return r
+}
+
+func (r *recordingRunner) stalling(line string) bool {
+	for key := range r.stall {
+		if strings.Contains(line, key) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r *recordingRunner) match(line string) (string, bool) {
@@ -92,8 +112,13 @@ func (r *recordingRunner) TryRun(command []string, _ string, _ time.Duration) (s
 	return r.match(line)
 }
 
-func (r *recordingRunner) Capture(command []string, _ string, _ time.Duration) proc.Captured {
+func (r *recordingRunner) Capture(command []string, _ string, timeout time.Duration) proc.Captured {
 	line := r.record(command)
+	if r.stalling(line) {
+		answer, _ := r.match(line)
+
+		return proc.Captured{TimedOut: true, Output: answer, Duration: timeout}
+	}
 	status := 0
 	if r.failing(line) {
 		status = 1
