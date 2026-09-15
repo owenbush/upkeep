@@ -70,6 +70,17 @@ type RowsInput struct {
 	// is its own row — which is the assembler's case, and why the fast lane
 	// still prompts per merge request.
 	Snapshot *ModuleSnapshot
+	// MergeRefSHAs maps a merge-request iid to the SHA of its /merge ref, for
+	// the caller that has no snapshot to take them from.
+	//
+	// Load-bearing, not an optimisation. `check` files its verdict under the
+	// merge ref's SHA, because that is the tree it checked; evidence compared
+	// against the *head* SHA instead reads as stale on every merge request
+	// whose branch has fallen behind its target — which is most of them. The
+	// snapshot supplies these on the dashboard path and this field on the
+	// assembler's, and a caller supplying neither gets the head SHA and the
+	// stale reading that comes with it.
+	MergeRefSHAs map[int]string
 }
 
 // Rows classifies one module.
@@ -91,7 +102,10 @@ func (f *RowFactory) Rows(in RowsInput) []Row {
 	var merged []gitlab.MergeRequest
 	var contributions []patches.Contribution
 	constraints := map[string]string{}
-	mergeSHAs := map[int]string{}
+	mergeSHAs := in.MergeRefSHAs
+	if mergeSHAs == nil {
+		mergeSHAs = map[int]string{}
+	}
 
 	if in.Snapshot != nil {
 		merged = in.Snapshot.MergedMergeRequests()

@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/owenbush/upkeep/internal/check"
 	"github.com/owenbush/upkeep/internal/cockpit"
+	"github.com/owenbush/upkeep/internal/config"
 	"github.com/owenbush/upkeep/internal/gate"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/results"
@@ -318,6 +320,8 @@ type fakeReader struct {
 	listFailure    *gitlab.Failure
 	detailFailure  map[int]*gitlab.Failure
 	detailCalls    int
+	mergeRefSHAs   map[int]string
+	refCalls       int
 }
 
 func (r *fakeReader) Project(string) (*gitlab.Project, *gitlab.Failure) {
@@ -326,6 +330,12 @@ func (r *fakeReader) Project(string) (*gitlab.Project, *gitlab.Failure) {
 
 func (r *fakeReader) OpenMergeRequests(gitlab.Project) ([]gitlab.MergeRequest, *gitlab.Failure) {
 	return r.listed, r.listFailure
+}
+
+func (r *fakeReader) MergeRefSHA(_ gitlab.Project, iid int) string {
+	r.refCalls++
+
+	return r.mergeRefSHAs[iid]
 }
 
 func (r *fakeReader) MergeRequest(_ gitlab.Project, iid int) (*gitlab.MergeRequest, *gitlab.Failure) {
@@ -517,5 +527,94 @@ func TestAFailureRowContributesNothingWhateverElseItCarries(t *testing.T) {
 	}
 	if !slices.Equal(after.Branches, before.Branches) {
 		t.Errorf("branches went from %v to %v", before.Branches, after.Branches)
+	}
+}
+
+// greenResultAt is an all-green verdict recorded against one revision.
+func greenResultAt(sha string) *results.CachedResult {
+	zero := 0
+
+	return &results.CachedResult{
+		SHA:        sha,
+		RecordedAt: time.Now(),
+		Result: check.RunResult{Results: []check.Result{
+			{Type: check.PhpCs, Status: check.Passed, ExitCode: &zero},
+		}},
+	}
+}
+
+// Evidence is compared against the merge ref, not the branch.
+//
+// `check` files its verdict under the merge ref's SHA, because that is the
+// tree it checked. An assembler that compared against the head SHA instead
+// would read every one of those verdicts as stale — on pathauto, 23 of 25 open
+// merge requests have a merge tree that differs from their head tree — and the
+// fast lane, which only ever offers a row whose evidence is current, would
+// offer almost nothing.
+func TestTheAssemblerJudgesEvidenceAgainstTheMergeRef(t *testing.T) {
+	const (
+		head     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		mergeRef = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+
+	reader := &fakeReader{
+		project: &gitlab.Project{ID: 1, Path: "pathauto", PathWithNamespace: "project/pathauto"},
+		listed: []gitlab.MergeRequest{{
+			IID: 12, Title: "Automated Project Update Bot fixes", State: "opened",
+			SourceBranch: "project-update-bot-only", TargetBranch: "2.0.x", HeadSHA: head,
+			AuthorUsername: "Project-Update-Bot", AuthorID: 66574,
+		}},
+		mergeRefSHAs: map[int]string{12: mergeRef},
+	}
+
+	// Green, filed under the merge ref — which is what `check` does.
+	rows := NewAssembler(
+		reader,
+		&fakeStore{byKey: map[string]*results.CachedResult{"12/11": greenResultAt(mergeRef)}},
+		gate.NewFastLane(config.BotPatternForCore),
+	).Assemble(map[string]cockpit.Module{
+		"pathauto": {Name: "pathauto", Project: "project/pathauto",
+			CoreVersions: []string{"11"}, Watched: true},
+	}, "")
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if !rows[0].IsReadyAuto() {
+		t.Errorf("a merge request checked at its merge ref was not ready: %s — %s",
+			rows[0].StatusCell(), rows[0].LocalCell())
+	}
+	// And the merge ref was actually asked for, once per open merge request.
+	if reader.refCalls != 1 {
+		t.Errorf("the merge ref was read %d times", reader.refCalls)
+	}
+}
+
+// A merge request with no merge ref falls back to its head SHA — GitLab
+// publishes none for one that conflicts with its target, and the adapter
+// checks the branch alone there, so both halves fall back together.
+func TestWithNoMergeRefTheAssemblerFallsBackToTheHead(t *testing.T) {
+	const head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	reader := &fakeReader{
+		project: &gitlab.Project{ID: 1, Path: "pathauto", PathWithNamespace: "project/pathauto"},
+		listed: []gitlab.MergeRequest{{
+			IID: 12, Title: "Automated Project Update Bot fixes", State: "opened",
+			SourceBranch: "project-update-bot-only", TargetBranch: "2.0.x", HeadSHA: head,
+			AuthorUsername: "Project-Update-Bot", AuthorID: 66574,
+		}},
+	}
+
+	rows := NewAssembler(
+		reader,
+		&fakeStore{byKey: map[string]*results.CachedResult{"12/11": greenResultAt(head)}},
+		gate.NewFastLane(config.BotPatternForCore),
+	).Assemble(map[string]cockpit.Module{
+		"pathauto": {Name: "pathauto", Project: "project/pathauto",
+			CoreVersions: []string{"11"}, Watched: true},
+	}, "")
+
+	if len(rows) != 1 || !rows[0].IsReadyAuto() {
+		t.Errorf("a conflicting merge request checked at its head was not ready: %+v", rows)
 	}
 }

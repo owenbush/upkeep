@@ -17,6 +17,11 @@ type Reader interface {
 	Project(moduleOrPath string) (*gitlab.Project, *gitlab.Failure)
 	OpenMergeRequests(project gitlab.Project) ([]gitlab.MergeRequest, *gitlab.Failure)
 	MergeRequest(project gitlab.Project, iid int) (*gitlab.MergeRequest, *gitlab.Failure)
+
+	// MergeRefSHA is the SHA of a merge request's /merge ref, or "" when
+	// GitLab publishes none — which happens when the merge request conflicts
+	// with its target.
+	MergeRefSHA(project gitlab.Project, iid int) string
 }
 
 // Assembler fetches each registered module's project and open merge requests
@@ -100,5 +105,36 @@ func (a *Assembler) moduleRows(module cockpit.Module, versionFilter string) []Ro
 		MergeRequests: mergeRequests,
 		VersionFilter: versionFilter,
 		CIFailures:    ciFailures,
+		MergeRefSHAs:  a.mergeRefSHAs(*project, mergeRequests),
 	})
+}
+
+// mergeRefSHAs is the merge ref of each open merge request.
+//
+// One request per merge request, which is what the dashboard refresh already
+// spends, and it is not optional: `check` files its verdict under the merge
+// ref's SHA because that is the tree it checked. Comparing cached evidence
+// against the head SHA instead reads as stale on every merge request whose
+// branch has fallen behind its target — measured at 23 of 25 open ones on
+// pathauto — so the fast lane would offer almost nothing.
+//
+// A merge request with no merge ref contributes no entry, and the revision
+// falls back to its head SHA: GitLab publishes none for one that conflicts
+// with its target, and the adapter checks the branch alone there, so both
+// halves fall back together.
+func (a *Assembler) mergeRefSHAs(
+	project gitlab.Project, mergeRequests []gitlab.MergeRequest,
+) map[int]string {
+	shas := map[int]string{}
+	for _, one := range mergeRequests {
+		// An absent ref contributes no entry rather than an empty one, so the
+		// map means "the merge refs that exist". Equivalent today, because the
+		// revision rule falls back on an empty string too; stated here so a
+		// later reader of the map is not relying on that.
+		if sha := a.client.MergeRefSHA(project, one.IID); sha != "" {
+			shas[one.IID] = sha
+		}
+	}
+
+	return shas
 }

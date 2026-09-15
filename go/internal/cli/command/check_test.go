@@ -107,6 +107,12 @@ func (c scriptedClients) Authenticated(gitlab.Report) (*gitlab.Client, error) {
 	if c.asked != nil {
 		*c.asked = append(*c.asked, "authenticated")
 	}
+	// The contract the real one keeps: a nil client always comes with an
+	// error. A fake that handed back neither would let a command carry on
+	// into a nil dereference that production could never reach.
+	if c.client == nil {
+		return nil, errors.New("no GitLab token is configured")
+	}
 
 	return c.client, nil
 }
@@ -131,7 +137,7 @@ func runCheckRecording(
 	asked := []string{}
 	root := NewRoot(
 		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		scriptedClients{client: client, asked: &asked}, noVolumes{}, noSizer,
+		scriptedClients{client: client, asked: &asked}, noPrompts, noVolumes{}, noSizer,
 	)
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)

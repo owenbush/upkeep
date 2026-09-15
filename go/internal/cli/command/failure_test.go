@@ -150,6 +150,7 @@ func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
 		"exec":     {"exec", "pathauto", "--cockpit=" + root, "--", "true"},
 		"modules":  {"modules", "--cockpit=" + root},
 		"status":   {"status", "--cockpit=" + root},
+		"merge":    {"merge", "--fast-lane", "--cockpit=" + root},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 
@@ -181,6 +182,7 @@ func TestNoCommandFallsBackFromAnUnusableCockpit(t *testing.T) {
 		"modules":               {"modules", "--cockpit="},
 		"status":                {"status", "--cockpit="},
 		"base-artifacts:status": {"base-artifacts:status", "--cockpit="},
+		"merge":                 {"merge", "--fast-lane", "--cockpit="},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 

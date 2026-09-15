@@ -44,7 +44,41 @@ func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, st
 // NewRootFor is the command tree with a stubbed engine factory, for the
 // commands that do not need one.
 func NewRootFor(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
-	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, volumes, sizer)
+	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, noPrompts, volumes, sizer)
+}
+
+// noPrompts stands in where a command under test never reaches a prompt. It
+// reports itself non-interactive, which is the answer that does nothing.
+func noPrompts(*cobra.Command) cli.Prompt { return scriptedPrompt{} }
+
+// scriptedPrompt answers from a list, and reports what it was asked.
+type scriptedPrompt struct {
+	interactive bool
+	answers     []string
+	asked       *[]string
+	at          *int
+	// before runs just before the answer is given, which is the one moment
+	// between a row being classified and its freshness being re-checked — so
+	// it is where a test stages something changing underneath a run.
+	before func()
+}
+
+func (p scriptedPrompt) Interactive() bool { return p.interactive }
+
+func (p scriptedPrompt) Choose(question string, _ []string) string {
+	if p.asked != nil {
+		*p.asked = append(*p.asked, question)
+	}
+	if p.before != nil {
+		p.before()
+	}
+	if p.at == nil || *p.at >= len(p.answers) {
+		return "skip"
+	}
+	answer := p.answers[*p.at]
+	*p.at++
+
+	return answer
 }
 
 // noClients stands in for the GitLab client source where a command under test
@@ -259,7 +293,7 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 // that needs one is handed the factory.
 func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 	var built []string
-	root := NewRoot(recordingFactory{built: &built}, noClients{}, noVolumes{}, noSizer)
+	root := NewRoot(recordingFactory{built: &built}, noClients{}, noPrompts, noVolumes{}, noSizer)
 
 	if root.Use != "upkeep" {
 		t.Errorf("root %q", root.Use)

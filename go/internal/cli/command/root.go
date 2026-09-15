@@ -19,6 +19,7 @@ var Version = "dev"
 func NewRoot(
 	engines adapter.Factory,
 	clients cli.GitlabClients,
+	prompts func(*cobra.Command) cli.Prompt,
 	volumes Volumes,
 	sizer maintenance.Sizer,
 ) *cobra.Command {
@@ -47,6 +48,7 @@ func NewRoot(
 		NewExec(engines),
 		NewExplain(),
 		NewInit(),
+		NewMerge(clients, prompts),
 		NewModules(),
 		NewReview(engines, clients),
 		NewStatus(volumes, sizer),
