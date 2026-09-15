@@ -15,6 +15,7 @@ use Upkeep\Drupal\IssueReference;
 use Upkeep\Gitlab\ApiFailure;
 use Upkeep\Gitlab\GitlabClient;
 use Upkeep\Gitlab\GitlabClientFactory;
+use Upkeep\Gitlab\MergeRevision;
 use Upkeep\Results\CachedResult;
 use Upkeep\Results\ResultKey;
 use Upkeep\Results\ResultsCache;
@@ -73,15 +74,23 @@ final class NeedsWorkCommand extends UpkeepCommand
         $module = $context->module;
         $coreMajor = $context->coreMajor;
 
+        // The revision the evidence is *about*, which is the key `check` filed
+        // it under: the merge ref's SHA, falling back to the head's only where
+        // GitLab publishes no merge ref. Looked up by the head SHA alone this
+        // missed on every merge request that does not conflict with its
+        // target — which is nearly all of them — fell through to the newest
+        // result, and then called it stale for not being a SHA it never was.
+        $revision = MergeRevision::of($context->mergeRefSha, $mr->headSha);
+
         $cache = new ResultsCache($cockpit->resultsPath());
-        $cached = $mr->headSha !== null
-            ? $cache->find($module->name, ResultKey::mergeRequest($mr->iid), $coreMajor, $mr->headSha)
+        $cached = $revision !== null
+            ? $cache->find($module->name, ResultKey::mergeRequest($mr->iid), $coreMajor, $revision)
             : null;
 
         $stale = false;
         if ($cached === null) {
             $cached = $cache->latest($module->name, ResultKey::mergeRequest($mr->iid), $coreMajor);
-            if ($cached !== null && $mr->headSha !== null && $cached->sha !== $mr->headSha) {
+            if ($cached !== null && $revision !== null && $cached->sha !== $revision) {
                 $stale = true;
             }
         }
@@ -100,13 +109,14 @@ final class NeedsWorkCommand extends UpkeepCommand
 
         if ($stale) {
             $io->warning(sprintf(
-                'Results were recorded against SHA %s; the MR is now at %s. The comment will note the older SHA.',
+                'Results were recorded against %s; the MR is now at %s. '
+                . 'The comment will note the older revision.',
                 substr($cached->sha, 0, 8),
-                substr((string) $mr->headSha, 0, 8),
+                substr($revision, 0, 8),
             ));
         }
 
-        $comment = $this->formatComment($cached, $coreMajor);
+        $comment = $this->formatComment($cached, $coreMajor, $context->mergeRefSha !== null);
 
         if ($input->getOption('dry-run')) {
             $io->section('Comment preview');
@@ -140,15 +150,20 @@ final class NeedsWorkCommand extends UpkeepCommand
         return ExitCode::OK;
     }
 
-    private function formatComment(CachedResult $cached, string $coreMajor): string
+    private function formatComment(CachedResult $cached, string $coreMajor, bool $againstMergeRef): string
     {
         $recorded = $cached->recordedAt->format('Y-m-d H:i') . ' UTC';
         $sha = substr($cached->sha, 0, 8);
+        // Named for what it is. The merge ref is not the branch head, and a
+        // reader of a public comment who goes looking for this SHA in the
+        // branch will not find it — which is exactly the confusion that let
+        // the staleness warning above read as sensible for as long as it did.
+        $label = $againstMergeRef ? 'merge ref' : 'SHA';
 
         $lines = [];
         $lines[] = '### upkeep local check results';
         $lines[] = '';
-        $lines[] = sprintf('Core: %s · SHA: `%s` · Recorded: %s', $coreMajor, $sha, $recorded);
+        $lines[] = sprintf('Core: %s · %s: `%s` · Recorded: %s', $coreMajor, $label, $sha, $recorded);
         $lines[] = '';
         $lines[] = '| Check | Status | Duration |';
         $lines[] = '|-------|--------|----------|';
