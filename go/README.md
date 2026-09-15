@@ -68,6 +68,14 @@ here, and this implementation's own rendering is committed as fixtures that
 `meta_expect.php` loads — so each side is proved to read what the other writes.
 A base artifact set outlives whichever binary built it.
 
+Issue payloads get the same treatment (`issue_expect.php`, 22 fixtures), and
+for a sharper reason than the others: the dashboard snapshot stores raw api-d7
+payloads verbatim, so a snapshot written by one implementation is read back by
+the other. That forced a restructure — the client now rewrites each resolved
+attachment *into the payload* the way PHP does, rather than keeping the
+resolved files beside it, so live fetches and cache reads go through one path
+and a snapshot is portable.
+
 ### The version semantics
 
 This is the dependency a Go port cannot simply take with it.
@@ -131,6 +139,12 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **The issue category is an id in the payload and a label on the page.**
+  `field_issue_category` is `1`; the issue page says "Bug report". The port
+  passed the id straight through, so it would have printed `1` where upkeep
+  prints `Bug report`. Caught by building the issue-payload corpus, not by
+  reading the code — the field looked like every other string field.
+
 - **`preg_replace` works on bytes; Go's `regexp` works on runes.** The
   filename an untrusted API supplies is reduced to a safe path segment by
   replacing everything outside `[A-Za-z0-9._-]` with an underscore. PHP runs

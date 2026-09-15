@@ -418,3 +418,13 @@ func MergeRevision(mergeRefSHA, headSHA string) string {
 
 	return ""
 }
+
+// MergeRequestFrom narrows a decoded merge-request payload into a model.
+//
+// Exported because a cached snapshot stores the raw payloads and reads them
+// back through this same path — there is no separate serialisation contract to
+// keep in step with the API.
+func MergeRequestFrom(data map[string]any) MergeRequest { return mergeRequestFrom(payload{data: data}) }
+
+// ProjectFrom narrows a decoded project payload into a model.
+func ProjectFrom(data map[string]any) Project { return projectFrom(payload{data: data}) }

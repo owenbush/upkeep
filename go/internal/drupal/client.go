@@ -42,7 +42,12 @@ type Client struct {
 	mu       sync.Mutex
 	warnings []string
 	issues   map[int]*Issue
-	files    map[int]IssueFile
+	// files holds the raw detail payload for each attachment id, mirroring
+	// what the file resource returned. A recorded miss is a nil entry, which
+	// is why the map value is a payload rather than a parsed model: the
+	// resolved detail is written back into the *issue payload*, and the models
+	// are built from that in one place.
+	files    map[int]map[string]any
 	projects map[string]int
 }
 
@@ -62,7 +67,7 @@ func NewClient(httpClient *http.Client, apiBase string) *Client {
 		apiBase:  apiBase,
 		sleep:    time.Sleep,
 		issues:   map[int]*Issue{},
-		files:    map[int]IssueFile{},
+		files:    map[int]map[string]any{},
 		projects: map[string]int{},
 	}
 }
@@ -120,7 +125,7 @@ func (c *Client) fetchIssue(nid int) (Issue, bool) {
 
 	c.prefetchAttachments([]map[string]any{data})
 
-	return c.issueFrom(data)
+	return IssueFrom(c.withResolvedFiles(data))
 }
 
 // ProjectNid resolves a machine name to the node id of its project.
@@ -203,7 +208,7 @@ func (c *Client) issuesForStatus(projectNid int, status IssueStatus) []Issue {
 
 		c.prefetchAttachments(entries)
 		for _, entry := range entries {
-			if issue, built := c.issueFrom(entry); built {
+			if issue, built := IssueFrom(c.withResolvedFiles(entry)); built {
 				issues = append(issues, issue)
 			}
 		}

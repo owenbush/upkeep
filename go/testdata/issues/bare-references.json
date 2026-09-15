@@ -1,0 +1,27 @@
+{
+  "nid": "3603341",
+  "title": "Automated Drupal 12 compatibility fixes",
+  "field_issue_status": "8",
+  "url": "https://www.drupal.org/node/3603341",
+  "field_project": {
+    "machine_name": "static_setting_contexts"
+  },
+  "field_issue_priority": "200",
+  "field_issue_version": "1.0.x-dev",
+  "field_issue_component": "Code",
+  "field_issue_category": "1",
+  "field_issue_files": [
+    {
+      "file": {
+        "uri": "https://www.drupal.org/api-d7/file/1.json",
+        "id": "1"
+      }
+    },
+    {
+      "file": {
+        "uri": "https://www.drupal.org/api-d7/file/2.json",
+        "id": "2"
+      }
+    }
+  ]
+}

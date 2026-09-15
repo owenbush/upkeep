@@ -138,28 +138,24 @@ func (c *Client) fetchFile(fid int) {
 	if !ok {
 		// Recorded as absent rather than retried on every issue that
 		// references it. The warning is already out.
+		// Recorded as a miss rather than retried on every issue that
+		// references it. The warning is already out.
 		c.mu.Lock()
-		c.files[fid] = IssueFile{}
+		c.files[fid] = nil
 		c.mu.Unlock()
 
 		return
 	}
 
-	file := IssueFile{
-		Name:      stringField(data, "name"),
-		URL:       stringField(data, "url"),
-		Size:      int64(intOr(data, "filesize")),
-		Timestamp: int64(intOr(data, "timestamp")),
-	}
-	if file.Name == "" {
-		// The URL is the only other place a name lives.
-		file.Name = baseName(file.URL)
-	}
-	if owner, ok := nestedInt(data, "owner", "id"); ok {
-		file.OwnerUID = owner
+	// The file resource names the attachment in "name"; a payload that omits
+	// it still has the URL, which is the only other place a name lives.
+	if stringField(data, "name") == "" {
+		if fromURL := baseName(stringField(data, "url")); fromURL != "" {
+			data["name"] = fromURL
+		}
 	}
 
 	c.mu.Lock()
-	c.files[fid] = file
+	c.files[fid] = data
 	c.mu.Unlock()
 }

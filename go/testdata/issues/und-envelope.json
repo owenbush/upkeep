@@ -1,0 +1,19 @@
+{
+  "nid": 3597808,
+  "title": "Drupal 11 compatibility",
+  "field_issue_status": 13,
+  "field_issue_category": 3,
+  "field_issue_files": {
+    "und": [
+      {
+        "file": {
+          "filename": "3597808-4.patch",
+          "url": "https://x/3597808-4.patch",
+          "filesize": "100",
+          "timestamp": "1700000000",
+          "uid": "7"
+        }
+      }
+    ]
+  }
+}
