@@ -94,7 +94,13 @@ final class FastLaneGate
         // two rows, one of them READY-AUTO, and the fast lane took the ready
         // one — merging on evidence that covered half the cores, with nothing
         // saying so. One row cannot hide it.
-        if ($local->cores() === [] || $local->anyUnchecked()) {
+        //
+        // covers() is the part that used to be left to convention: it asks
+        // whether the evidence describes the same cores the row applies to,
+        // rather than trusting the caller to have built both from one list.
+        // RowFactory does, so this was latent — but what the gap produces is
+        // the very failure above, arriving through the caller instead.
+        if ($local->cores() === [] || !$local->covers($cores) || $local->anyUnchecked()) {
             $reasons[] = 'local-missing';
         }
         if ($local->anyStale()) {

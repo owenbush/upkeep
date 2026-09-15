@@ -69,9 +69,11 @@ final readonly class ArtifactScanner
     }
 
     /**
-     * Symlinked directories are deliberately NOT followed: FOLLOW_SYMLINKS is
-     * unset and RecursiveDirectoryIterator::hasChildren() defaults to
-     * $allowLinks = false, so the measure stays inside the artifact tree.
+     * No symlink is followed, and it takes two mechanisms to say that.
+     * FOLLOW_SYMLINKS is unset and RecursiveDirectoryIterator::hasChildren()
+     * defaults to $allowLinks = false, which stops the walk descending into a
+     * linked *directory* — and the isLink() test below is what stops a linked
+     * *file* being counted, which that alone does not.
      *
      * CATCH_GET_CHILD makes an unreadable subtree an under-count rather than
      * an UnexpectedValueException out of `base-artifacts:status` — a size
@@ -91,7 +93,17 @@ final readonly class ArtifactScanner
             // getSize() is false for a file that vanished mid-walk; an
             // under-count is the documented failure mode here, so such an
             // entry contributes nothing rather than aborting the measure.
-            if (!$file instanceof \SplFileInfo || !$file->isFile()) {
+            //
+            // isLink() is checked *before* isFile(), and that is the whole
+            // point: FOLLOW_SYMLINKS being unset stops the walk descending
+            // into a linked directory, but a link to a *file* is a leaf, and
+            // SplFileInfo follows it — isFile() answers for the target and
+            // getSize() reports the target's bytes. So the measure did not
+            // stay inside the tree, whatever the comment below says: a link
+            // out of it was counted as though it were in it, and every
+            // vendor/bin/* entry was counted a second time on top of the real
+            // file it points at.
+            if (!$file instanceof \SplFileInfo || $file->isLink() || !$file->isFile()) {
                 continue;
             }
 

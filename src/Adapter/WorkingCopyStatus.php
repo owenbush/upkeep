@@ -48,9 +48,22 @@ final readonly class WorkingCopyStatus
             return false;
         }
 
+        // Three base-branch conventions, and all three are in active use on
+        // drupal.org: semver-ish ("2.0.x"), major-only ("2.x"), and the legacy
+        // contrib one ("8.x-1.x") that predates them both.
+        //
+        // The legacy one was missing, and it is not a rare shape — pathauto,
+        // token and a great many other modules are still on it. Without it
+        // every working copy of such a module read as being on a developer
+        // branch, so hasLocalWork() was permanently true and every guard that
+        // keys on it refused: stale teardown, prune, and the dirty-copy check
+        // before an apply. Conservative, and wrong: the branch is a base
+        // branch, and the three other local-work signals still catch anything
+        // actually unsaved on it.
         if (
             preg_match('/^\d+\.\d+\.x$/', $this->currentBranch) === 1
             || preg_match('/^\d+\.x$/', $this->currentBranch) === 1
+            || preg_match('/^\d+\.x-\d+\.x$/', $this->currentBranch) === 1
         ) {
             return false;
         }

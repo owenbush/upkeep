@@ -78,6 +78,43 @@ final class WorkingCopyStatusTest extends TestCase
         }
     }
 
+    /**
+     * The legacy contrib convention — `8.x-1.x`, `7.x-2.x` — is a base branch.
+     *
+     * It is still what a great many contrib modules use, pathauto among them,
+     * and it was matched by neither base-branch pattern. Every working copy on
+     * one therefore read as carrying local work, so every guard that keys on
+     * that refused: stale teardown, prune, and the dirty-copy check before an
+     * apply. Found while porting; the module upkeep's own design notes measure
+     * everything against is on `8.x-1.x`.
+     */
+    public function testLegacyContribBranchesAreBaseBranches(): void
+    {
+        foreach (['8.x-1.x', '7.x-2.x', '6.x-1.x', '8.x-10.x'] as $branch) {
+            $status = new WorkingCopyStatus(false, false, false, 0, $branch);
+            self::assertFalse(
+                $status->isOnCustomBranch(),
+                "Branch '$branch' is the legacy contrib convention and should be a base branch",
+            );
+            self::assertFalse($status->hasLocalWork(), "Branch '$branch' should not read as local work");
+        }
+    }
+
+    /**
+     * And the loosening stops there: a branch that merely looks a bit like it
+     * is still somebody's own.
+     */
+    public function testNearMissesOfTheLegacyConventionAreStillCustom(): void
+    {
+        foreach (['8.x-1.x-fix', 'x.x-1.x', '8.x-1', '-8.x-1.x', '8.y-1.x', '8.x-1.y'] as $branch) {
+            $status = new WorkingCopyStatus(false, false, false, 0, $branch);
+            self::assertTrue(
+                $status->isOnCustomBranch(),
+                "Branch '$branch' is not the legacy convention and should stay custom",
+            );
+        }
+    }
+
     public function testFeatureBranchIsCustom(): void
     {
         foreach (['feature/new-widget', 'my-fix', 'main', 'develop'] as $branch) {
