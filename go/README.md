@@ -140,6 +140,14 @@ one was caught by a test rather than by reading the code.
   wrong for a status line that overwrites itself.
 - **A bare version is exact, not a range.** composer reads `7.8` as `=7.8.0`,
   found by the random corpus and not by the real one.
+- **JSON narrowing helpers that only accept `float64` break on their own
+  output.** `encoding/json` decodes every number as `float64`, so readers
+  written against a decoded payload work — until a model is rendered *back*
+  through `ToAPIMap` and read again without a JSON round trip, where the ints
+  are real ints. PHP's `is_int` covers both without anyone thinking about it.
+  Found by the row factory's tests, which build snapshots in-process; the
+  differential corpora all read from disk and so could not have caught it.
+
 - **The issue category is an id in the payload and a label on the page.**
   `field_issue_category` is `1`; the issue page says "Bug report". The port
   passed the id straight through, so it would have printed `1` where upkeep

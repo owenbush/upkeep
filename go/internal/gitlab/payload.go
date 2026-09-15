@@ -43,6 +43,13 @@ func scalarString(value any) (string, bool) {
 		}
 
 		return strconv.FormatFloat(v, 'g', -1, 64), true
+	// A payload decoded from JSON only ever holds float64, but one *built* in
+	// this process — a model rendered back through ToAPIMap, which is what a
+	// snapshot does before it is serialised — holds real ints.
+	case int:
+		return strconv.Itoa(v), true
+	case int64:
+		return strconv.FormatInt(v, 10), true
 	default:
 		return "", false
 	}
@@ -68,6 +75,10 @@ func scalarInt(value any) (int, bool) {
 		}
 
 		return 0, false
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
 	default:
 		return 0, false
 	}
@@ -102,6 +113,10 @@ func (p payload) boolOr(key string, def bool) bool {
 		// PHP's bool cast: every string but "" and "0" is true.
 		return v != "" && v != "0"
 	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	case int64:
 		return v != 0
 	default:
 		return def

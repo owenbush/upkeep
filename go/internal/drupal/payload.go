@@ -18,6 +18,10 @@ func stringField(data map[string]any, key string) string {
 		return value
 	case float64:
 		return strconv.FormatFloat(value, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
 	default:
 		return ""
 	}
@@ -31,6 +35,14 @@ func intField(data map[string]any, key string) (int, bool) {
 		n, err := strconv.Atoi(strings.TrimSpace(value))
 
 		return n, err == nil
+	// A payload decoded from JSON only ever holds float64, but one *built* in
+	// this process — a model rendered back through ToAPIMap, which is what a
+	// snapshot does before it is serialised — holds real ints. PHP's is_int
+	// covers both without anyone thinking about it.
+	case int:
+		return value, true
+	case int64:
+		return int(value), true
 	default:
 		return 0, false
 	}
