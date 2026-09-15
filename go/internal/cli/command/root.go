@@ -64,6 +64,7 @@ func NewRoot(surface Surface) *cobra.Command {
 	_ = root.Flags().MarkHidden("version")
 
 	root.AddCommand(
+		NewAPIProbe(clients),
 		NewBaseArtifactsBuild(engines),
 		NewBaseArtifactsStatus(),
 		NewCheck(engines, clients),
