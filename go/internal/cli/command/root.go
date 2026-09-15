@@ -1,6 +1,8 @@
 package command
 
 import (
+	"net/http"
+
 	"github.com/spf13/cobra"
 
 	"github.com/owenbush/upkeep/internal/adapter"
@@ -23,7 +25,13 @@ func NewRoot(
 	prompts func(*cobra.Command) cli.Prompt,
 	volumes Volumes,
 	sizer maintenance.Sizer,
+	downloader *http.Client,
 ) *cobra.Command {
+	patchSurface := PatchSurface{
+		Engines: engines, Clients: clients, Issues: issues,
+		Prompts: prompts, Downloader: downloader,
+	}
+
 	root := &cobra.Command{
 		Use:     "upkeep",
 		Short:   "Maintenance orchestrator for contributed Drupal modules",
@@ -52,6 +60,9 @@ func NewRoot(
 		NewInit(),
 		NewMerge(clients, prompts),
 		NewModules(),
+		NewPatchApply(patchSurface),
+		NewPatchCheck(patchSurface),
+		NewPatchPromote(patchSurface),
 		NewPrune(engines, volumes, sizer),
 		NewReview(engines, clients),
 		NewStatus(volumes, sizer),

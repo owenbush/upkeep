@@ -494,3 +494,27 @@ func TestRequiringACockpitReportsAnUnresolvableOneFirst(t *testing.T) {
 		t.Error("an empty --cockpit resolved")
 	}
 }
+
+// A projects root that could never work is refused as soon as the cockpit is
+// known, rather than once a command reaches for an engine — which on the patch
+// commands is after a drupal.org round trip and a file download.
+func TestAssertingTheProjectsRootRefusesEarly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	where := aCockpit(t, oneModule)
+
+	usable := withFlags(t, AddProjectsRoot, "--projects-root="+filepath.Join(home, "projects"))
+	if err := AssertProjectsRoot(usable, where); err != nil {
+		t.Errorf("a usable projects root was refused: %v", err)
+	}
+
+	outside := withFlags(t, AddProjectsRoot, "--projects-root="+t.TempDir())
+	err := AssertProjectsRoot(outside, where)
+	if err == nil {
+		t.Fatal("a projects root outside the home directory was accepted")
+	}
+	if !strings.Contains(err.Error(), "home directory") {
+		t.Errorf("the refusal does not say the rule: %v", err)
+	}
+}

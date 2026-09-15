@@ -56,6 +56,19 @@ func QuietEngine(
 	return engines.Build(where, Flag(cmd, FlagProjectsRoot), nil, nil, nil)
 }
 
+// AssertProjectsRoot refuses a projects root that could never work, before
+// anything slow happens.
+//
+// The engine factory refuses it too, but only once a command reaches for an
+// engine — which on the patch commands is after a drupal.org round trip and a
+// file download. A configuration mistake the run can never recover from should
+// cost nothing, so it is checked as soon as the cockpit is known.
+func AssertProjectsRoot(cmd *cobra.Command, where *cockpit.Cockpit) error {
+	_, err := adapter.ResolveProjectsRoot(Flag(cmd, FlagProjectsRoot), where.Root)
+
+	return err
+}
+
 // FlagVerbose asks for every line of a child's output rather than the latest.
 const FlagVerbose = "verbose"
 

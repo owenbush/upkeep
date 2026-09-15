@@ -39,6 +39,9 @@ func resolveMrContext(
 	if err != nil {
 		return nil, workflow.MrContext{}, err
 	}
+	if err := cli.AssertProjectsRoot(cmd, where); err != nil {
+		return nil, workflow.MrContext{}, err
+	}
 
 	iid, err := cli.MrIID(rawIID)
 	if err != nil {

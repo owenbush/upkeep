@@ -26,11 +26,25 @@ import (
 // to talk to drupal.org rather than deciding, and a test can hand over
 // something that answers without a network.
 type IssueClients interface {
-	Issues() dashboard.IssueReader
+	Issues() IssueSource
 	// Warnings is what the last scan could not read. That client degrades by
 	// returning *less data*, which at the call site is indistinguishable from
 	// there being less data.
 	Warnings() []string
+}
+
+// IssueSource is everything the commands read from drupal.org: the project
+// scan a refresh makes, and the single-issue read the patch commands make.
+type IssueSource interface {
+	dashboard.IssueReader
+
+	// Issue is one issue by node id, reporting false when it could not be
+	// read.
+	Issue(nid int) (drupal.Issue, bool)
+
+	// User is the account that posted a file, which is what a promotion
+	// credits the work to.
+	User(uid int) (drupal.User, bool)
 }
 
 // NewDashboard builds the dashboard command.
@@ -602,7 +616,7 @@ func NewDrupalClients() *DrupalClients {
 }
 
 // Issues is the reader a refresh scans with.
-func (c *DrupalClients) Issues() dashboard.IssueReader { return c.client }
+func (c *DrupalClients) Issues() IssueSource { return c.client }
 
 // Warnings is what the scan could not read.
 func (c *DrupalClients) Warnings() []string { return c.client.Warnings() }

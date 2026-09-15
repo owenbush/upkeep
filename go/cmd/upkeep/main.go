@@ -9,7 +9,9 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -20,6 +22,12 @@ import (
 	"github.com/owenbush/upkeep/internal/proc"
 	"github.com/owenbush/upkeep/internal/security"
 )
+
+// patchDownloadTimeout bounds fetching one patch file. Generous, because
+// drupal.org's file host is slow with a cold cache and a patch is a single
+// small file — but bounded, because a hung download is indistinguishable from
+// a slow one otherwise.
+const patchDownloadTimeout = 2 * time.Minute
 
 func main() {
 	redactor := security.RedactorFromEnvironment()
@@ -37,5 +45,6 @@ func main() {
 		func(cmd *cobra.Command) cli.Prompt { return cli.NewTerminalPrompt(cmd) },
 		adapter.NewVolumeProbe(quiet),
 		maintenance.DiskSizer(quiet),
+		&http.Client{Timeout: patchDownloadTimeout},
 	), os.Stderr))
 }

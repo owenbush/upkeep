@@ -25,13 +25,30 @@ import (
 // often it was asked.
 type scriptedIssues struct {
 	issues   []drupal.Issue
+	users    map[int]drupal.User
 	warnings []string
 	scans    *int
 }
 
-func (s scriptedIssues) Issues() dashboard.IssueReader { return s }
+func (s scriptedIssues) Issues() IssueSource { return s }
 
 func (s scriptedIssues) Warnings() []string { return s.warnings }
+
+func (s scriptedIssues) Issue(nid int) (drupal.Issue, bool) {
+	for _, issue := range s.issues {
+		if issue.Nid == nid {
+			return issue, true
+		}
+	}
+
+	return drupal.Issue{}, false
+}
+
+func (s scriptedIssues) User(uid int) (drupal.User, bool) {
+	user, known := s.users[uid]
+
+	return user, known
+}
 
 func (s scriptedIssues) ProjectIssues(string, []drupal.IssueStatus) []drupal.Issue {
 	if s.scans != nil {
@@ -203,7 +220,7 @@ func runDashboardCommand(
 	root := NewRoot(
 		&fakeFactory{engine: &fakeEngine{}},
 		scriptedClients{client: gitlabClientFor(server)},
-		issues, noPrompts, someVolumes(nil), noSizer,
+		issues, noPrompts, someVolumes(nil), noSizer, nil,
 	)
 
 	return invokeWith(t, root, args...)

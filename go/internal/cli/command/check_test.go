@@ -137,7 +137,7 @@ func runCheckRecording(
 	asked := []string{}
 	root := NewRoot(
 		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		scriptedClients{client: client, asked: &asked}, noIssues{}, noPrompts, noVolumes{}, noSizer,
+		scriptedClients{client: client, asked: &asked}, noIssues{}, noPrompts, noVolumes{}, noSizer, nil,
 	)
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)

@@ -11,13 +11,14 @@ import (
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/check"
 	"github.com/owenbush/upkeep/internal/cockpit"
+	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
 // refusingEngine fails exactly one engine call and succeeds at the rest.
 type refusingEngine struct {
-	checkingEngine
+	patchingEngine
 	refuse string
 }
 
@@ -26,7 +27,7 @@ func (e *refusingEngine) EnsureEnv(module cockpit.Module, coreMajor string) (ada
 		return adapter.Environment{}, errors.New("EnsureEnv refused")
 	}
 
-	return e.checkingEngine.EnsureEnv(module, coreMajor)
+	return e.patchingEngine.EnsureEnv(module, coreMajor)
 }
 
 func (e *refusingEngine) ApplyMr(environment adapter.Environment, mr gitlab.MergeRequest) error {
@@ -34,7 +35,7 @@ func (e *refusingEngine) ApplyMr(environment adapter.Environment, mr gitlab.Merg
 		return errors.New("ApplyMr refused")
 	}
 
-	return e.checkingEngine.ApplyMr(environment, mr)
+	return e.patchingEngine.ApplyMr(environment, mr)
 }
 
 func (e *refusingEngine) LoadFixture(environment adapter.Environment, name string) error {
@@ -42,7 +43,7 @@ func (e *refusingEngine) LoadFixture(environment adapter.Environment, name strin
 		return errors.New("LoadFixture refused")
 	}
 
-	return e.checkingEngine.LoadFixture(environment, name)
+	return e.patchingEngine.LoadFixture(environment, name)
 }
 
 func (e *refusingEngine) RunChecks(
@@ -52,7 +53,7 @@ func (e *refusingEngine) RunChecks(
 		return check.RunResult{}, errors.New("RunChecks refused")
 	}
 
-	return e.checkingEngine.RunChecks(environment, types)
+	return e.patchingEngine.RunChecks(environment, types)
 }
 
 func (e *refusingEngine) Serve(environment adapter.Environment) (adapter.ServeResult, error) {
@@ -60,7 +61,7 @@ func (e *refusingEngine) Serve(environment adapter.Environment) (adapter.ServeRe
 		return adapter.ServeResult{}, errors.New("Serve refused")
 	}
 
-	return e.checkingEngine.Serve(environment)
+	return e.patchingEngine.Serve(environment)
 }
 
 func (e *refusingEngine) CheckoutBranch(environment adapter.Environment, branch string) error {
@@ -68,7 +69,28 @@ func (e *refusingEngine) CheckoutBranch(environment adapter.Environment, branch 
 		return errors.New("CheckoutBranch refused")
 	}
 
-	return e.checkingEngine.CheckoutBranch(environment, branch)
+	return e.patchingEngine.CheckoutBranch(environment, branch)
+}
+
+func (e *refusingEngine) ApplyPatch(
+	environment adapter.Environment, patch adapter.PatchApplication, refresh adapter.BaseRefresh,
+) error {
+	if e.refuse == "ApplyPatch" {
+		return errors.New("ApplyPatch refused")
+	}
+
+	return e.patchingEngine.ApplyPatch(environment, patch, refresh)
+}
+
+func (e *refusingEngine) PromotePatch(
+	environment adapter.Environment, patch adapter.PatchApplication, branch adapter.IssueBranch,
+	message string, refresh adapter.BaseRefresh, partial bool,
+) (adapter.PatchPromotion, error) {
+	if e.refuse == "PromotePatch" {
+		return adapter.PatchPromotion{}, errors.New("PromotePatch refused")
+	}
+
+	return e.patchingEngine.PromotePatch(environment, patch, branch, message, refresh, partial)
 }
 
 // No engine failure may be swallowed.
@@ -104,16 +126,27 @@ func TestNoEngineFailureIsSwallowed(t *testing.T) {
 		},
 	}
 
+	for name, run := range patchRuns(t, root) {
+		runs[name] = run
+	}
+
 	var swallowed []string
 	for name, run := range runs {
 		for _, call := range run.calls {
-			engine := &refusingEngine{checkingEngine: *aCheckingEngine(), refuse: call}
+			engine := &refusingEngine{patchingEngine: *aPatchingEngine(), refuse: call}
 			engine.statusOK = true
 			engine.status = adapter.WorkingCopyStatus{CurrentBranch: "2.0.x"}
 
-			client, done := aResolvableGitlab(t, nil)
-			code, stdout, stderr := runCheckCommand(t, engine, client, run.args...)
-			done()
+			var code int
+			var stdout, stderr string
+			if strings.HasPrefix(name, "patch:") {
+				code, stdout, stderr = runPatchCommand(
+					t, engine, patchIssues, scriptedPrompt{}, run.args...)
+			} else {
+				client, done := aResolvableGitlab(t, nil)
+				code, stdout, stderr = runCheckCommand(t, engine, client, run.args...)
+				done()
+			}
 
 			if code != workflow.Infrastructure {
 				swallowed = append(swallowed, name+" carried on past a failed "+call)
@@ -136,6 +169,41 @@ func TestNoEngineFailureIsSwallowed(t *testing.T) {
 	}
 }
 
+// patchRuns are the patch commands' engine calls, which need an issue and a
+// patch host to reach at all.
+func patchRuns(t *testing.T, root string) map[string]struct {
+	args  []string
+	calls []string
+} {
+	t.Helper()
+
+	host, _ := aPatchHost(t, aPatchDiff)
+	patchIssues = scriptedIssues{issues: []drupal.Issue{anIssueWith(host.URL, "fix-1.patch")}}
+
+	return map[string]struct {
+		args  []string
+		calls []string
+	}{
+		"patch:apply": {
+			args:  []string{"patch:apply", "pathauto", "3597857", "--cockpit=" + root},
+			calls: []string{"EnsureEnv", "ApplyPatch"},
+		},
+		"patch:check": {
+			args: []string{
+				"patch:check", "pathauto", "3597857", "--fixture=x", "--cockpit=" + root,
+			},
+			calls: []string{"EnsureEnv", "ApplyPatch", "LoadFixture", "RunChecks"},
+		},
+		"patch:promote": {
+			args:  []string{"patch:promote", "pathauto", "3597857", "--cockpit=" + root},
+			calls: []string{"EnsureEnv", "PromotePatch"},
+		},
+	}
+}
+
+// patchIssues is what the patch runs resolve against, set by patchRuns.
+var patchIssues IssueClients = noIssues{}
+
 // And no cockpit failure may be either: every command that reads a registry
 // reports a malformed one rather than working around it.
 func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
@@ -146,15 +214,18 @@ func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
 	}
 
 	for name, args := range map[string][]string{
-		"check":    {"check", "pathauto", "--working-copy", "--cockpit=" + root},
-		"review":   {"review", "pathauto", "12", "--cockpit=" + root},
-		"dev":      {"dev", "pathauto", "--cockpit=" + root},
-		"env:path": {"env:path", "pathauto", "--cockpit=" + root},
-		"exec":     {"exec", "pathauto", "--cockpit=" + root, "--", "true"},
-		"modules":  {"modules", "--cockpit=" + root},
-		"status":   {"status", "--cockpit=" + root},
-		"merge":    {"merge", "--fast-lane", "--cockpit=" + root},
-		"prune":    {"prune", "--all", "--cockpit=" + root},
+		"check":         {"check", "pathauto", "--working-copy", "--cockpit=" + root},
+		"review":        {"review", "pathauto", "12", "--cockpit=" + root},
+		"dev":           {"dev", "pathauto", "--cockpit=" + root},
+		"env:path":      {"env:path", "pathauto", "--cockpit=" + root},
+		"exec":          {"exec", "pathauto", "--cockpit=" + root, "--", "true"},
+		"modules":       {"modules", "--cockpit=" + root},
+		"status":        {"status", "--cockpit=" + root},
+		"merge":         {"merge", "--fast-lane", "--cockpit=" + root},
+		"prune":         {"prune", "--all", "--cockpit=" + root},
+		"patch:apply":   {"patch:apply", "pathauto", "3597857", "--cockpit=" + root},
+		"patch:check":   {"patch:check", "pathauto", "3597857", "--cockpit=" + root},
+		"patch:promote": {"patch:promote", "pathauto", "3597857", "--cockpit=" + root},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 
@@ -188,6 +259,9 @@ func TestNoCommandFallsBackFromAnUnusableCockpit(t *testing.T) {
 		"base-artifacts:status": {"base-artifacts:status", "--cockpit="},
 		"merge":                 {"merge", "--fast-lane", "--cockpit="},
 		"prune":                 {"prune", "--all", "--cockpit="},
+		"patch:apply":           {"patch:apply", "pathauto", "3597857", "--cockpit="},
+		"patch:check":           {"patch:check", "pathauto", "3597857", "--cockpit="},
+		"patch:promote":         {"patch:promote", "pathauto", "3597857", "--cockpit="},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 
@@ -249,11 +323,13 @@ func TestNoCommandWorksWithAProjectsRootThatCouldNeverStart(t *testing.T) {
 	outside := t.TempDir()
 
 	for name, args := range map[string][]string{
-		"check":    {"check", "pathauto", "--working-copy"},
-		"dev":      {"dev", "pathauto"},
-		"env:path": {"env:path", "pathauto"},
-		"status":   {"status"},
-		"prune":    {"prune", "--all"},
+		"check":       {"check", "pathauto", "--working-copy"},
+		"dev":         {"dev", "pathauto"},
+		"env:path":    {"env:path", "pathauto"},
+		"status":      {"status"},
+		"prune":       {"prune", "--all"},
+		"patch:apply": {"patch:apply", "pathauto", "3597857"},
+		"review":      {"review", "pathauto", "12"},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil,
 			append(args, "--cockpit="+root, "--projects-root="+outside)...)

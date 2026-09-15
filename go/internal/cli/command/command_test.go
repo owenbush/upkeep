@@ -13,7 +13,6 @@ import (
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
-	"github.com/owenbush/upkeep/internal/dashboard"
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/maintenance"
@@ -46,18 +45,22 @@ func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, st
 // NewRootFor is the command tree with a stubbed engine factory, for the
 // commands that do not need one.
 func NewRootFor(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
-	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, noIssues{}, noPrompts, volumes, sizer)
+	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, noIssues{}, noPrompts, volumes, sizer, nil)
 }
 
 // noIssues stands in for drupal.org where a command under test never reaches
 // it, or has no issues to find.
 type noIssues struct{ warnings []string }
 
-func (n noIssues) Issues() dashboard.IssueReader { return noIssues{} }
+func (n noIssues) Issues() IssueSource { return noIssues{} }
 
 func (n noIssues) Warnings() []string { return n.warnings }
 
 func (noIssues) ProjectIssues(string, []drupal.IssueStatus) []drupal.Issue { return nil }
+
+func (noIssues) Issue(int) (drupal.Issue, bool) { return drupal.Issue{}, false }
+
+func (noIssues) User(int) (drupal.User, bool) { return drupal.User{}, false }
 
 // noPrompts stands in where a command under test never reaches a prompt. It
 // reports itself non-interactive, which is the answer that does nothing.
@@ -97,7 +100,16 @@ func (p scriptedPrompt) Choose(question string, _ []string) string {
 // never reaches one.
 type noClients struct{}
 
-func (noClients) ReadOnly(gitlab.Report) *gitlab.Client { return gitlab.NewClient(nil, "", "", "") }
+// A client pointed at a port nothing listens on, so a command that reaches for
+// GitLab when it should not fails immediately and loudly rather than going to
+// the real drupalcode.org — which a test must never do, and which showed up
+// here as a suite that took seven seconds.
+func (noClients) ReadOnly(gitlab.Report) *gitlab.Client {
+	return gitlab.NewClient(nil, "", unreachableAPI, unreachableAPI)
+}
+
+// unreachableAPI refuses a connection at once.
+const unreachableAPI = "http://127.0.0.1:1"
 
 func (noClients) Authenticated(gitlab.Report) (*gitlab.Client, error) {
 	return nil, errors.New("no GitLab token is configured")
@@ -305,7 +317,7 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 // that needs one is handed the factory.
 func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 	var built []string
-	root := NewRoot(recordingFactory{built: &built}, noClients{}, noIssues{}, noPrompts, noVolumes{}, noSizer)
+	root := NewRoot(recordingFactory{built: &built}, noClients{}, noIssues{}, noPrompts, noVolumes{}, noSizer, nil)
 
 	if root.Use != "upkeep" {
 		t.Errorf("root %q", root.Use)
@@ -452,5 +464,27 @@ func TestInitFailsWhenTheRegistryCannotBeWritten(t *testing.T) {
 	}
 	if strings.Contains(stdout, "Cockpit created") {
 		t.Errorf("it reported a cockpit with no registry:\n%s", stdout)
+	}
+}
+
+// No test may reach the real drupalcode.org.
+//
+// The fakes here stand in for a network, and one that quietly fell back to the
+// default API base would turn every test into a live request: slow, flaky, and
+// dependent on somebody else's uptime. It showed up as a suite that took seven
+// seconds and is pinned here so it cannot come back.
+func TestTheStandInClientsPointAtNothingReal(t *testing.T) {
+	client := noClients{}.ReadOnly(func(string) {})
+	if client == nil {
+		t.Fatal("no client")
+	}
+
+	// A request against it fails at once rather than travelling.
+	_, failure := client.Project("project/pathauto")
+	if failure == nil {
+		t.Fatal("the stand-in client reached something")
+	}
+	if strings.Contains(failure.Message, "drupalcode.org") {
+		t.Errorf("a test was about to talk to the real API: %s", failure.Message)
 	}
 }

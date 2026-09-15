@@ -230,7 +230,7 @@ func runMergeCommand(
 		scriptedClients{client: scene.client()},
 		noIssues{},
 		func(*cobra.Command) cli.Prompt { return prompt },
-		noVolumes{}, noSizer,
+		noVolumes{}, noSizer, nil,
 	)
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)

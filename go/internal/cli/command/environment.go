@@ -90,6 +90,9 @@ func resolveSubject(
 	if err != nil {
 		return nil, cockpit.Module{}, "", err
 	}
+	if err := cli.AssertProjectsRoot(cmd, where); err != nil {
+		return nil, cockpit.Module{}, "", err
+	}
 
 	modules, err := cli.Modules(where)
 	if err != nil {
