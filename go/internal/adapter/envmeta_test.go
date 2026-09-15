@@ -346,3 +346,59 @@ func TestTheRequiredKeysAreAllOfThem(t *testing.T) {
 		}
 	}
 }
+
+// The lenient read, which the disk inventory uses. Strictness is right for the
+// reuse decision and wrong here: a partial provision, or one written before a
+// field existed, is still disk usage to report and is exactly what prune
+// exists to collect.
+func TestAttributionIsReadLenientlyWhereTheReuseDecisionIsStrict(t *testing.T) {
+	// The shape before seed_core_version and addon_version existed — which
+	// EnvMetaFromYAML refuses outright.
+	older := "module: pathauto\ncore_major: '11'\ncreated_at: '2026-01-04T10:00:00+00:00'\n"
+
+	if _, err := EnvMetaFromYAML(older); err == nil {
+		t.Fatal("the strict reader accepted a meta missing required keys — this test has lost its point")
+	}
+
+	module, coreMajor, lastUsedAt := EnvMetaAttribution(older)
+	if module != "pathauto" || coreMajor != "11" {
+		t.Errorf("attribution was lost: %q / %q", module, coreMajor)
+	}
+	if lastUsedAt.UTC().Format(time.RFC3339) != "2026-01-04T10:00:00Z" {
+		t.Errorf("age was lost: %s", lastUsedAt)
+	}
+}
+
+// Age prefers the reuse stamp over the creation time: without that, an
+// environment in daily use ages from the day it was built and `prune
+// --older-than` deletes it.
+func TestAttributionAgePrefersTheReuseStamp(t *testing.T) {
+	_, _, lastUsedAt := EnvMetaAttribution(
+		"module: pathauto\ncore_major: '11'\n" +
+			"created_at: '2026-01-04T10:00:00+00:00'\nlast_used_at: '2026-09-01T08:00:00+00:00'\n",
+	)
+
+	if lastUsedAt.UTC().Format(time.RFC3339) != "2026-09-01T08:00:00Z" {
+		t.Errorf("got %s", lastUsedAt)
+	}
+}
+
+// Nothing usable is unknown, never a guess: the selector reads an unknown age
+// as "cannot tell", which is what stops a prune deleting on the strength of a
+// question it could not ask.
+func TestAttributionOfSomethingUnreadableIsUnknown(t *testing.T) {
+	for _, contents := range []string{
+		"",
+		"\tnot: [yaml",
+		"just a string",
+		"- a\n- list\n",
+		"module: null\ncore_major: ~\n",
+		"module:\n  - pathauto\n",
+		"created_at: not-a-date\n",
+	} {
+		module, coreMajor, lastUsedAt := EnvMetaAttribution(contents)
+		if module != "" || coreMajor != "" || !lastUsedAt.IsZero() {
+			t.Errorf("%q yielded %q / %q / %s", contents, module, coreMajor, lastUsedAt)
+		}
+	}
+}

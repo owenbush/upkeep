@@ -84,3 +84,14 @@ func indexOf(haystack, needle string) int {
 
 	return -1
 }
+
+// A count too large to be a number is refused, rather than becoming one: the
+// pattern admits any run of digits, and `--older-than` turns this into the
+// cutoff a prune deletes against.
+func TestADurationCountTooLargeToBeANumberIsRefused(t *testing.T) {
+	for _, input := range []string{"99999999999999999999d", "184467440737095516150s"} {
+		if _, err := ParseDuration(input); err == nil {
+			t.Errorf("%q was accepted", input)
+		}
+	}
+}

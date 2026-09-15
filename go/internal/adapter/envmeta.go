@@ -101,6 +101,53 @@ func EnvMetaFromYAML(contents string) (EnvironmentMeta, error) {
 	return meta, nil
 }
 
+// EnvMetaAttribution is a lenient read of the meta for a disk inventory:
+// which module and core an environment was made for, and when it was last
+// used. Anything missing or malformed is simply unknown.
+//
+// Deliberately not EnvMetaFromYAML, which is strict, because the two answer
+// different questions. The reuse decision must refuse an environment whose
+// identity it cannot fully establish — reusing one it has half-read is how a
+// check ends up running against the wrong tree. An inventory is the opposite:
+// a partial provision, or one written by an older upkeep before a field
+// existed, is still disk usage to report, and it is exactly what prune exists
+// to collect. Read strictly, such an environment loses its attribution and its
+// age, which makes it invisible to `prune --module` and to `prune
+// --older-than` — the two commands that would have cleaned it up.
+//
+// Found by mutation testing the inventory scanner, which had been handed the
+// strict reader.
+func EnvMetaAttribution(contents string) (module, coreMajor string, lastUsedAt time.Time) {
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(contents), &node); err != nil {
+		return "", "", time.Time{}
+	}
+	if node.Kind != yaml.DocumentNode || len(node.Content) == 0 ||
+		node.Content[0].Kind != yaml.MappingNode {
+		return "", "", time.Time{}
+	}
+
+	scalars := map[string]string{}
+	mapping := node.Content[0]
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if value := mapping.Content[i+1]; value.Kind == yaml.ScalarNode && value.Tag != "!!null" {
+			scalars[mapping.Content[i].Value] = value.Value
+		}
+	}
+
+	// Age prefers the reuse stamp over the creation time: without that, an
+	// environment in daily use ages from the day it was built.
+	lastUsedAt, err := envTimestamp("last_used_at", scalars["last_used_at"])
+	if err != nil {
+		lastUsedAt, err = envTimestamp("created_at", scalars["created_at"])
+		if err != nil {
+			lastUsedAt = time.Time{}
+		}
+	}
+
+	return scalars["module"], scalars["core_major"], lastUsedAt
+}
+
 func envTimestamp(key, raw string) (time.Time, error) {
 	for _, layout := range metaTimeLayouts {
 		if parsed, err := time.Parse(layout, raw); err == nil {
