@@ -305,19 +305,34 @@ func TestStatusRefusesAProjectsRootThatCouldNeverWork(t *testing.T) {
 // columnIn reads one column of the row holding a fragment, by the offset its
 // header sits at — so an assertion is about the cell it names rather than
 // about the line happening to contain a word.
+//
+// Measured in runes, not bytes. The table pads by rune width, and several
+// cells hold an en dash — three bytes, one column — so a byte offset drifts
+// right by two for every dash to its left and silently reads the next column
+// along.
 func columnIn(output, fragment, header string) string {
 	lines := strings.Split(output, "\n")
 	if len(lines) == 0 {
 		return ""
 	}
 
-	at := strings.Index(lines[0], header)
-	row := lineContaining(output, fragment)
-	if at < 0 || row == "" || at >= len(row) {
+	at := runeIndex(lines[0], header)
+	row := []rune(lineContaining(output, fragment))
+	if at < 0 || len(row) == 0 || at >= len(row) {
 		return ""
 	}
 
-	return strings.TrimSpace(strings.SplitN(row[at:], "    ", 2)[0])
+	return strings.TrimSpace(strings.SplitN(string(row[at:]), "    ", 2)[0])
+}
+
+// runeIndex is where a substring starts, counted in runes.
+func runeIndex(haystack, needle string) int {
+	at := strings.Index(haystack, needle)
+	if at < 0 {
+		return -1
+	}
+
+	return len([]rune(haystack[:at]))
 }
 
 // lineContaining is the first output line holding a fragment.

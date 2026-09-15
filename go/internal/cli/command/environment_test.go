@@ -127,7 +127,7 @@ func runWithEngine(
 	t.Helper()
 
 	factory := &fakeFactory{engine: engine}
-	root := NewRoot(factory, noClients{}, noPrompts, noVolumes{}, noSizer)
+	root := NewRoot(factory, noClients{}, noIssues{}, noPrompts, noVolumes{}, noSizer)
 
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
@@ -452,7 +452,7 @@ func TestExecHandsStdinToTheWrappedCommand(t *testing.T) {
 	engine := &fakeEngine{envPaths: map[string]string{"pathauto/11": dir}}
 
 	factory := &fakeFactory{engine: engine}
-	tree := NewRoot(factory, noClients{}, noPrompts, noVolumes{}, noSizer)
+	tree := NewRoot(factory, noClients{}, noIssues{}, noPrompts, noVolumes{}, noSizer)
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	tree.SetOut(out)
 	tree.SetErr(errOut)

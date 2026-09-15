@@ -33,6 +33,7 @@ func main() {
 	os.Exit(cli.Execute(command.NewRoot(
 		adapter.NewDdevContribFactory(redactor),
 		cli.NewResolvedClients(func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) }),
+		command.NewDrupalClients(),
 		func(cmd *cobra.Command) cli.Prompt { return cli.NewTerminalPrompt(cmd) },
 		adapter.NewVolumeProbe(quiet),
 		maintenance.DiskSizer(quiet),

@@ -19,6 +19,7 @@ var Version = "dev"
 func NewRoot(
 	engines adapter.Factory,
 	clients cli.GitlabClients,
+	issues IssueClients,
 	prompts func(*cobra.Command) cli.Prompt,
 	volumes Volumes,
 	sizer maintenance.Sizer,
@@ -43,6 +44,7 @@ func NewRoot(
 	root.AddCommand(
 		NewBaseArtifactsStatus(),
 		NewCheck(engines, clients),
+		NewDashboard(clients, issues),
 		NewDev(engines),
 		NewEnvPath(engines),
 		NewExec(engines),

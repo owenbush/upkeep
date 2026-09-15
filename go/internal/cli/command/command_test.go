@@ -13,6 +13,8 @@ import (
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
+	"github.com/owenbush/upkeep/internal/dashboard"
+	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/maintenance"
 	"github.com/owenbush/upkeep/internal/workflow"
@@ -44,8 +46,18 @@ func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, st
 // NewRootFor is the command tree with a stubbed engine factory, for the
 // commands that do not need one.
 func NewRootFor(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
-	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, noPrompts, volumes, sizer)
+	return NewRoot(adapter.NewDdevContribFactory(nil), noClients{}, noIssues{}, noPrompts, volumes, sizer)
 }
+
+// noIssues stands in for drupal.org where a command under test never reaches
+// it, or has no issues to find.
+type noIssues struct{ warnings []string }
+
+func (n noIssues) Issues() dashboard.IssueReader { return noIssues{} }
+
+func (n noIssues) Warnings() []string { return n.warnings }
+
+func (noIssues) ProjectIssues(string, []drupal.IssueStatus) []drupal.Issue { return nil }
 
 // noPrompts stands in where a command under test never reaches a prompt. It
 // reports itself non-interactive, which is the answer that does nothing.
@@ -293,7 +305,7 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 // that needs one is handed the factory.
 func TestCommandsReceiveTheEngineFactoryRatherThanBuildingOne(t *testing.T) {
 	var built []string
-	root := NewRoot(recordingFactory{built: &built}, noClients{}, noPrompts, noVolumes{}, noSizer)
+	root := NewRoot(recordingFactory{built: &built}, noClients{}, noIssues{}, noPrompts, noVolumes{}, noSizer)
 
 	if root.Use != "upkeep" {
 		t.Errorf("root %q", root.Use)

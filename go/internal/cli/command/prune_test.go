@@ -102,7 +102,7 @@ func runPruneCommand(
 
 	root := NewRoot(
 		&fakeFactory{engine: &fakeEngine{}, replace: engine},
-		noClients{}, noPrompts, volumes, func(string) int64 { return 1024 },
+		noClients{}, noIssues{}, noPrompts, volumes, func(string) int64 { return 1024 },
 	)
 
 	return invokeWith(t, root, args...)
