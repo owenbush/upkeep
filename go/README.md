@@ -107,6 +107,37 @@ which the design notes call the worst failure this tool has. So the
 approximation was abandoned rather than tuned, and the intervals are computed
 properly.
 
+## Live verification
+
+`cmd/livecheck` runs the ported domain core against the real drupal.org and
+git.drupalcode.org APIs. It is not a test — it needs a network, it reads
+projects that change under it, and it asserts shapes rather than values. It is
+here because the unit suite is structurally blind to the thing that matters
+most: whether the narrowing, the pairing and the row model survive contact with
+data nobody wrote down.
+
+```
+go run ./cmd/livecheck pathauto
+```
+
+What it reproduced on first run, against the measurements the PHP design notes
+record:
+
+| Claim in the PHP notes | Live, from the Go port |
+| --- | --- |
+| pathauto's single 8.x-1.x declares `^10.2 \|\| ^11 \|\| ^12` | exactly that, narrowing to cores 10, 11, 12 |
+| 100 of 100 open merge requests come from a fork | 100 open, every paired one via its fork, none by metadata |
+| token's `691078-field-tokens` has no info.yml at all | present in the branch list, no constraint, falls back whole |
+| conditions_helper #3596502: active issue, MR merged 2026-06-12 | `!1 merged 2026-06-12`, guidance `upkeep issue conditions_helper 1` |
+| every row yields a command | 109/109 on pathauto, 197/197 on token |
+
+And one thing the notes could not have: field_visibility_conditions carries two
+branches with genuinely different constraints — `1.0.x` is `^10 || ^11` and
+`2.0.x` is `^10.1 || ^11 || ^12` — so the per-branch narrowing gives different
+answers on the same module, which is the case a single-branch project cannot
+exercise. Its #3598272 also shows the `↑` re-roll flag firing: four patches, the
+newest posted after the merge request last moved.
+
 ## Running it
 
 ```bash
