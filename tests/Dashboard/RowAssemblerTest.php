@@ -29,6 +29,12 @@ final class RowAssemblerTest extends TestCase
 {
     private const HEAD_SHA = 'abc123def456abc123def456abc123def456abcd';
 
+    /**
+     * The branch merged into the current tip of its target — a different tree
+     * from the head, and the one both CI and upkeep actually check.
+     */
+    private const MERGE_REF_SHA = 'f00ba1f00ba1f00ba1f00ba1f00ba1f00ba1f00b';
+
     private string $resultsDir;
 
     protected function setUp(): void
@@ -47,6 +53,7 @@ final class RowAssemblerTest extends TestCase
             self::json(self::projectPayload()),
             self::json([self::listedMrPayload(7)]),
             self::json(self::detailedMrPayload(7)),
+            self::json(['commit_id' => self::MERGE_REF_SHA]),
         ]);
 
         $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['10', '11'])]);
@@ -91,11 +98,12 @@ final class RowAssemblerTest extends TestCase
         // Only the single-MR endpoint carries head_pipeline. Losing it must not
         // lose the row — but a row with no observable CI can never be
         // READY-AUTO, whatever the local evidence says.
-        $this->storePassingLocal(7);
+        $this->storePassingLocal(7, self::MERGE_REF_SHA);
         $assembler = $this->assembler([
             self::json(self::projectPayload()),
             self::json([self::listedMrPayload(7)]),
             new MockResponse('', ['http_code' => 404]),
+            self::json(['commit_id' => self::MERGE_REF_SHA]),
         ]);
 
         $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['11'])]);
@@ -105,6 +113,68 @@ final class RowAssemblerTest extends TestCase
         self::assertSame('n/a (404)', $rows[0]->ciCell());
         self::assertSame(GateStatus::Review, $rows[0]->requireVerdict()->status);
         self::assertContains('ci-missing', $rows[0]->requireVerdict()->reasons);
+    }
+
+    public function testEvidenceKeyedOnTheMergeRefIsCurrent(): void
+    {
+        // What `check` actually files a verdict under: the merge ref's SHA,
+        // not the head's. The row has to compare against the same thing, or
+        // every checked merge request reads as stale and the fast lane — which
+        // only ever offers READY-AUTO — has nothing to offer.
+        $this->storePassingLocal(7, self::MERGE_REF_SHA);
+        $assembler = $this->assembler([
+            self::json(self::projectPayload()),
+            self::json([self::listedMrPayload(7)]),
+            self::json(self::detailedMrPayload(7)),
+            self::json(['commit_id' => self::MERGE_REF_SHA]),
+        ]);
+
+        $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['11'])]);
+
+        self::assertSame('pass 11', $rows[0]->local->cell(), 'the check result is about this tree');
+        self::assertTrue(
+            $rows[0]->isReadyAuto(),
+            'A bot MR with green CI and a passing check of the merge ref is exactly what the fast lane '
+            . 'exists for; measured on pathauto, 23 of 25 open MRs have a merge tree differing from head.',
+        );
+    }
+
+    public function testEvidenceKeyedOnTheHeadShaIsStaleWhenAMergeRefExists(): void
+    {
+        // The other half, and the reason this is not just a key change: a
+        // result filed against the head SHA is about the branch alone, which
+        // is not the tree CI analysed or the one upkeep checked out.
+        $this->storePassingLocal(7, self::HEAD_SHA);
+        $assembler = $this->assembler([
+            self::json(self::projectPayload()),
+            self::json([self::listedMrPayload(7)]),
+            self::json(self::detailedMrPayload(7)),
+            self::json(['commit_id' => self::MERGE_REF_SHA]),
+        ]);
+
+        $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['11'])]);
+
+        self::assertSame('stale 11', $rows[0]->local->cell());
+        self::assertFalse($rows[0]->isReadyAuto());
+    }
+
+    public function testAMergeRequestWithNoMergeRefFallsBackToItsHeadSha(): void
+    {
+        // GitLab publishes no merge ref for a merge request that conflicts
+        // with its target. The adapter checks the branch alone there and says
+        // so, so the revision follows it — both halves fall back together.
+        $this->storePassingLocal(7, self::HEAD_SHA);
+        $assembler = $this->assembler([
+            self::json(self::projectPayload()),
+            self::json([self::listedMrPayload(7)]),
+            self::json(self::detailedMrPayload(7)),
+            new MockResponse('', ['http_code' => 404]),
+        ]);
+
+        $rows = $assembler->assemble(['widget' => new Module('widget', 'project/widget', ['11'])]);
+
+        self::assertSame('pass 11', $rows[0]->local->cell());
+        self::assertTrue($rows[0]->isReadyAuto());
     }
 
     public function testAModuleFilteredOutByTheVersionSelectorIsNotFetchedAtAll(): void
@@ -141,13 +211,13 @@ final class RowAssemblerTest extends TestCase
         );
     }
 
-    private function storePassingLocal(int $iid): void
+    private function storePassingLocal(int $iid, string $revision = self::HEAD_SHA): void
     {
         (new ResultsCache($this->resultsDir))->store(
             'widget',
             ResultKey::mergeRequest($iid),
             '11',
-            self::HEAD_SHA,
+            $revision,
             new CheckRunResult([new CheckResult(CheckType::PhpUnit, CheckStatus::Passed, 0, 'OK', 1.0)]),
         );
     }
