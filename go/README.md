@@ -161,6 +161,14 @@ one was caught by a test rather than by reading the code.
   place it would matter. The Go version drops `.` as well as `""`, which is
   strictly safer — unlike `..`, a `.` cannot move a path anywhere.
 
+- **`yaml.v3` nodes carry their comments; PHP's dump does not.** The engine
+  add-on's config is adapted after *every* add-on installation, and the
+  adaptation prepends a `#ddev-generated` header. PHP's `Yaml::dump` emits data
+  and nothing else, so re-adapting is idempotent for free. Editing the parsed
+  node tree in Go preserves the comments it was parsed with, so a second pass
+  stacked a second header on the first — and would keep stacking. The nodes are
+  stripped of comments before rendering.
+
 - **JSON narrowing helpers that only accept `float64` break on their own
   output.** `encoding/json` decodes every number as `float64`, so readers
   written against a decoded payload work — until a model is rendered *back*
