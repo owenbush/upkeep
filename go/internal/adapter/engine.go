@@ -67,11 +67,16 @@ type Engine interface {
 	ApplyPatch(environment Environment, patch PatchApplication, refresh BaseRefresh) error
 
 	// StartWork cuts the issue's work branch from a freshly fetched base, or
-	// resumes it when it already exists.
+	// resumes it when it already exists, reporting true when it resumed.
 	//
 	// It never resets: a work branch may hold the only copy of something a
 	// human wrote.
-	StartWork(environment Environment, branch IssueBranch, baseBranch string, refresh BaseRefresh) error
+	StartWork(
+		environment Environment,
+		branch IssueBranch,
+		baseBranch string,
+		refresh BaseRefresh,
+	) (bool, error)
 
 	// PromotePatch applies a patch onto the issue's work branch and commits it
 	// under the patch author's attribution.
@@ -120,6 +125,11 @@ type Engine interface {
 	// containers and volumes included.
 	Teardown(module cockpit.Module, coreMajor string) error
 }
+
+// The one engine implementation, asserted against the interface here rather
+// than discovered at the composition root: a method whose signature drifts
+// from the contract is a compile error in this package, where the fix is.
+var _ Engine = (*DdevContrib)(nil)
 
 // Factory builds an engine bound to a projects root.
 //

@@ -21,11 +21,18 @@ import (
 // which order, with which flags — and a script that had to spell every
 // invocation exactly would be a second copy of the implementation.
 type recordingRunner struct {
-	ran     []string
-	keys    []string
-	answers map[string]string
-	fail    map[string]bool
-	stall   map[string]bool
+	ran      []string
+	timeouts []time.Duration
+	keys     []string
+	answers  map[string]string
+	fail     map[string]bool
+	stall    map[string]bool
+	// effects are side effects a command has on the filesystem, so a test of
+	// a sequence can be a test of what each step leaves for the next.
+	effects []struct {
+		key string
+		run func()
+	}
 }
 
 func newRunner() *recordingRunner {
@@ -86,25 +93,57 @@ func (r *recordingRunner) failing(line string) bool {
 	return false
 }
 
-func (r *recordingRunner) record(command []string) string {
+// does scripts what a command leaves behind on disk.
+func (r *recordingRunner) does(key string, effect func()) *recordingRunner {
+	r.effects = append(r.effects, struct {
+		key string
+		run func()
+	}{key, effect})
+
+	return r
+}
+
+func (r *recordingRunner) record(command []string, timeout time.Duration) string {
 	line := strings.Join(command, " ")
 	r.ran = append(r.ran, line)
+	r.timeouts = append(r.timeouts, timeout)
+
+	if !r.failing(line) {
+		for _, effect := range r.effects {
+			if strings.Contains(line, effect.key) {
+				effect.run()
+			}
+		}
+	}
 
 	return line
 }
 
-func (r *recordingRunner) Run(command []string, _ string, _ time.Duration) (string, error) {
-	line := r.record(command)
-	if r.failing(line) {
-		return "", fmt.Errorf("command failed: %s", line)
+// timeoutOf is the timebox the given command was run under.
+func (r *recordingRunner) timeoutOf(fragments ...string) time.Duration {
+	at := r.indexOfCommand(fragments...)
+	if at < 0 {
+		return -1
 	}
+
+	return r.timeouts[at]
+}
+
+func (r *recordingRunner) Run(command []string, _ string, timeout time.Duration) (string, error) {
+	line := r.record(command, timeout)
 	answer, _ := r.match(line)
+	if r.failing(line) {
+		// With what it said, as the real runner does: a failure's output is
+		// what several diagnoses are read out of, and a fake that dropped it
+		// would make those unreachable here and only here.
+		return "", fmt.Errorf("command failed: %s\n%s", line, answer)
+	}
 
 	return answer, nil
 }
 
-func (r *recordingRunner) TryRun(command []string, _ string, _ time.Duration) (string, bool) {
-	line := r.record(command)
+func (r *recordingRunner) TryRun(command []string, _ string, timeout time.Duration) (string, bool) {
+	line := r.record(command, timeout)
 	if r.failing(line) {
 		return "", false
 	}
@@ -113,7 +152,7 @@ func (r *recordingRunner) TryRun(command []string, _ string, _ time.Duration) (s
 }
 
 func (r *recordingRunner) Capture(command []string, _ string, timeout time.Duration) proc.Captured {
-	line := r.record(command)
+	line := r.record(command, timeout)
 	if r.stalling(line) {
 		answer, _ := r.match(line)
 

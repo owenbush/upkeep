@@ -257,7 +257,7 @@ func (d *DdevContrib) ensureCheckToolchain(environment Environment) error {
 		return err
 	}
 
-	coreVersion, err := d.artifactCoreVersion(environment.CoreMajor)
+	artifactMeta, err := d.requireArtifactMeta(environment.CoreMajor)
 	if err != nil {
 		return err
 	}
@@ -266,7 +266,7 @@ func (d *DdevContrib) ensureCheckToolchain(environment Environment) error {
 		"ddev", "composer", "require", "--dev", "--with-all-dependencies", "--no-interaction",
 	}
 	for _, pkg := range ToolchainPackages {
-		command = append(command, baseartifact.PackageFor(pkg, environment.CoreMajor, coreVersion))
+		command = append(command, baseartifact.PackageFor(pkg, environment.CoreMajor, artifactMeta.CoreVersion))
 	}
 	if _, err := d.runner.Run(command, environment.ProjectPath, 0); err != nil {
 		return err
@@ -405,27 +405,4 @@ func (d *DdevContrib) InspectWorkingCopy(moduleName, coreMajor string) (WorkingC
 	}
 
 	return InspectWorkingCopy(moduleWorkingCopy(projectPath), d.runner), true
-}
-
-// artifactCoreVersion is the exact core version the base artifact resolved to.
-func (d *DdevContrib) artifactCoreVersion(coreMajor string) (string, error) {
-	metaPath, err := d.layout.MetaPath(coreMajor)
-	if err != nil {
-		return "", err
-	}
-
-	contents, err := os.ReadFile(metaPath)
-	if err != nil {
-		return "", fmt.Errorf(
-			"no base artifact for core %s: %w.\nBuild one first:\n  upkeep base-artifacts:build --version=%s",
-			coreMajor, err, coreMajor,
-		)
-	}
-
-	meta, err := baseartifact.MetaFromYAML(string(contents))
-	if err != nil {
-		return "", err
-	}
-
-	return meta.CoreVersion, nil
 }
