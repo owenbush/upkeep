@@ -184,8 +184,8 @@ func renderPlan(cmd *cobra.Command, candidates []maintenance.Item) {
 		total += item.Size
 		rows = append(rows, []string{
 			item.Category.Label(),
-			orDash(item.Module),
-			orDash(item.CoreMajor),
+			orDash(item.Module, "-"),
+			orDash(item.CoreMajor, "-"),
 			item.Path,
 			itemAge(item, now),
 			maintenance.HumanBytes(item.Size),

@@ -107,8 +107,8 @@ func renderDisk(cmd *cobra.Command, items []maintenance.Item) {
 	rows := make([][]string, 0, len(sorted))
 	for _, item := range sorted {
 		rows = append(rows, []string{
-			orDash(item.Module),
-			orDash(item.CoreMajor),
+			orDash(item.Module, "-"),
+			orDash(item.CoreMajor, "-"),
 			item.Category.Label(),
 			item.Path,
 			itemAge(item, now),
@@ -186,9 +186,14 @@ func itemAge(item maintenance.Item, now time.Time) string {
 	return fmt.Sprintf("%dh", int(age.Hours()))
 }
 
-func orDash(value string) string {
+// orDash is a cell's value, or the placeholder when there is none.
+//
+// The placeholder is the caller's, because the two tables use different ones:
+// the inventory's hyphen means "does not apply to this kind of item", while
+// the issue list's en dash means "drupal.org did not say".
+func orDash(value, placeholder string) string {
 	if value == "" {
-		return "-"
+		return placeholder
 	}
 
 	return value

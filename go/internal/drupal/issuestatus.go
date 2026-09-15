@@ -97,6 +97,17 @@ func OpenStatuses() []IssueStatus {
 	return open
 }
 
+// NeedsMaintainer reports whether the issue is waiting on the maintainer
+// rather than on its author.
+//
+// The distinction the issue list sorts by: an RTBC issue is somebody waiting
+// on you, while an Active one is waiting on nobody. The same two statuses as
+// AwaitingReviewStatuses, asked of one status rather than enumerated — a list
+// answers "which should I scan?" and this answers "is this one mine?".
+func (s IssueStatus) NeedsMaintainer() bool {
+	return s == StatusNeedsReview || s == StatusRtbc
+}
+
 // AwaitingReviewStatuses is the subset carrying a contribution to review — the
 // historical scan, kept because "what needs reviewing?" is still a different
 // question from "what is open?".
