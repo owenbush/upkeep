@@ -5,12 +5,14 @@ on:
     branches: [main, go-port]
     paths:
       - "internal/adapter/**"
+      - "internal/baseartifact/**"
       - "internal/contract/**"
       - "internal/proc/**"
       - ".github/workflows/contract.yml"
   pull_request:
     paths:
       - "internal/adapter/**"
+      - "internal/baseartifact/**"
       - "internal/contract/**"
       - "internal/proc/**"
       - ".github/workflows/contract.yml"

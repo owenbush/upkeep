@@ -64,6 +64,13 @@ jobs:
       - name: Structural invariants
         run: go test ./internal/invariant/ -v
 
+      # The contract package is excluded from the coverage gate because it needs
+      # docker, but half of it does not: the `publish` push tests need only
+      # git, and pushing is the only outward-facing thing upkeep does. The ddev
+      # half skips itself here and is covered by the contract workflow.
+      - name: Contract tests that need no container
+        run: go test ./internal/contract/ -count=1
+
       - name: Race detector
         run: go test -race ./...
 

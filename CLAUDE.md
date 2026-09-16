@@ -709,6 +709,13 @@ fact about the layout, and a bare ddev project starts in about a minute where
 installing Drupal takes fifteen — which is the half that makes container CI
 flaky and then ignored.
 
+**Half of it needs no container.** `publish`'s git half is plain git against
+whatever URL it is handed, so a `file://` bare repository exercises it
+completely — including the `pre-receive hook declined` a fresh issue fork gives
+you, which a hook reproduces on demand and the real thing does not. Those run
+in the ordinary Go workflow; only the ddev half waits for the contract one.
+**No credential, no network, and no merge request is opened anywhere.**
+
 `.github/workflows/contract.yml` runs it per push, **and fails if the tests
 skip themselves**: a job that goes green having executed nothing is the hole
 this suite exists to close. `internal/contract` is excluded from the coverage
