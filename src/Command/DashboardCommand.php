@@ -170,15 +170,16 @@ final class DashboardCommand extends UpkeepCommand
             if ($snapshot === null) {
                 $progress?->setMessage($name);
                 $progress?->display();
-                if ($client === null) {
-                    // The factory reports the missing-token guidance itself;
-                    // without a credential there is nothing to fetch and no
-                    // table to show.
-                    $client = $this->client ?? GitlabClientFactory::forConsole($io);
-                    if ($client === null) {
-                        return ExitCode::INFRASTRUCTURE;
-                    }
-                }
+                // Built on first need rather than up front, so a run served
+                // entirely from the cache makes no client and says nothing
+                // about credentials. Read-only: a refresh fetches, and the
+                // only thing this command writes is the snapshot on local
+                // disk.
+                $client ??= GitlabClientFactory::readOnlyOr(
+                    $this->client,
+                    GitlabClientFactory::resolver($io),
+                    $io->note(...),
+                );
 
                 $fetched = $this->fetchModule($client, $drupal, $module);
                 if ($fetched instanceof ApiFailure) {

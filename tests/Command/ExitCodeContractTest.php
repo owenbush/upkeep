@@ -109,11 +109,7 @@ final class ExitCodeContractTest extends TestCase
      */
     public static function commandsNeedingACredential(): iterable
     {
-        yield 'api:probe' => [['api:probe', 'widget']];
-        yield 'dashboard' => [['dashboard']];
         yield 'merge' => [['merge', '--fast-lane']];
-        yield 'notes' => [['notes', 'widget']];
-        yield 'issue' => [['issue', 'widget', '5']];
         yield 'needs-work' => [['needs-work', 'widget', '5']];
         yield 'modules:add' => [['modules:add']];
     }
@@ -130,14 +126,26 @@ final class ExitCodeContractTest extends TestCase
     }
 
     /**
-     * `check` and `review` are deliberately absent from that list now.
+     * `check`, `review`, `api:probe`, `dashboard`, `notes`, `issue` and
+     * `patches` are deliberately absent from that list now.
      *
-     * They only look, and drupalcode serves a public project's merge requests
-     * and refs anonymously, so requiring a credential to read was upkeep's
-     * restriction rather than GitLab's. They are covered where they can be
-     * without a network call: GitlabClientFactoryTest for the degraded-mode
-     * note, GitlabClientTest for the header and the refused writes, and
-     * CommandSurfaceTest for which commands may take that path at all.
+     * They only look, and drupalcode serves a public project's merge requests,
+     * refs, forks and raw files anonymously, so requiring a credential to read
+     * was upkeep's restriction rather than GitLab's. `check` and `review` were
+     * freed of it first and the other five were missed for a while — which is
+     * why `CommandSurfaceTest` now asserts the rule over the whole directory
+     * rather than leaving it to this list to remember.
+     *
+     * They are covered where they can be without a network call:
+     * GitlabClientFactoryTest for the degraded-mode note, GitlabClientTest for
+     * the header and the refused writes, and CommandSurfaceTest for which
+     * commands may take that path at all. Not here — a tokenless run of one of
+     * them now builds a real client, and a live request has no place in this
+     * suite.
+     *
+     * What is left is the genuine article: `merge` and `needs-work` write, and
+     * `modules:add` asks GitLab a question about *you*, which it will not
+     * answer to nobody.
      *
      * Asserting it here would mean running a command that no longer
      * short-circuits, which is a live request to git.drupalcode.org from the
@@ -154,20 +162,28 @@ final class ExitCodeContractTest extends TestCase
     }
 
     /**
-     * The one documented exception: `patches` without a token is a degraded
-     * mode, not a failure. It says so once and still reports what it can, so
-     * it exits 0 — a cron wrapper around it must not start alerting because
-     * the maintainer has no PAT on that machine.
+     * `patches` without a token cross-references anyway, reading anonymously.
+     *
+     * It used to give the cross-reference up entirely and announce a degraded
+     * mode — which predates drupalcode's public reads being usable, and meant
+     * a maintainer with no PAT on that machine got every Needs Review / RTBC
+     * issue listed with an empty MR column. That is the noise the report
+     * exists to cut.
+     *
+     * Driven with an anonymous *injected* client: the tokenless path now
+     * builds a real one, and a live request has no place in this suite.
      */
-    public function testPatchesWithoutATokenWarnsOnceAndStillExitsOk(): void
+    public function testPatchesWithoutATokenStillCrossReferences(): void
     {
         $cli = $this->cli();
-        // Two modules: the credential guidance is resolved once for the run,
-        // not re-printed for every module it could not cross-reference. Both
-        // have to have something to report, because a module with no Needs
-        // Review / RTBC issue never reaches for GitLab in the first place.
+        // Two modules, because the client is resolved once for the run rather
+        // than per module. Both have to have something to report: a module
+        // with no Needs Review / RTBC issue never reaches for GitLab at all.
         $cli->registerModule('widget');
         $cli->registerModule('gadget');
+        $cli->withGitlab(MockGitlab::create()
+            ->route('/projects/', ['message' => '404 Not Found'], 404)
+            ->client(null));
         $cli->withDrupalOrg(new DrupalOrgClient(new MockHttpClient(
             static fn (): MockResponse => new MockResponse(
                 json_encode(['list' => [[
@@ -180,11 +196,12 @@ final class ExitCodeContractTest extends TestCase
         )));
 
         self::assertSame(ExitCode::OK, $cli->run('patches'), $cli->display());
-        self::assertSame(
-            1,
-            substr_count($cli->display(), 'No GitLab token found'),
-            'the degraded mode is announced once, not per module',
+        self::assertStringNotContainsString(
+            'No GitLab token found',
+            $cli->display(),
+            'reading needs no credential, so nothing may ask for one',
         );
+        self::assertStringContainsString('3489012', $cli->display(), 'and the report still lists');
     }
 
     /**

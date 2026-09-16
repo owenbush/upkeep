@@ -50,10 +50,13 @@ final class IssueCommand extends UpkeepCommand
         $module = $this->resolveModule($cockpit, $modules, self::stringArgument($input, 'module'));
         $iid = self::mrIid($input);
 
-        $gitlab = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);
-        if ($gitlab === null) {
-            return ExitCode::INFRASTRUCTURE;
-        }
+        // Read anonymously: this fetches a project and a merge request and
+        // then opens a browser. Nothing here writes.
+        $gitlab = GitlabClientFactory::readOnlyOr(
+            $this->gitlabClient,
+            GitlabClientFactory::resolver($io),
+            $io->note(...),
+        );
 
         $project = $gitlab->project($module->project);
         if ($project instanceof ApiFailure) {

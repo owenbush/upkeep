@@ -168,14 +168,21 @@ abstract class AbstractPatchCommand extends UpkeepCommand
             return null;
         }
 
-        $client = $this->gitlabClient ?? GitlabClientFactory::authenticated(
+        // Read anonymously. Without a token this used to give up and let the
+        // patch be applied to the working copy's current base — which for a
+        // 2.0.0 issue is usually the default 1.0.x, and reads as needing a
+        // re-roll when it does not. Nothing here needs a credential: the
+        // project and its branch names are public.
+        //
+        // Silent, unlike the other read-only surfaces: this is a lookup
+        // inside a larger command, and every one of its failures already
+        // falls back without comment.
+        $client = GitlabClientFactory::readOnlyOr(
+            $this->gitlabClient,
             GitlabClientFactory::resolver($io),
             static function (): void {
             },
         );
-        if ($client === null) {
-            return null;
-        }
 
         $project = $client->project($module->project);
         if ($project instanceof ApiFailure) {

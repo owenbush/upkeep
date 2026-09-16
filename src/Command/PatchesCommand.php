@@ -49,10 +49,6 @@ final class PatchesCommand extends UpkeepCommand
 {
     private ?GitlabClient $resolvedGitlab = null;
 
-    private bool $gitlabResolved = false;
-
-    private bool $degradedModeAnnounced = false;
-
     public function __construct(
         private readonly ?DrupalOrgClient $drupalClient = null,
         private readonly ?GitlabClient $gitlabClient = null,
@@ -285,17 +281,6 @@ final class PatchesCommand extends UpkeepCommand
         }
 
         $gitlab = $this->gitlab($io);
-        if ($gitlab === null) {
-            if (!$this->degradedModeAnnounced) {
-                $this->degradedModeAnnounced = true;
-                $io->note(
-                    'No dashboard cache and no GitLab token — showing all matching issues without '
-                    . 'cross-referencing MRs.',
-                );
-            }
-
-            return [];
-        }
 
         $project = $gitlab->project($module->project);
         if ($project instanceof ApiFailure) {
@@ -390,22 +375,23 @@ final class PatchesCommand extends UpkeepCommand
     }
 
     /**
-     * The GitLab client for this run, resolved at most once. A missing
-     * credential is announced as a warning, not an error: this command's
-     * degraded mode is documented and still exits 0.
+     * The GitLab client for this run, built at most once.
+     *
+     * Read-only, so no credential is required: drupalcode serves a public
+     * project's merge requests and forks anonymously. Without one there is a
+     * note, said once for the run rather than per module — which is what the
+     * memoization is for, now that there is no null to short-circuit on.
+     *
+     * It used to ask for an authenticated client and give the whole
+     * cross-reference up without one, listing every Needs Review / RTBC issue
+     * with an empty MR column. That is the noise this report exists to cut.
      */
-    private function gitlab(SymfonyStyle $io): ?GitlabClient
+    private function gitlab(SymfonyStyle $io): GitlabClient
     {
-        if (!$this->gitlabResolved) {
-            $this->gitlabResolved = true;
-            $this->resolvedGitlab = $this->gitlabClient ?? GitlabClientFactory::authenticated(
-                GitlabClientFactory::resolver($io),
-                static function (string $message) use ($io): void {
-                    $io->warning($message);
-                },
-            );
-        }
-
-        return $this->resolvedGitlab;
+        return $this->resolvedGitlab ??= GitlabClientFactory::readOnlyOr(
+            $this->gitlabClient,
+            GitlabClientFactory::resolver($io),
+            $io->note(...),
+        );
     }
 }
