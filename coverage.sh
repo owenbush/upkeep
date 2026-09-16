@@ -61,8 +61,22 @@ status=0
 while read -r package floor; do
 	[ -z "$package" ] && continue
 
-	actual=$(go test -cover "./$package" 2>/dev/null |
-		sed -n 's/.*coverage: \([0-9.]*\)% of statements.*/\1/p')
+	# Output captured rather than piped, and stderr kept rather than discarded.
+	# `set -e` plus a discarded stderr made a failing test abort the whole
+	# script with no output at all — the run said only that it had exited 1,
+	# after the packages that happened to sort before the broken one. A gate
+	# that cannot say what it caught is most of the way to not being one.
+	#
+	# stdin is closed for the child: this loop reads the floors from a here
+	# string, and a test that read stdin would eat them.
+	if ! output=$(go test -cover "./$package" </dev/null 2>&1); then
+		printf 'FAIL  %-28s its tests do not pass:\n' "$package"
+		printf '%s\n' "$output" | sed 's/^/        /'
+		status=1
+		continue
+	fi
+
+	actual=$(sed -n 's/.*coverage: \([0-9.]*\)% of statements.*/\1/p' <<<"$output")
 
 	if [ -z "$actual" ]; then
 		printf 'FAIL  %-28s no coverage measured — does it have tests?\n' "$package"
