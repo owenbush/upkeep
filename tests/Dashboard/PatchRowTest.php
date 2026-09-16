@@ -284,6 +284,7 @@ final class PatchRowTest extends TestCase
             $module,
             $snapshot->project(),
             $snapshot->mergeRequests(),
+            $snapshot->mergeRefShas,
             $versionFilter,
             [],
             $snapshot,

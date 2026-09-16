@@ -108,10 +108,9 @@ final readonly class RowAssembler
             $module,
             $project,
             $mergeRequests,
+            $mergeRefShas,
             $versionFilter,
             $ciFailures,
-            null,
-            $mergeRefShas,
         );
     }
 }

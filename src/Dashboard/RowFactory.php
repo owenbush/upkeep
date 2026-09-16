@@ -49,6 +49,22 @@ final readonly class RowFactory
 
     /**
      * @param list<MergeRequest>      $mergeRequests open MRs, in any order
+     * @param array<array-key, string> $mergeRefShas merge-ref SHA by MR iid — what a cached check
+     *                                              result for that merge request is keyed on.
+     *                                              **Required, and deliberately not defaulted**:
+     *                                              `check` files its evidence under the merge
+     *                                              ref, so a caller that omitted it compared
+     *                                              every result against the head SHA and found
+     *                                              all of them stale. That shipped, and it took
+     *                                              `merge --fast-lane` with it — the command
+     *                                              surveyed the watchlist and proposed nothing,
+     *                                              every time. A caller holding a snapshot passes
+     *                                              `$snapshot->mergeRefShas`; one reading live
+     *                                              passes what it read. There is no third option
+     *                                              and no default, so the omission cannot recur.
+     *                                              Keyed `array-key` to match the snapshot, whose
+     *                                              iids come back from JSON as strings and are
+     *                                              stored by PHP as ints.
      * @param ?string                 $versionFilter gather evidence for this core only, when given
      * @param array<int, ApiFailure>  $ciFailures    detail-fetch failure keyed by MR iid, when the
      *                                               row fell back to listed data
@@ -57,13 +73,6 @@ final readonly class RowFactory
      *                                               so every one of them is its own row — which is
      *                                               RowAssembler's case, and why the fast lane still
      *                                               prompts per merge request.
-     * @param array<int, string>      $mergeRefShas  merge-ref SHA by MR iid, for a caller with no
-     *                                               snapshot to read them from. **Not optional in
-     *                                               substance**: `check` files its evidence under
-     *                                               the merge ref, so a caller that supplies
-     *                                               neither this nor a snapshot compares every
-     *                                               result against the head SHA and finds all of
-     *                                               them stale.
      *
      * @return list<DashboardRow> issue rows by nid then branch, then the
      *                            merge requests belonging to no listed issue,
@@ -73,10 +82,10 @@ final readonly class RowFactory
         Module $module,
         Project $project,
         array $mergeRequests,
+        array $mergeRefShas,
         ?string $versionFilter = null,
         array $ciFailures = [],
         ?ModuleSnapshot $snapshot = null,
-        array $mergeRefShas = [],
     ): array {
         $cores = self::cores($module, $versionFilter);
         if ($cores === []) {
@@ -99,9 +108,7 @@ final readonly class RowFactory
 
         $branches = self::knownBranches($project, [...$mergeRequests, ...$merged]);
         $constraints = $snapshot === null ? [] : $snapshot->coreConstraints;
-        // A snapshot already carries them; the parameter is for the caller
-        // that has none and reads them live.
-        $mergeShas = $snapshot === null ? $mergeRefShas : $snapshot->mergeRefShas;
+        $mergeShas = $mergeRefShas;
 
         $rows = [];
         $claimed = [];

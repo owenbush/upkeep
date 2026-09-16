@@ -198,6 +198,7 @@ final class DashboardCommand extends UpkeepCommand
                     $module,
                     $snapshot->project(),
                     $snapshot->mergeRequests(),
+                    $snapshot->mergeRefShas,
                     $versionFilter,
                     snapshot: $snapshot,
                 ) as $row
