@@ -14,7 +14,7 @@ declare(strict_types=1);
  *   php registry_expect.php
  */
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 use Upkeep\Cockpit\ModuleRegistry;
 $out = [];
 foreach (glob(__DIR__ . '/testdata/registries/*.yml') as $file) {

@@ -15,13 +15,22 @@ declare(strict_types=1);
  *   php issue_expect.php
  */
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
 use Upkeep\Drupal\Issue;
+
+// The answers file lives in the directory it describes, so skip it: scanning
+// its own output makes the generator non-idempotent — a second run records an
+// entry about the first run's file, and the corpus stops being reproducible.
+// The committed copy was made before it existed and so never showed it.
+const ANSWERS = 'expected.json';
 
 $out = [];
 foreach (glob(__DIR__ . '/testdata/issues/*.json') as $file) {
     $name = basename($file);
+    if ($name === ANSWERS) {
+        continue;
+    }
     $data = json_decode((string) file_get_contents($file), true);
     $issue = is_array($data) ? Issue::fromApi($data) : null;
 
@@ -66,7 +75,7 @@ foreach (glob(__DIR__ . '/testdata/issues/*.json') as $file) {
 }
 
 file_put_contents(
-    __DIR__ . '/testdata/issues/expected.json',
+    __DIR__ . '/testdata/issues/' . ANSWERS,
     json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
 );
 printf("%d fixtures\n", count($out));

@@ -13,7 +13,7 @@ declare(strict_types=1);
  *   php meta_expect.php
  */
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
 use Upkeep\BaseArtifact\ArtifactMeta;
 

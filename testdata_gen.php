@@ -17,7 +17,7 @@ declare(strict_types=1);
  * a semantic difference that 161 real ones could not.
  */
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
 use Composer\Semver\Constraint\Constraint;
 use Composer\Semver\Constraint\MultiConstraint;
