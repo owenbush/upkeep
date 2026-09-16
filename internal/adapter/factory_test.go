@@ -27,6 +27,10 @@ func aCockpitAt(t *testing.T, root string) *cockpit.Cockpit {
 func TestTheFactoryResolvesTheProjectsRootItWasGiven(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
 	explicit := filepath.Join(home, "elsewhere")
@@ -58,6 +62,10 @@ func TestTheFactoryResolvesTheProjectsRootItWasGiven(t *testing.T) {
 func TestTheFactoryRefusesAProjectsRootOutsideHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
 
@@ -75,6 +83,10 @@ func TestTheFactoryRefusesAProjectsRootOutsideHome(t *testing.T) {
 func TestTheFactoryWiresRedactionIntoEveryChild(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
 
 	var printed []string
@@ -109,6 +121,10 @@ func TestTheFactoryWiresRedactionIntoEveryChild(t *testing.T) {
 func TestABuiltEngineWithNoLogsStillWorks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
 
 	engine, err := NewDdevContribFactory(nil).Build(
@@ -130,6 +146,10 @@ func TestABuiltEngineWithNoLogsStillWorks(t *testing.T) {
 func TestTheFactoryBuildsAnArtifactBuilderThatRedactsToo(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
 	scratch := filepath.Join(home, ".upkeep", "scratch")
 
@@ -171,6 +191,10 @@ func TestTheFactoryBuildsAnArtifactBuilderThatRedactsToo(t *testing.T) {
 func TestABuiltArtifactBuilderWithNoLogsStillWorks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	where := aCockpitAt(t, filepath.Join(home, "cockpit"))
 
 	builder := NewDdevContribFactory(nil).BuildArtifacts(

@@ -17,6 +17,10 @@ import (
 func TestTheArtifactBuilderIsWiredToStderr(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	where, err := cockpit.New(filepath.Join(home, "cockpit"))
 	if err != nil {
 		t.Fatalf("cockpit: %v", err)
@@ -62,6 +66,10 @@ func TestTheArtifactBuilderIsWiredToStderr(t *testing.T) {
 // projects root, and the refusal names the flag rather than the path rule.
 func TestTheArtifactBuilderRefusesAScratchDirOutsideHome(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), ".config"))
 	where, err := cockpit.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("cockpit: %v", err)
@@ -91,6 +99,10 @@ func TestTheArtifactBuilderRefusesAScratchDirOutsideHome(t *testing.T) {
 func TestTheDefaultScratchDirectoryIsUnderHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	if got := DefaultScratchDir(); !strings.HasPrefix(got, home) {
 		t.Errorf("the default is %q, outside %q", got, home)
@@ -100,6 +112,10 @@ func TestTheDefaultScratchDirectoryIsUnderHome(t *testing.T) {
 	// refuses it a moment later, naming the flag, which beats failing inside
 	// a container.
 	t.Setenv("HOME", "")
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	if DefaultScratchDir() == "" {
 		t.Error("it defaulted to nothing")
 	}
@@ -109,6 +125,10 @@ func TestTheDefaultScratchDirectoryIsUnderHome(t *testing.T) {
 func TestTheScratchDirFlagDefaultsToTheHomeDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	cmd := &cobra.Command{Use: "thing"}
 	AddScratchDir(cmd)

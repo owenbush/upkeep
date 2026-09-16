@@ -273,6 +273,10 @@ func TestABuildRefusesAScratchDirOutsideHome(t *testing.T) {
 func TestTheDefaultScratchDirIsUnderHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	if got := cli.DefaultScratchDir(); !strings.HasPrefix(got, home) {
 		t.Errorf("the default is %q, outside %q", got, home)
@@ -282,6 +286,10 @@ func TestTheDefaultScratchDirIsUnderHome(t *testing.T) {
 	// stands and the containment rule refuses it a moment later — naming the
 	// flag, rather than failing inside a container.
 	t.Setenv("HOME", "")
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	if got := cli.DefaultScratchDir(); got == "" {
 		t.Error("it defaulted to nothing")
 	}

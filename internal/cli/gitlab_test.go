@@ -18,6 +18,10 @@ import (
 func TestAReadOnlyClientIsHandedOutWithNoToken(t *testing.T) {
 	t.Setenv(gitlab.DefaultEnvVar, "")
 	t.Setenv("HOME", t.TempDir())
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), ".config"))
 
 	var noted []string
 	clients := NewResolvedClients(nil)
@@ -56,6 +60,10 @@ func TestAReadOnlyClientWithATokenSaysNothing(t *testing.T) {
 func TestWritingWithNoTokenIsARefusalNamingHowToFixIt(t *testing.T) {
 	t.Setenv(gitlab.DefaultEnvVar, "")
 	t.Setenv("HOME", t.TempDir())
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), ".config"))
 
 	client, err := NewResolvedClients(nil).Authenticated(func(string) {})
 
@@ -89,6 +97,10 @@ func TestAWorldReadableTokenFileIsWarnedAbout(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv(gitlab.DefaultEnvVar, "")
 
 	path := filepath.Join(home, ".config", "upkeep", "drupal-pat")

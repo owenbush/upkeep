@@ -126,6 +126,10 @@ func anEnvironmentCockpit(t *testing.T) string {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	root := filepath.Join(home, "cockpit")
 	if code, _, stderr := invoke(t, "init", root); code != workflow.OK {

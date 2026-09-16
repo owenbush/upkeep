@@ -19,6 +19,10 @@ func homeAt(t *testing.T) string {
 		t.Fatalf("resolve: %v", err)
 	}
 	t.Setenv("HOME", real)
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(real, ".config"))
 
 	return real
 }
@@ -205,6 +209,10 @@ func TestAFileNamedProjectsIsNotTheCockpitsProjectsRoot(t *testing.T) {
 // directory, so anything created outside it can never start.
 func TestWithNoHomeThereIsNoDefaultAndNothingToVerifyAgainst(t *testing.T) {
 	t.Setenv("HOME", "")
+	// HOME alone does not isolate the token file: the resolver prefers
+	// XDG_CONFIG_HOME, so a machine that sets it — every GitHub runner —
+	// would read the developer's own config instead of this one.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv(ProjectsRootEnvVar, "")
 
 	_, err := ResolveProjectsRoot("", "")
