@@ -111,11 +111,36 @@ final class ArtifactScannerTest extends TestCase
 
         symlink($outside, $this->layout->treePath('11') . '/linked');
         symlink($outside . '/nothing-here', $this->layout->treePath('11') . '/dangling');
+        // A symlink to a real file is the case the directory links do not
+        // cover: it is a *leaf*, and SplFileInfo follows it — isFile() is true
+        // and getSize() reports the target's bytes. Measured before this was
+        // closed: a tree holding 102 bytes plus one link to a 50,000-byte file
+        // outside it reported 50,102.
+        symlink($outside . '/huge.bin', $this->layout->treePath('11') . '/linked-file');
         mkdir($this->layout->treePath('11') . '/web/sites/default/files', 0o755, true);
 
         $record = (new ArtifactScanner($this->layout))->scan()[0];
 
         self::assertSame(102, $record->treeSizeBytes);
+    }
+
+    /**
+     * And a link *inside* the tree is not a second copy of what it points at.
+     *
+     * Every `vendor/bin/*` entry is one of these, so following them
+     * double-counted a slice of every artifact set upkeep has ever measured.
+     */
+    public function testAnInTreeSymlinkIsNotCountedTwice(): void
+    {
+        $this->makeCompleteVersion('11', self::META_11);
+        $tree = $this->layout->treePath('11');
+        mkdir($tree . '/vendor/bin', 0o755, true);
+        file_put_contents($tree . '/vendor/real.php', str_repeat('x', 1_000));
+        symlink($tree . '/vendor/real.php', $tree . '/vendor/bin/linked.php');
+
+        $record = (new ArtifactScanner($this->layout))->scan()[0];
+
+        self::assertSame(1_102, $record->treeSizeBytes);
     }
 
     public function testMalformedMetaMarksSetIncomplete(): void

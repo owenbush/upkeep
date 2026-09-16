@@ -74,6 +74,33 @@ final readonly class LocalEvidence
     }
 
     /**
+     * Whether this evidence has an entry for every core given.
+     *
+     * The gate is handed the cores a row applies to and the evidence as two
+     * arguments, and nothing in either says they describe the same set. They
+     * agree when RowFactory builds both from one list — but a caller that gets
+     * it wrong produces exactly the failure the row model exists to prevent: a
+     * merge request green on 11, silently unasked about 10, reading as fully
+     * green. So the gate checks rather than trusts.
+     *
+     * A core that applies and was never checked still counts as covered: that
+     * is a known gap, which anyUnchecked() denies on. This is about a core the
+     * evidence says nothing about at all.
+     *
+     * @param list<string> $cores
+     */
+    public function covers(array $cores): bool
+    {
+        foreach ($cores as $core) {
+            if (!\array_key_exists($core, $this->byCore)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Whether every applicable core is green against the current revision.
      *
      * The fast lane's question, and stricter than what it used to ask. A row

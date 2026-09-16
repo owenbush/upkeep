@@ -42,7 +42,24 @@ final class PathGuard
         // segments and its base case is the filesystem root, which is its own
         // canonical spelling and so needs no resolving — there is no way for
         // this to run off the top of the tree.
-        $segments = array_values(array_filter(explode('/', self::absolute($path)), static fn (string $s) => $s !== ''));
+        // "." is dropped alongside "", and ".." deliberately is not. A "."
+        // resolves to the directory it sits in on every filesystem, so
+        // removing it cannot move the path anywhere; a ".." can, which is why
+        // that one is left for the ancestor walk to resolve honestly and for
+        // join() to refuse when it cannot.
+        //
+        // Keeping "." was a real hole. A path spelled through one — above a
+        // directory that does not exist — reached join(), which refused it,
+        // and PruneSelector's fallback then compared the raw strings: so
+        // "<cockpit>/./base-artifacts/11" did not match the protected root
+        // "<cockpit>/base-artifacts" and the canonical artifact read as a
+        // deletion candidate. Latent, because the inventory scanner walks real
+        // directories and realpath() resolves those — but the rule here is
+        // protect more, never less.
+        $segments = array_values(array_filter(
+            explode('/', self::absolute($path)),
+            static fn (string $s): bool => $s !== '' && $s !== '.',
+        ));
         $tail = [];
         while ($segments !== []) {
             array_unshift($tail, (string) array_pop($segments));
@@ -77,13 +94,15 @@ final class PathGuard
      */
     private static function join(string $realParent, array $tail, string $original): string
     {
+        // Only "..", because canonicalize() has already dropped every "." —
+        // one is a traversal that cannot be resolved without the directory
+        // above it existing, the other is a no-op.
         foreach ($tail as $segment) {
-            if ($segment === '..' || $segment === '.') {
+            if ($segment === '..') {
                 throw new FilesystemException(sprintf(
-                    'Refusing the path "%s": it contains a traversal segment ("%s") below a directory that does '
+                    'Refusing the path "%s": it contains a traversal segment ("..") below a directory that does '
                     . 'not exist, so it cannot be resolved to a real location.',
                     $original,
-                    $segment,
                 ));
             }
         }

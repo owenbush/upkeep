@@ -119,6 +119,43 @@ final class PathGuardTest extends TestCase
         self::assertTrue(PathGuard::isWithin($this->world . '/root', $this->world . '/root/inside'));
     }
 
+    /**
+     * A "." segment resolves to the directory it sits in, so a path carrying
+     * one points at the same place as the path without it — and containment has
+     * to agree, or a protected root fails to match a path spelled through
+     * itself.
+     *
+     * Only reachable for a path that does not exist yet: an existing one is
+     * normalised by realpath(). The place it would matter is the prune
+     * selector's protected-root check, which is why "protect more, never less"
+     * is the rule. Unlike "..", a "." cannot move a path anywhere, so removing
+     * it is safe in a way folding a traversal would not be.
+     */
+    public function testADotSegmentDoesNotDefeatContainment(): void
+    {
+        $root = $this->world . '/root';
+
+        foreach (
+            [
+            $root . '/./missing/child',
+            $root . '/missing/./child',
+            $this->world . '/./root/missing/child',
+            $root . '/.',
+            ] as $spelling
+        ) {
+            self::assertTrue(
+                PathGuard::isWithin($root, $spelling),
+                sprintf('"%s" should be inside "%s"', $spelling, $root),
+            );
+        }
+    }
+
+    /** And a ".." is still the escape it always was. */
+    public function testADotDotStillEscapesAfterTheDotChange(): void
+    {
+        self::assertFalse(PathGuard::isWithin($this->world . '/root', $this->world . '/root/../outside/file'));
+    }
+
     public function testWithinRejectsATraversalEscapeAndASiblingWithASharedPrefix(): void
     {
         self::assertFalse(PathGuard::isWithin($this->world . '/root', $this->world . '/root/../outside'));

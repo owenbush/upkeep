@@ -107,6 +107,36 @@ final class FastLaneGateTest extends TestCase
         return ($gate ?? new FastLaneGate())->classify($mr, $cores, LocalEvidence::of($byCore, $mr->headSha));
     }
 
+    /**
+     * The gate is handed the cores a row applies to and the evidence, as two
+     * arguments, and nothing in either says they describe the same set.
+     *
+     * RowFactory builds both from one list, so they agree by construction and
+     * this was latent rather than live. Latent is still worth closing: what the
+     * gap produces is exactly the failure the row model exists to prevent — a
+     * merge request green on 11, never asked about 10, reading as fully green.
+     * Found while porting.
+     */
+    public function testEvidenceThatDoesNotCoverTheApplicableCoresDeniesReadyAuto(): void
+    {
+        $mr = $this->mr();
+        // Green on 11 and silent about 10, while the row applies to both.
+        $evidence = LocalEvidence::of(['11' => $this->local()], $mr->headSha);
+
+        $verdict = (new FastLaneGate())->classify($mr, ['10', '11'], $evidence);
+
+        self::assertNotSame(GateStatus::ReadyAuto, $verdict->status);
+        self::assertContains('local-missing', $verdict->reasons);
+    }
+
+    /** And evidence that does cover them is still ready. */
+    public function testEvidenceCoveringEveryApplicableCoreIsStillReadyAuto(): void
+    {
+        $verdict = $this->verdict($this->mr(), $this->local(), ['10', '11']);
+
+        self::assertSame(GateStatus::ReadyAuto, $verdict->status);
+    }
+
     public function testBotMrWithGreenCiAndFreshGreenLocalChecksIsReadyAuto(): void
     {
         $verdict = $this->verdict($this->mr(), $this->local());
