@@ -1,0 +1,156 @@
+# Release configuration for the Go implementation.
+#
+# Runs from this directory, not the repository root: the Go module lives in
+# `go/` and the PHP implementation is released a different way entirely
+# (Packagist reads composer.json from the root). Keeping the two release
+# descriptions apart is what stops one from having to know about the other.
+#
+# Nothing here decides *when* to release. That is a tag a human pushed, which
+# is the same stance the tool takes about Drupal releases: it drafts the notes,
+# the human tags.
+#
+# Validate without publishing anything:
+#
+#   cd go && goreleaser check
+#   cd go && goreleaser release --snapshot --clean
+version: 2
+
+project_name: upkeep
+
+before:
+  hooks:
+    # The gates, again, at the moment of release. CI ran them on the commit;
+    # this runs them on the tag, which is the thing people will actually
+    # install — and a tag can be pushed at a commit CI never saw.
+    - go mod download
+    - go vet ./...
+    - ./coverage.sh
+
+builds:
+  - id: upkeep
+    main: ./cmd/upkeep
+    binary: upkeep
+    # No cgo: upkeep shells out to ddev and git and links nothing, so a static
+    # binary runs on any glibc or musl host without a runtime to install. That
+    # is the whole advantage over the PHP, and it is worth being deliberate
+    # about rather than inheriting from the default.
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    # -trimpath so the binary does not carry this machine's paths; -s -w to
+    # drop the symbol and DWARF tables, which is about a third of the size and
+    # costs nothing upkeep uses — it never reads its own stack traces.
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/owenbush/upkeep/internal/cli/command.Version={{ .Version }}
+
+archives:
+  - id: upkeep
+    ids:
+      - upkeep
+    # Named for what someone downloading by hand needs to tell apart.
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      # A copy, not a symlink to the root one: tar stores the link rather than
+      # following it, so the archive would carry a dangling `../LICENSE` and
+      # every extracted copy would be missing the notice MIT requires travel
+      # with it. Caught by extracting a snapshot archive and looking.
+      - src: LICENSE
+      - src: README.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  # Grouped and filtered rather than a raw log: a release page is read by
+  # somebody deciding whether to upgrade.
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+homebrew_casks:
+  - name: upkeep
+    ids:
+      - upkeep
+    # A cask rather than a formula: GoReleaser deprecated `brews`, and
+    # Homebrew's own direction for a prebuilt binary is a cask.
+    #
+    # The generated cask does carry `on_linux` URLs, but do not read that as a
+    # promise: whether `brew` on Linux installs casks at all is Homebrew's
+    # call, and historically it has not. Treat macOS as the supported brew
+    # route; on Linux, take the archive from the release page or build from
+    # source. Both are one command.
+    #
+    # A tap rather than homebrew-core: core will not take a binary-only cask
+    # from a project this size, and a tap is one repository and no review
+    # queue — `brew install owenbush/tap/upkeep`.
+    repository:
+      owner: owenbush
+      name: homebrew-tap
+      # Its own token, because it pushes to a *different* repository than the
+      # one this workflow runs in; the default GITHUB_TOKEN cannot reach it.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    binaries:
+      - upkeep
+    homepage: https://github.com/owenbush/upkeep
+    description: Maintenance orchestrator CLI for contributed Drupal modules
+    # ddev is what upkeep drives, so installing upkeep alone would leave
+    # somebody one unexplained step from a working tool. Declared rather than
+    # checked at runtime: brew can install it, upkeep cannot.
+    dependencies:
+      - formula: ddev
+    # The completions the binary generates for itself. upkeep completes module
+    # machine names and the cores each module tracks, which is most of its
+    # value at a prompt — and nobody will run three commands to turn that on.
+    generate_completions_from_executable:
+      executable: upkeep
+      args:
+        - completion
+      shells:
+        - bash
+        - zsh
+        - fish
+    hooks:
+      post:
+        # Unsigned and un-notarized, so macOS quarantines it and the first run
+        # dies with "cannot be opened because the developer cannot be
+        # verified" — a wall, not a warning. Stripping the attribute is what
+        # every unsigned cask does; the honest fix is an Apple Developer
+        # account and notarization, which is a decision with a bill attached.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/upkeep"]
+          end
+
+release:
+  # Published, not drafted. The tag is the decision — drafting would leave the
+  # formula pointing at assets nobody can download yet.
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    ```bash
+    brew install owenbush/tap/upkeep
+    ```
+
+    Or download the archive for your platform below. The binary is static and
+    depends on nothing at runtime; it drives [ddev](https://ddev.com/), which
+    you will want installed.

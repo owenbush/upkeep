@@ -195,6 +195,72 @@ php testdata_gen.php --fuzz=20000     # corpus-fuzz.json, not committed — rand
 The random corpus is skipped when it has not been generated. It is seeded, so a
 failure reproduces exactly.
 
+## Releasing
+
+A tag a human pushed, and nothing else. `upkeep` itself drafts release notes
+and leaves the tagging to a person; its own releases work the same way.
+
+```bash
+git tag v1.0.0 && git push --tags
+```
+
+`.github/workflows/go-release.yml` then runs GoReleaser from this directory:
+it re-runs the gates against the tag (CI ran them against the commit, and a
+tag can be pushed at a commit CI never saw), cross-compiles for darwin and
+linux on amd64 and arm64, publishes a GitHub release with archives and
+checksums, and pushes a Homebrew cask to the tap.
+
+```bash
+brew install owenbush/tap/upkeep
+```
+
+The binary is static — `CGO_ENABLED=0`, nothing linked — so it runs on any
+glibc or musl host with no runtime to install. That is the whole practical
+advantage over the PHP, and the release config is deliberate about it rather
+than inheriting a default.
+
+### What it needs set up once
+
+- **`owenbush/homebrew-tap`**, a public repository. GoReleaser creates the
+  `Casks/` directory in it; nothing else needs to be in it.
+- **`HOMEBREW_TAP_GITHUB_TOKEN`**, a repository secret here: a fine-grained
+  PAT with `contents: write` on the tap and nothing else. The default
+  `GITHUB_TOKEN` cannot reach another repository. Without it the release still
+  publishes working archives and only the brew route is missed, which is not
+  worth failing a release over.
+
+Neither exists yet. Until they do, a tag produces a release with archives.
+
+### Validating it without releasing
+
+The workflow runs itself in dry-run on any pull request that touches the
+release config — builds everything, publishes none of it, and keeps the
+artifacts for a week. A release description is otherwise only ever exercised
+at the moment you least want to debug it.
+
+Locally:
+
+```bash
+cd go
+goreleaser check
+goreleaser release --snapshot --clean --skip=publish
+tar tzvf dist/upkeep_*_darwin_arm64.tar.gz
+```
+
+Both were worth doing. `check` refused the first two configs — `brews` and
+then `homebrew_casks.binary` are deprecated, neither of which the JSON schema
+flags — and extracting a snapshot archive showed the LICENSE going in as a
+dangling `../LICENSE` symlink, which would have shipped every copy without the
+notice MIT requires travel with it.
+
+### macOS will quarantine it
+
+The binary is unsigned and un-notarized, so Gatekeeper blocks the first run
+with "cannot be opened because the developer cannot be verified" — a wall, not
+a warning. The cask strips the quarantine attribute on install, which is what
+every unsigned cask does. The honest fix is an Apple Developer account and
+notarization, which is a decision with a bill attached.
+
 ## What the port has found so far
 
 Every one of these is a Go runtime difference, not a domain mistake, and every
