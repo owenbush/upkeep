@@ -1,0 +1,72 @@
+name: Container contract
+
+on:
+  push:
+    branches: [main, go-port]
+    paths:
+      - "internal/adapter/**"
+      - "internal/contract/**"
+      - "internal/proc/**"
+      - ".github/workflows/contract.yml"
+  pull_request:
+    paths:
+      - "internal/adapter/**"
+      - "internal/contract/**"
+      - "internal/proc/**"
+      - ".github/workflows/contract.yml"
+
+jobs:
+  # The tests that cross the container boundary.
+  #
+  # Separate from the Go workflow because they need docker and ddev and take
+  # minutes, where that one is offline and takes seconds. Scoped to the
+  # packages that can break the contract: the adapter builds the commands,
+  # internal/proc sends them, and internal/contract is the test itself.
+  contract:
+    name: ddev exec contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: go.sum
+
+      - name: Install ddev
+        run: |
+          curl -fsSL https://ddev.com/install.sh | bash -s v1.24.10
+          ddev config global --omit-containers=ddev-router --instrumentation-opt-in=false
+
+      # The path is exported rather than repeated: writing it twice is how the
+      # test ends up pointed at a directory the fixture is not in, which skips
+      # rather than fails.
+      - name: Build the fixture project
+        run: |
+          FIXTURE="$HOME/contract-fixture"
+          ./internal/contract/fixture/setup.sh "$FIXTURE"
+          echo "UPKEEP_DDEV_PROJECT=$FIXTURE" >> "$GITHUB_ENV"
+
+      # `-v` so a failure shows which command the container refused, and
+      # `-count=1` so a cached pass cannot stand in for a run that never
+      # happened.
+      - name: Contract tests
+        run: go test ./internal/contract/ -v -count=1 | tee contract.log
+
+      # A job that goes green having executed nothing is the hole this suite
+      # exists to close. These skip themselves without a project, which is
+      # right on a contributor's laptop and worthless here.
+      - name: The tests actually ran
+        run: |
+          if grep -q -- "--- SKIP" contract.log; then
+            echo "Contract tests skipped themselves — the fixture did not come up."
+            grep -- "--- SKIP" contract.log
+            exit 1
+          fi
+          echo "No skips: every contract test executed against the container."
+
+      - name: Tear the fixture down
+        if: always()
+        run: |
+          cd "$HOME/contract-fixture" 2>/dev/null && ddev delete -Oy || true

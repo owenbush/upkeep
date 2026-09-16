@@ -684,6 +684,49 @@ contains "up**keep**"; column offsets measured in bytes while the table pads in
 runes; a whole coloriser unexercised because a test's output is not a
 terminal), and each of those was invisible to reading.
 
+## The fifth suite, and it is not one of the gates
+
+`internal/contract` crosses the container boundary: real ddev, real commands,
+reading what comes back. It needs docker and a started fixture project, so it
+skips itself without one and the four gates stay fast and offline.
+
+```bash
+internal/contract/fixture/setup.sh ~/contract-fixture
+UPKEEP_DDEV_PROJECT=~/contract-fixture go test ./internal/contract/ -v
+```
+
+It exists because the rest of the suite is structurally blind to a whole class
+of failure. **Three bugs shipped past a fully green PHP suite in two days**,
+all at the point where a built string meets a real container: a command that
+could not survive `ddev exec`, a `cd` copied from CI whose precondition
+ddev-drupal-contrib does not meet, and a dependency the path-repository layout
+never installs. Every adapter test in this repository drives a *fake* runner,
+which records what it was handed and cannot tell you whether a container would
+accept it.
+
+The fixture is deliberately **not** a Drupal site. Everything under test is a
+fact about the layout, and a bare ddev project starts in about a minute where
+installing Drupal takes fifteen — which is the half that makes container CI
+flaky and then ignored.
+
+`.github/workflows/contract.yml` runs it per push, **and fails if the tests
+skip themselves**: a job that goes green having executed nothing is the hole
+this suite exists to close. `internal/contract` is excluded from the coverage
+floor with that reason written in `coverage.sh` — measuring it would report
+whatever the local machine could run.
+
+**Assert positively here.** Reintroducing the `cd` bug on purpose showed why:
+it moved the failure earlier, to a `--basepath` error, so a test watching for
+the historical "Referenced sniff" text passed while the check was
+comprehensively broken. What holds is "a Drupal sniff fired" and "phpcs
+produced a report" — the negative strings are kept to explain a failure, not
+to detect one.
+
+One guard is weaker than it was, and the comment says so: the original
+`unbound variable` shape no longer reproduces on ddev 1.24, where an
+assignment and its use in one `ddev exec` argument survive. That test now
+refuses the whole class of command-level failure rather than one symptom.
+
 ## Ported from PHP
 
 This was a PHP application, rewritten command for command in Go.
