@@ -49,6 +49,22 @@ final readonly class RowFactory
 
     /**
      * @param list<MergeRequest>      $mergeRequests open MRs, in any order
+     * @param array<array-key, string> $mergeRefShas merge-ref SHA by MR iid — what a cached check
+     *                                              result for that merge request is keyed on.
+     *                                              **Required, and deliberately not defaulted**:
+     *                                              `check` files its evidence under the merge
+     *                                              ref, so a caller that omitted it compared
+     *                                              every result against the head SHA and found
+     *                                              all of them stale. That shipped, and it took
+     *                                              `merge --fast-lane` with it — the command
+     *                                              surveyed the watchlist and proposed nothing,
+     *                                              every time. A caller holding a snapshot passes
+     *                                              `$snapshot->mergeRefShas`; one reading live
+     *                                              passes what it read. There is no third option
+     *                                              and no default, so the omission cannot recur.
+     *                                              Keyed `array-key` to match the snapshot, whose
+     *                                              iids come back from JSON as strings and are
+     *                                              stored by PHP as ints.
      * @param ?string                 $versionFilter gather evidence for this core only, when given
      * @param array<int, ApiFailure>  $ciFailures    detail-fetch failure keyed by MR iid, when the
      *                                               row fell back to listed data
@@ -66,6 +82,7 @@ final readonly class RowFactory
         Module $module,
         Project $project,
         array $mergeRequests,
+        array $mergeRefShas,
         ?string $versionFilter = null,
         array $ciFailures = [],
         ?ModuleSnapshot $snapshot = null,
@@ -91,7 +108,7 @@ final readonly class RowFactory
 
         $branches = self::knownBranches($project, [...$mergeRequests, ...$merged]);
         $constraints = $snapshot === null ? [] : $snapshot->coreConstraints;
-        $mergeShas = $snapshot === null ? [] : $snapshot->mergeRefShas;
+        $mergeShas = $mergeRefShas;
 
         $rows = [];
         $claimed = [];

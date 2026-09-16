@@ -52,6 +52,7 @@ final class RowFactoryTest extends TestCase
             self::module(['10', '11']),
             self::project(),
             [self::mergeRequest(9), self::mergeRequest(4)],
+            [],
         );
 
         self::assertSame(
@@ -71,7 +72,7 @@ final class RowFactoryTest extends TestCase
      */
     public function testAVersionFilterNarrowsTheEvidenceRatherThanTheRows(): void
     {
-        $rows = $this->factory()->rows(self::module(['10', '11']), self::project(), [self::mergeRequest(4)], '11');
+        $rows = $this->factory()->rows(self::module(['10', '11']), self::project(), [self::mergeRequest(4)], [], '11');
 
         self::assertCount(1, $rows);
         self::assertSame(['11'], $rows[0]->local->cores());
@@ -79,7 +80,7 @@ final class RowFactoryTest extends TestCase
 
     public function testAVersionFilterTheModuleDoesNotTrackYieldsNoRows(): void
     {
-        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)], '9');
+        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)], [], '9');
 
         self::assertSame([], $rows);
     }
@@ -92,7 +93,7 @@ final class RowFactoryTest extends TestCase
     {
         $this->storePassingLocal(4);
 
-        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)]);
+        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)], []);
 
         self::assertSame(GateStatus::ReadyAuto, $rows[0]->requireVerdict()->status);
         self::assertTrue($rows[0]->isReadyAuto());
@@ -100,7 +101,7 @@ final class RowFactoryTest extends TestCase
 
     public function testWithoutLocalEvidenceTheGateWithholdsReadyAuto(): void
     {
-        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)]);
+        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)], []);
 
         self::assertNotSame(GateStatus::ReadyAuto, $rows[0]->requireVerdict()->status);
     }
@@ -118,7 +119,7 @@ final class RowFactoryTest extends TestCase
     {
         $this->storePassingLocal(4);
 
-        $rows = $this->factory()->rows(self::module(['10', '11']), self::project(), [self::mergeRequest(4)]);
+        $rows = $this->factory()->rows(self::module(['10', '11']), self::project(), [self::mergeRequest(4)], []);
 
         self::assertCount(1, $rows);
         self::assertFalse($rows[0]->isReadyAuto());
@@ -145,6 +146,7 @@ final class RowFactoryTest extends TestCase
             self::module(['11']),
             self::project(),
             [self::mergeRequest(4)],
+            $snapshot->mergeRefShas,
             null,
             [],
             $snapshot,
@@ -159,6 +161,7 @@ final class RowFactoryTest extends TestCase
             self::module(['11']),
             self::project(),
             [self::mergeRequest(4)],
+            $snapshot->mergeRefShas,
             null,
             [],
             $snapshot,
@@ -179,13 +182,15 @@ final class RowFactoryTest extends TestCase
     {
         $this->storeLocalAt(4, self::HEAD_SHA);
 
+        $snapshot = self::snapshotWithMergeRef(4, null);
         $rows = $this->factory()->rows(
             self::module(['11']),
             self::project(),
             [self::mergeRequest(4)],
+            $snapshot->mergeRefShas,
             null,
             [],
-            self::snapshotWithMergeRef(4, null),
+            $snapshot,
         );
 
         self::assertSame('pass 11', $rows[0]->localCell());
@@ -297,13 +302,15 @@ final class RowFactoryTest extends TestCase
             'source_project_id' => 218528,
         ]);
 
+        $snapshot = self::snapshotWithLanding();
         $rows = $this->factory()->rows(
             self::module(['11']),
             self::project(),
             [$draft],
+            $snapshot->mergeRefShas,
             null,
             [],
-            self::snapshotWithLanding(),
+            $snapshot,
         );
 
         self::assertCount(1, $rows);
@@ -323,13 +330,15 @@ final class RowFactoryTest extends TestCase
     {
         $merged = MergeRequest::fromApi(self::landedMrPayload());
 
+        $snapshot = self::snapshotWithLanding();
         $rows = $this->factory()->rows(
             self::module(['11']),
             self::project(),
             [$merged],
+            $snapshot->mergeRefShas,
             null,
             [],
-            self::snapshotWithLanding(),
+            $snapshot,
         );
 
         self::assertSame([], $rows);
@@ -365,13 +374,15 @@ final class RowFactoryTest extends TestCase
             'source_project_id' => 218528,
         ]);
 
+        $snapshot = self::snapshotWithLanding();
         $rows = $this->factory()->rows(
             self::module(['11']),
             self::project(),
             [$onOldBranch, $onNewBranch],
+            $snapshot->mergeRefShas,
             null,
             [],
-            self::snapshotWithLanding(),
+            $snapshot,
         );
 
         self::assertSame(
@@ -400,13 +411,15 @@ final class RowFactoryTest extends TestCase
             'author' => ['username' => 'owenbush', 'id' => 1],
         ]);
 
+        $snapshot = self::snapshotWithLanding();
         $rows = $this->factory()->rows(
             self::module(['11']),
             self::project(),
             [$orphan],
+            $snapshot->mergeRefShas,
             null,
             [],
-            self::snapshotWithLanding(),
+            $snapshot,
         );
 
         self::assertCount(1, $rows);
@@ -418,7 +431,7 @@ final class RowFactoryTest extends TestCase
     /** With no snapshot to consult, rows are exactly what they always were. */
     public function testWithoutASnapshotNoLandingIsClaimed(): void
     {
-        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)]);
+        $rows = $this->factory()->rows(self::module(['11']), self::project(), [self::mergeRequest(4)], []);
 
         self::assertNull($rows[0]->landed);
     }

@@ -33,6 +33,12 @@ final class NeedsWorkCommandTest extends TestCase
         exec('rm -rf ' . escapeshellarg($this->cockpit));
     }
 
+    /**
+     * The branch merged into the current tip of its target — a different tree
+     * from the head, and the one both CI and upkeep actually check.
+     */
+    private const MERGE_REF_SHA = 'f00ba1f00ba1f00b';
+
     /** @param array<array-key, mixed> $payload single object payload or a list of them */
     private static function json(array $payload, int $status = 200): MockResponse
     {
@@ -78,18 +84,32 @@ final class NeedsWorkCommandTest extends TestCase
      * @param array<string, mixed>                          $mrOverrides
      * @param (callable(string, string): MockResponse)|null $noteHandler serves POSTed notes
      */
-    private function gitlabClient(array $mrOverrides = [], ?callable $noteHandler = null): GitlabClient
-    {
+    private function gitlabClient(
+        array $mrOverrides = [],
+        ?callable $noteHandler = null,
+        ?string $mergeRefSha = null,
+    ): GitlabClient {
         $project = self::projectPayload();
         $mr = self::mrPayload($mrOverrides);
 
-        $factory = static function (string $method, string $url) use ($project, $mr, $noteHandler): MockResponse {
+        $serves = [$project, $mr, $noteHandler, $mergeRefSha];
+        $factory = static function (string $method, string $url) use ($serves): MockResponse {
+            [$project, $mr, $noteHandler, $mergeRefSha] = $serves;
             if ($method === 'POST' && str_contains($url, '/notes')) {
                 if ($noteHandler !== null) {
                     return $noteHandler($method, $url);
                 }
 
                 return self::json(['id' => 1, 'body' => 'ok'], 201);
+            }
+            // Before the merge-request route, which str_contains would
+            // otherwise swallow. A project with no merge ref answers 404,
+            // which is GitLab's own answer for a merge request that conflicts
+            // with its target.
+            if (str_contains($url, '/merge_ref')) {
+                return $mergeRefSha === null
+                    ? new MockResponse('', ['http_code' => 404])
+                    : self::json(['commit_id' => $mergeRefSha]);
             }
             if (str_contains($url, '/merge_requests/7')) {
                 return self::json($mr);
@@ -243,6 +263,87 @@ final class NeedsWorkCommandTest extends TestCase
         $display = $tester->getDisplay();
         self::assertStringContainsString('old_sha_', $display);
         self::assertStringContainsString('abc12345', $display);
+    }
+
+    public function testResultsAboutTheMergeRefAreNotStale(): void
+    {
+        // What `check` files a verdict under: the merge ref's SHA, which for
+        // any merge request that does not conflict with its target is *not*
+        // the head SHA. Looking it up by the head misses, falls back to the
+        // newest result, and then calls it stale for not being a SHA it never
+        // was — on every healthy run.
+        $this->populateResults(self::MERGE_REF_SHA);
+
+        $tester = new CommandTester(new NeedsWorkCommand(
+            $this->gitlabClient([], null, self::MERGE_REF_SHA),
+        ));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+        ]);
+
+        $display = $tester->getDisplay();
+        self::assertSame(0, $exit, $display);
+        self::assertStringNotContainsString(
+            'recorded against',
+            $display,
+            'Current evidence must not be reported as stale.',
+        );
+    }
+
+    public function testTheCommentNamesTheMergeRefForWhatItIs(): void
+    {
+        // The comment is posted publicly. A reader who goes looking for this
+        // SHA in the branch will not find it, so it has to say which ref it
+        // is — naming it "SHA" is what made the staleness warning read as
+        // sensible for as long as it did.
+        $this->populateResults(self::MERGE_REF_SHA);
+
+        $posted = '';
+        $gitlab = $this->gitlabClient([], function (string $method, string $url) use (&$posted): MockResponse {
+            $posted = $url;
+
+            return self::json(['id' => 1], 201);
+        }, self::MERGE_REF_SHA);
+
+        $tester = new CommandTester(new NeedsWorkCommand($gitlab));
+        $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+            '--dry-run' => true,
+        ]);
+
+        self::assertStringContainsString(
+            'merge ref: `' . substr(self::MERGE_REF_SHA, 0, 8) . '`',
+            $tester->getDisplay(),
+        );
+        self::assertSame('', $posted, '--dry-run posts nothing.');
+    }
+
+    public function testAMergeRequestWithNoMergeRefIsKeyedOnItsHeadSha(): void
+    {
+        // GitLab publishes no merge ref for a merge request that conflicts
+        // with its target. The adapter checks the branch alone there, so the
+        // revision follows it — both halves fall back together.
+        $this->populateResults('abc12345deadbeef');
+
+        $tester = new CommandTester(new NeedsWorkCommand($this->gitlabClient()));
+        $exit = $tester->execute([
+            'module' => 'widget',
+            'mr' => '7',
+            '--cockpit' => $this->cockpit,
+            '--no-open' => true,
+            '--dry-run' => true,
+        ]);
+
+        $display = $tester->getDisplay();
+        self::assertSame(0, $exit, $display);
+        self::assertStringNotContainsString('recorded against', $display);
+        self::assertStringContainsString('SHA: `abc12345`', $display);
     }
 
     public function testFailsWhenGitlabRejectsNote(): void

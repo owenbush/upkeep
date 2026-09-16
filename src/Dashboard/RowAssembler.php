@@ -79,6 +79,7 @@ final readonly class RowAssembler
 
         $mergeRequests = [];
         $ciFailures = [];
+        $mergeRefShas = [];
         foreach ($list->all() as $listed) {
             // The list payload lacks head_pipeline; the single-MR endpoint
             // provides it (memoized by the client). If that fetch fails, fall
@@ -91,8 +92,25 @@ final readonly class RowAssembler
                 $detail = $listed;
             }
             $mergeRequests[] = $detail;
+
+            // The revision the evidence is *about*, which is what `check`
+            // filed it under. Without it every row compares a merge-ref-keyed
+            // result against the head SHA, reads stale, and the fast lane —
+            // which only ever offers READY-AUTO — offers nothing at all.
+            // Null is no merge ref, which MergeRevision falls back from.
+            $sha = $this->client->mergeRefSha($project, $listed->iid);
+            if ($sha !== null) {
+                $mergeRefShas[$listed->iid] = $sha;
+            }
         }
 
-        return $this->factory->rows($module, $project, $mergeRequests, $versionFilter, $ciFailures);
+        return $this->factory->rows(
+            $module,
+            $project,
+            $mergeRequests,
+            $mergeRefShas,
+            $versionFilter,
+            $ciFailures,
+        );
     }
 }
