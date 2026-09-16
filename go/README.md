@@ -228,8 +228,10 @@ than inheriting a default.
   `GITHUB_TOKEN` cannot reach another repository. Without it the release still
   publishes working archives and only the brew route is missed, which is not
   worth failing a release over.
+- **The five signing secrets** below, from the Apple Developer account.
 
-Neither exists yet. Until they do, a tag produces a release with archives.
+None of them exists yet. Until they do, a tag produces a release with working
+archives and an unsigned cask — everything degrades rather than failing.
 
 ### Validating it without releasing
 
@@ -253,13 +255,39 @@ flags — and extracting a snapshot archive showed the LICENSE going in as a
 dangling `../LICENSE` symlink, which would have shipped every copy without the
 notice MIT requires travel with it.
 
-### macOS will quarantine it
+### Signed and notarized
 
-The binary is unsigned and un-notarized, so Gatekeeper blocks the first run
-with "cannot be opened because the developer cannot be verified" — a wall, not
-a warning. The cask strips the quarantine attribute on install, which is what
-every unsigned cask does. The honest fix is an Apple Developer account and
-notarization, which is a decision with a bill attached.
+macOS binaries are signed with a Developer ID certificate and notarized by
+Apple, so Gatekeeper runs them without argument. The alternative — shipping
+unsigned and having the cask strip the quarantine attribute — asks every user
+to take on trust the thing Gatekeeper exists to check, and gives anyone
+downloading the archive by hand a wall with no way past it but a terminal
+incantation.
+
+Both happen on the Linux runner. GoReleaser signs with `quill`, so no macOS
+runner is involved.
+
+It needs four more secrets, all scoped and revocable:
+
+| secret | what |
+| --- | --- |
+| `MACOS_SIGN_P12` | the Developer ID Application certificate, exported as .p12 and base64'd |
+| `MACOS_SIGN_PASSWORD` | that export's password |
+| `MACOS_NOTARY_ISSUER_ID` | App Store Connect API issuer id |
+| `MACOS_NOTARY_KEY_ID` | that key's id |
+| `MACOS_NOTARY_KEY` | the .p8 private key, base64'd |
+
+An App Store Connect API key rather than an app-specific password: it is
+scoped to notarization, revocable on its own, and does not carry the Apple ID.
+
+The release **waits for Apple's verdict** rather than publishing and hoping. A
+release page that says "signed" while the submission was rejected is worse
+than one that failed loudly.
+
+Signing is enabled only when the certificate is actually in the environment,
+so a fork's pull request still builds. What that produces is unsigned, and the
+cask it generates strips the quarantine attribute instead — the two paths are
+one template, checked both ways.
 
 ## What the port has found so far
 

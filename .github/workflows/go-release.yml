@@ -45,7 +45,7 @@ jobs:
           # config fails here rather than at a tag.
           args: >-
             release --clean
-            ${{ github.event_name == 'pull_request' && '--snapshot --skip=publish' || '' }}
+            ${{ github.event_name == 'pull_request' && '--snapshot --skip=publish,notarize' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Pushes the cask to owenbush/homebrew-tap, a different repository
@@ -56,6 +56,20 @@ jobs:
           # only the brew route is missed, so this is not worth failing a
           # release over.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+          # Developer ID signing and Apple notarization, done on this Linux
+          # runner — GoReleaser signs with `quill`, which needs no mac.
+          #
+          # The config enables the step only when the certificate is present,
+          # so a fork's pull request still builds; what it produces is
+          # unsigned, and the cask it generates strips the quarantine
+          # attribute instead. A tagged release with these set is signed,
+          # notarized, and needs no such hook.
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Keep the dry run's artifacts
         if: github.event_name == 'pull_request'

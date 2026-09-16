@@ -51,6 +51,39 @@ builds:
       - -s -w
       - -X github.com/owenbush/upkeep/internal/cli/command.Version={{ .Version }}
 
+# Signed with a Developer ID certificate and notarized by Apple, so macOS
+# runs it without argument.
+#
+# The alternative — shipping unsigned and having the cask strip the quarantine
+# attribute — asks every user to take on trust what Gatekeeper exists to check,
+# and gives someone downloading the archive by hand a wall with no way past it
+# but a terminal incantation.
+#
+# Runs on the Linux runner: GoReleaser signs with `quill`, which needs no mac.
+#
+# Enabled only when the certificate is actually present, so a fork's pull
+# request and a release made before the secrets exist both still build. What
+# they produce is unsigned, and the cask below knows it.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - upkeep
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        # App Store Connect API key, not an app-specific password: it is
+        # scoped, revocable and does not carry the Apple ID itself.
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        # Wait for Apple's verdict rather than publishing and hoping. A
+        # release that says "signed" while the submission was rejected is
+        # worse than one that failed loudly.
+        wait: true
+        timeout: 20m
+
 archives:
   - id: upkeep
     ids:
@@ -127,17 +160,18 @@ homebrew_casks:
         - bash
         - zsh
         - fish
+    # No quarantine-stripping hook, because the binary is signed and notarized
+    # — Gatekeeper checks it and passes. An unsigned build (no certificate in
+    # the environment: a fork's pull request) gets the strip instead, since
+    # there Gatekeeper would refuse and the alternative is a wall.
     hooks:
       post:
-        # Unsigned and un-notarized, so macOS quarantines it and the first run
-        # dies with "cannot be opened because the developer cannot be
-        # verified" — a wall, not a warning. Stripping the attribute is what
-        # every unsigned cask does; the honest fix is an Apple Developer
-        # account and notarization, which is a decision with a bill attached.
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/upkeep"]
-          end
+        # One line, deliberately: GoReleaser omits the whole `postflight`
+        # stanza when this renders empty, and a block scalar cannot render
+        # empty — it would leave `postflight do end` in every signed cask.
+        # The literal newlines carry the indentation the rendered Ruby needs
+        # minus the four spaces GoReleaser adds to every line itself.
+        install: '{{ if not (isEnvSet "MACOS_SIGN_P12") }}if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0{{ "\n" }}  system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/upkeep"]{{ "\n" }}end{{ end }}'
 
 release:
   # Published, not drafted. The tag is the decision — drafting would leave the
