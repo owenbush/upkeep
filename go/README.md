@@ -195,6 +195,46 @@ php testdata_gen.php --fuzz=20000     # corpus-fuzz.json, not committed — rand
 The random corpus is skipped when it has not been generated. It is seeded, so a
 failure reproduces exactly.
 
+## Where this is going
+
+The Go implementation is intended to replace the PHP one rather than sit
+beside it. That decides two things a reader would otherwise get wrong.
+
+**The module path is wrong on purpose, for now.** `go.mod` declares
+`module github.com/owenbush/upkeep` while sitting in `go/`, so the module
+cannot be resolved by either spelling:
+
+```
+$ go install github.com/owenbush/upkeep/cmd/upkeep@go-port
+module ... found, but does not contain package .../cmd/upkeep
+
+$ go install github.com/owenbush/upkeep/go/cmd/upkeep@go-port
+module declares its path as: github.com/owenbush/upkeep
+        but was required as: github.com/owenbush/upkeep/go
+```
+
+Renaming it to `.../go` would fix `go install` today and have to be undone
+the moment this moves to the repository root — two renames of every import in
+the tree to buy a channel that brew and the release archives already cover.
+So it waits. `go install` is the thing that does not work until the move; the
+brew route and the archives are unaffected, because neither goes through the
+module proxy.
+
+**Tags are shared, and that is fine.** `v*` triggers the Go release workflow.
+While both implementations live here a tag would mean two things at once —
+but they are not both going to live here, so the answer is to finish the
+replacement rather than to invent a `go-v*` prefix that would itself need
+undoing.
+
+The move is: delete `src/`, `tests/`, `bin/` and `composer.json`, lift `go/`
+to the root, change the module path back, and drop the `go/` prefix from the
+two workflows. The differential corpora (`testdata_gen.php` and the
+`*_expect.php` scripts) are the one thing that cannot come along — they exist
+to hold this implementation to the other one, and there will not be another
+one. They should be kept in git history, and the committed `corpus.json` and
+`testdata/` kept as fixtures: they are still the answers the PHP gave, which
+is what the tests assert against, whether or not the PHP is still here to ask.
+
 ## Releasing
 
 A tag a human pushed, and nothing else. `upkeep` itself drafts release notes
