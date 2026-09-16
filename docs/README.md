@@ -38,13 +38,13 @@ module — registered or not.
 
 ## The Go rewrite
 
-A full rewrite in Go lives in `go/`, on the `go-port` branch, with every
-command ported. It is the same tool — same commands, same cockpit, same
+A full rewrite in Go lives at the repository root, on the `go-port` branch,
+with every command ported. It is the same tool — same commands, same cockpit, same
 registry and base artifacts — so everything in this documentation applies to
 it, and the few places it deliberately differs are recorded in its own README
 rather than duplicated here.
 
-- [The Go port](../go/README.md) — how it is being done, what it has found, and the defects it found in the PHP
+- [The Go port](go-port.md) — how it is being done, what it has found, and the defects it found in the PHP
 
 ## Design
 

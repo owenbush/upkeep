@@ -84,8 +84,8 @@ upkeep list --raw
 
 ### The Go build
 
-A full rewrite in Go lives in `go/`, on the `go-port` branch, with every
-command ported. It needs no PHP and no Composer — one static binary — but it
+A full rewrite in Go lives at the repository root, on the `go-port` branch,
+with every command ported. It needs no PHP and no Composer — one static binary — but it
 wants the same ddev and the same token, and it reads and writes the same
 cockpit, registry and base artifacts.
 
@@ -136,17 +136,18 @@ the Linux one anyway.
 #### From source
 
 ```bash
-cd go
 go build -o upkeep ./cmd/upkeep
 ./upkeep --help
 ```
 
-Requires Go >= 1.24. `go install` does not work yet — the module lives in a
-subdirectory and declares the root path, which [resolves when the port
-replaces the PHP](../../go/README.md).
+Requires Go >= 1.24. Or, without a clone:
+
+```bash
+go install github.com/owenbush/upkeep/cmd/upkeep@latest
+```
 
 Everything else in this documentation applies to the Go build unchanged; where
-it deliberately differs, [its own README](../../go/README.md) says so and why.
+it deliberately differs, [the port's own notes](../go-port.md) say so and why.
 
 ## Shell completion
 

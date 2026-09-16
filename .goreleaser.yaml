@@ -1,9 +1,4 @@
-# Release configuration for the Go implementation.
-#
-# Runs from this directory, not the repository root: the Go module lives in
-# `go/` and the PHP implementation is released a different way entirely
-# (Packagist reads composer.json from the root). Keeping the two release
-# descriptions apart is what stops one from having to know about the other.
+# Release configuration.
 #
 # Nothing here decides *when* to release. That is a tag a human pushed, which
 # is the same stance the tool takes about Drupal releases: it drafts the notes,
@@ -11,8 +6,8 @@
 #
 # Validate without publishing anything:
 #
-#   cd go && goreleaser check
-#   cd go && goreleaser release --snapshot --clean
+#   goreleaser check
+#   goreleaser release --snapshot --clean
 version: 2
 
 project_name: upkeep
@@ -92,10 +87,6 @@ archives:
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
-      # A copy, not a symlink to the root one: tar stores the link rather than
-      # following it, so the archive would carry a dangling `../LICENSE` and
-      # every extracted copy would be missing the notice MIT requires travel
-      # with it. Caught by extracting a snapshot archive and looking.
       - src: LICENSE
       - src: README.md
 

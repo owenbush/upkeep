@@ -151,7 +151,6 @@ newest posted after the merge request last moved.
 ## Running it
 
 ```bash
-cd go
 go run ./cmd/upkeep --help
 go build -o upkeep ./cmd/upkeep
 ```
@@ -200,40 +199,34 @@ failure reproduces exactly.
 The Go implementation is intended to replace the PHP one rather than sit
 beside it. That decides two things a reader would otherwise get wrong.
 
-**The module path is wrong on purpose, for now.** `go.mod` declares
-`module github.com/owenbush/upkeep` while sitting in `go/`, so the module
-cannot be resolved by either spelling:
+**The Go module is at the root**, which is what makes it a module at all.
+It spent a while in `go/` declaring the root path, and so resolved under
+neither spelling — `go install .../cmd/upkeep` found the module and not the
+package, and `go install .../go/cmd/upkeep` got "module declares its path as
+github.com/owenbush/upkeep but was required as github.com/owenbush/upkeep/go".
+Moving it up fixed that rather than renaming the module, because the rename
+would have had to be undone here.
 
-```
-$ go install github.com/owenbush/upkeep/cmd/upkeep@go-port
-module ... found, but does not contain package .../cmd/upkeep
-
-$ go install github.com/owenbush/upkeep/go/cmd/upkeep@go-port
-module declares its path as: github.com/owenbush/upkeep
-        but was required as: github.com/owenbush/upkeep/go
-```
-
-Renaming it to `.../go` would fix `go install` today and have to be undone
-the moment this moves to the repository root — two renames of every import in
-the tree to buy a channel that brew and the release archives already cover.
-So it waits. `go install` is the thing that does not work until the move; the
-brew route and the archives are unaffected, because neither goes through the
-module proxy.
+**`composer install` breaks the Go build**, while both implementations are
+here. Go switches to vendor mode whenever a `vendor/` directory sits next to
+`go.mod`, and Composer's is exactly that — `go build ./...` then fails with
+"inconsistent vendoring". `vendor/` is gitignored and CI never sees both (the
+Go jobs run no `composer install`, the PHP jobs run no Go), so it only bites a
+working copy that has done both. `rm -rf vendor` is the fix, and it stops
+mattering when `src/` goes.
 
 **Tags are shared, and that is fine.** `v*` triggers the Go release workflow.
-While both implementations live here a tag would mean two things at once —
-but they are not both going to live here, so the answer is to finish the
-replacement rather than to invent a `go-v*` prefix that would itself need
-undoing.
+While both implementations live here a tag would mean two things at once — but
+they are not both going to, so the answer is to finish the replacement rather
+than invent a `go-v*` prefix that would itself need undoing.
 
-The move is: delete `src/`, `tests/`, `bin/` and `composer.json`, lift `go/`
-to the root, change the module path back, and drop the `go/` prefix from the
-two workflows. The differential corpora (`testdata_gen.php` and the
-`*_expect.php` scripts) are the one thing that cannot come along — they exist
+What is left of the move: delete `src/`, `tests/`, `bin/`, `tools/`,
+`composer.json` and the PHP workflows. The differential corpora
+(`testdata_gen.php` and the `*_expect.php` scripts) go with them — they exist
 to hold this implementation to the other one, and there will not be another
-one. They should be kept in git history, and the committed `corpus.json` and
-`testdata/` kept as fixtures: they are still the answers the PHP gave, which
-is what the tests assert against, whether or not the PHP is still here to ask.
+one. They stay in git history, and the committed `corpus.json` and `testdata/`
+stay as fixtures: they are the answers the PHP gave, which is what the tests
+assert against, whether or not the PHP is still here to ask.
 
 ## Releasing
 
@@ -244,7 +237,7 @@ and leaves the tagging to a person; its own releases work the same way.
 git tag v1.0.0 && git push --tags
 ```
 
-`.github/workflows/go-release.yml` then runs GoReleaser from this directory:
+`.github/workflows/go-release.yml` then runs GoReleaser:
 it re-runs the gates against the tag (CI ran them against the commit, and a
 tag can be pushed at a commit CI never saw), cross-compiles for darwin and
 linux on amd64 and arm64, publishes a GitHub release with archives and
@@ -292,7 +285,6 @@ at the moment you least want to debug it.
 Locally:
 
 ```bash
-cd go
 goreleaser check
 goreleaser release --snapshot --clean --skip=publish
 tar tzvf dist/upkeep_*_darwin_arm64.tar.gz

@@ -77,7 +77,7 @@ publishing.
 | [Design document](docs/contrib-maintainer-design.md) | Why upkeep is shaped the way it is |
 | [The dashboard row model](docs/dashboard-row-model.md) | Why a row is `(module, issue, branch)` |
 | [Any module, not just yours](docs/any-module.md) | The registry as a watchlist rather than a gate |
-| [The Go port](go/README.md) | A full rewrite in Go, on the `go-port` branch |
+| [The Go port](docs/go-port.md) | A full rewrite in Go, on the `go-port` branch |
 
 ## Policy stance
 

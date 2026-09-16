@@ -1,6 +1,0 @@
-corpus-fuzz.json
-corpus-hard.json
-
-# GoReleaser's build output. Local snapshot runs write here, and nothing in it
-# is a source of anything.
-dist/
