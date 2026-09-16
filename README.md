@@ -20,7 +20,7 @@ add-on. You never interact with either directly unless you want to.
 
 ```bash
 # 1. Install
-composer global require owenbush/upkeep
+brew install owenbush/tap/upkeep       # macOS; Linux/WSL2: grab the release archive
 
 # 2. Scaffold a cockpit
 upkeep init ~/my-cockpit && cd ~/my-cockpit

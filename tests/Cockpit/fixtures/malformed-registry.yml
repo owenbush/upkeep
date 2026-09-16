@@ -1,3 +1,0 @@
-modules:
-  broken_module:
-    core_versions: ["11"]

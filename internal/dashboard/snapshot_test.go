@@ -34,7 +34,7 @@ type expectedSnapshot struct {
 // by the same argument, which is why the malformed fixtures matter as much as
 // the good one.
 //
-// Regenerate with: php snapshot_expect.php.
+// The answers are committed; git history holds the PHP that produced them.
 func TestSnapshotReadingMatchesPhp(t *testing.T) {
 	expected := loadExpectedSnapshots(t)
 
@@ -132,14 +132,14 @@ func TestSnapshotReadingMatchesPhp(t *testing.T) {
 }
 
 // What one side writes the other must read. go-written.json is in the set
-// snapshot_expect.php loads, so its being in the answers file at all is PHP
+// the generator loaded, so its being in the answers file at all is PHP
 // proving it can read this.
 func TestThisSnapshotRenderingIsWhatPhpReads(t *testing.T) {
 	expected := loadExpectedSnapshots(t)
 
 	want, present := expected["go-written.json"]
 	if !present {
-		t.Fatal("go-written.json is not in the answers — regenerate with php snapshot_expect.php")
+		t.Fatal("go-written.json is not in the answers file, which is a committed fixture")
 	}
 	if !want.Read {
 		t.Fatal("PHP could not read the snapshot this implementation writes")
@@ -300,7 +300,7 @@ func loadExpectedSnapshots(t *testing.T) map[string]expectedSnapshot {
 
 	raw, err := os.ReadFile(filepath.Join(snapshotFixtureDir, "expected.json"))
 	if err != nil {
-		t.Fatalf("answers: %v (regenerate with: php snapshot_expect.php)", err)
+		t.Fatalf("answers: %v (a committed fixture — see git history for the PHP that produced it)", err)
 	}
 
 	var expected map[string]expectedSnapshot

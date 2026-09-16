@@ -26,16 +26,16 @@ type expectedRegistry struct {
 // own config.
 //
 // YAML parsers differ at exactly the edges this file lives on — an unquoted
-// number, a null mapping, a scalar where a list belongs — so the fixtures go
-// through the real PHP loader and the answers are committed. Regenerate with:
-// php registry_expect.php.
+// number, a null mapping, a scalar where a list belongs — so the fixtures
+// went through the real PHP loader once and the answers are committed. The
+// generator is in git history, with the implementation it drove.
 //
 // Only accept/reject and the parsed content are compared. The two word their
 // refusals differently, and a refusal is judged by whether it happens.
 func TestRegistryLoadingMatchesPhp(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(fixtureDir, "expected.json"))
 	if err != nil {
-		t.Fatalf("answers: %v (regenerate with: php registry_expect.php)", err)
+		t.Fatalf("answers: %v (a committed fixture — see git history for the PHP that produced it)", err)
 	}
 
 	var expected map[string]expectedRegistry

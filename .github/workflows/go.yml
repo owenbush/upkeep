@@ -70,6 +70,13 @@ jobs:
       - name: The binary still boots
         run: go run ./cmd/upkeep --help
 
+      # The command reference is generated from the CLI. A hand-written one is
+      # a second copy of the truth, and the copy loses: the project site's
+      # table sat at 11 of 27 commands long enough for the issue loop, the
+      # patch surface and a whole browser UI to be missing from it.
+      - name: The command reference is current
+        run: go run ./cmd/docgen --check
+
   # Reproducibility, which the PHP side gets from a committed lock file.
   #
   # Go's equivalent is go.mod plus go.sum, and the failure mode is the same:

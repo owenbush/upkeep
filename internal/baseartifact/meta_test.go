@@ -28,7 +28,7 @@ type expectedMeta struct {
 // read by whichever one uses it, so the two have to agree about which sidecars
 // are readable and what they say.
 //
-// Regenerate the answers with: php meta_expect.php.
+// The answers are committed; git history holds the PHP that produced them.
 func TestMetaReadingMatchesPhp(t *testing.T) {
 	expected := loadExpectedMetas(t)
 
@@ -134,7 +134,7 @@ func TestPhpsRenderingIsReadableHere(t *testing.T) {
 
 // And the other direction: this rendering has to survive its own reader, and
 // the go-rendered fixtures prove PHP reads it too — they are in the set
-// meta_expect.php loads.
+// the generator loaded, and which is committed.
 func TestThisRenderingRoundTrips(t *testing.T) {
 	original := Meta{
 		CoreVersion: "12.0.0-alpha1",
@@ -199,7 +199,7 @@ func TestSkewMatchesPhp(t *testing.T) {
 	}
 }
 
-// bumpPatch is the same substitution meta_expect.php makes: a trailing ".N"
+// bumpPatch is the same substitution the generator made: a trailing ".N"
 // becomes ".99", whatever position it is in.
 //
 // On a three-part version that is a patch bump and not skew. On a two-part one
@@ -251,7 +251,7 @@ func loadExpectedMetas(t *testing.T) map[string]expectedMeta {
 
 	raw, err := os.ReadFile(filepath.Join(metaFixtureDir, "expected.json"))
 	if err != nil {
-		t.Fatalf("answers: %v (regenerate with: php meta_expect.php)", err)
+		t.Fatalf("answers: %v (a committed fixture — see git history for the PHP that produced it)", err)
 	}
 
 	var expected map[string]expectedMeta

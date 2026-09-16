@@ -51,6 +51,9 @@ EOF
 # internal/cli/command) or the os.Exit a test cannot call. Keeping it at four
 # lines is what makes that exclusion honest, so anything that grows here wants
 # moving into a package that can be tested.
+# cmd/docgen is excluded: it is build tooling that renders the command
+# reference from the command tree, and CI runs it for real on every push
+# (`--check`), which is a stronger statement than a test of its Markdown.
 # cmd/livecheck is excluded: it is a live-verification tool that talks to
 # drupal.org and git.drupalcode.org, so the only thing a test could cover is a
 # mock of the thing it exists to not mock.
@@ -98,7 +101,7 @@ done <<<"$FLOORS"
 
 # A package nobody listed is a package nobody is holding to anything.
 for package in $(go list ./... | sed 's#github.com/owenbush/upkeep/##' |
-	grep -v '^cmd/livecheck$' | grep -v '^cmd/upkeep$' | grep -v '^internal/invariant$'); do
+	grep -v '^cmd/livecheck$' | grep -v '^cmd/upkeep$' | grep -v '^cmd/docgen$' | grep -v '^internal/invariant$'); do
 	if ! grep -q "^$package  *[0-9]" <<<"$FLOORS"; then
 		printf 'FAIL  %-28s is not listed in coverage.sh\n' "$package"
 		status=1

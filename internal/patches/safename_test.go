@@ -12,11 +12,11 @@ import (
 // downloaded patch under the name this produces, so they must agree byte for
 // byte or the same patch lands at two paths.
 //
-// Regenerate with: php safename_expect.php.
+// The answers are committed; git history holds the PHP that produced them.
 func TestSafeNameMatchesPhp(t *testing.T) {
 	raw, err := os.ReadFile("../../testdata/safenames.json")
 	if err != nil {
-		t.Fatalf("answers: %v (regenerate with: php safename_expect.php)", err)
+		t.Fatalf("answers: %v (a committed fixture — see git history for the PHP that produced it)", err)
 	}
 
 	var cases []struct {

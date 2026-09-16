@@ -1,17 +1,12 @@
-/vendor/
-.phpunit.cache/
-.phpunit.result.cache
-/build/coverage-html/
-*.phar
+# The Go build's output.
+dist/
+
+# Generated corpora, kept out of the tree: the committed corpus.json and
+# testdata/ are the answers, and these are scratch.
+corpus-fuzz.json
+corpus-hard.json
+
 .DS_Store
 .idea/
 .vscode/
 .claude/
-
-# The Go side.
-corpus-fuzz.json
-corpus-hard.json
-
-# GoReleaser's build output. Local snapshot runs write here, and nothing in it
-# is a source of anything.
-dist/

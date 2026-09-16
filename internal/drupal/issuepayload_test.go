@@ -47,11 +47,11 @@ type expectedIssue struct {
 // written by one implementation is read back by the other, so the attachment
 // envelope, the resolved-file shape and the round trip all have to agree.
 //
-// Regenerate with: php issue_expect.php.
+// The answers are committed; git history holds the PHP that produced them.
 func TestIssueParsingMatchesPhp(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(issueFixtureDir, "expected.json"))
 	if err != nil {
-		t.Fatalf("answers: %v (regenerate with: php issue_expect.php)", err)
+		t.Fatalf("answers: %v (a committed fixture — see git history for the PHP that produced it)", err)
 	}
 
 	var expected map[string]expectedIssue
