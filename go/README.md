@@ -326,7 +326,22 @@ inferred from the code.
    level down: it looks the cached result up by the head SHA when `check` filed
    it under the merge ref's.
 
-1–4 are fixed in PHP (PR #53). 5–7 are fixed here and still stand there.
+8. **Five read-only commands demand a credential.** `api:probe`, `dashboard`,
+   `issue` and `notes` exit 2 without a token; `patches` gives up its whole
+   cross-reference; and `AbstractPatchCommand` silently skips resolving the
+   branch an issue is filed against, so a 2.0.0 issue's patch lands on 1.0.x
+   and reads as needing a re-roll it does not need. None makes a single write
+   call — `api:probe`'s own docblock says "performs read-only GETs". The
+   change that lifted the requirement landed in `AbstractMrCommand` and
+   `IssuesCommand` and stopped there. `dashboard` is the one that stings: the
+   README's quick start says "Reading git.drupalcode.org needs no credential"
+   and then names it.
+
+Every one was found by porting, not by reading: the port reads anonymously
+everywhere, so the first live run of each surfaced the difference.
+
+All eight are fixed in PHP, across three pull requests — #53 (1–4), #54 (5–7)
+and #55 (8).
 
 ## Scope
 

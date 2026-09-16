@@ -153,10 +153,11 @@ func contributionsFor(
 		return patches.Pair(module.Name, found, snapshot.MergeRequests(), snapshot.ForkNids)
 	}
 
-	// Read anonymously. The PHP asks for an authenticated client here and
-	// gives up the whole cross-reference without one, which predates
-	// git.drupalcode.org's public reads being usable; every other read surface
-	// was moved off that requirement and this one was missed.
+	// Read anonymously: drupalcode serves a public project's merge requests
+	// and forks without a credential. The PHP demanded one here and gave up
+	// the whole cross-reference without it — listing every Needs Review / RTBC
+	// issue with an empty MR column, which is the noise this report exists to
+	// cut. Reported from the port and fixed there too.
 	client := cli.ReadingClient(cmd, clients)
 
 	project, failure := client.Project(module.Project)
