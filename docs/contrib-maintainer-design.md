@@ -485,12 +485,14 @@ rebuild.
 
 ## 11. Packaging and distribution
 
-- **Orchestrator** → `upkeep`, a PHP CLI (Symfony Console), distributed as the
-  Composer package `owenbush/upkeep` (`composer global require owenbush/upkeep`),
-  optionally also a phar later. Chosen because the audience is Drupal contrib
-  maintainers who already live in PHP/Composer; this is how Drush, PHPStan,
-  PHP_CodeSniffer, and Rector ship. It keeps the whole project in one ecosystem
-  and asks the user to adopt no foreign toolchain.
+- **Orchestrator** → `upkeep`, one static Go binary, distributed as a Homebrew
+  cask on macOS and a release archive elsewhere. It began as a PHP CLI shipped
+  through Composer, on the reasoning that Drupal contrib maintainers already
+  live in PHP/Composer — which is how Drush, PHPStan, PHP_CodeSniffer and
+  Rector ship. That held until it did not: upkeep is *run*, not required as a
+  library, and a tool that drives ddev has no reason to need the host's PHP at
+  all. A binary with no runtime to install is the better trade, and it asks the
+  user to adopt no toolchain at all.
 - **Fixtures + maintenance ddev commands** → a companion ddev add-on
   (`ddev add-on get ...`), the native mechanism for in-project commands. Start
   as a companion for fast iteration; propose upstream into `ddev-drupal-contrib`
