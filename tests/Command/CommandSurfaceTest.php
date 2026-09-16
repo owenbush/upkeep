@@ -112,6 +112,75 @@ final class CommandSurfaceTest extends TestCase
     }
 
     /**
+     * A command that never writes must not demand a credential to read.
+     *
+     * git.drupalcode.org serves a public project's merge requests, refs, forks
+     * and raw files anonymously, and `GitlabClient` omits the header when it
+     * has no token. Requiring one to *look* is a restriction upkeep imposes
+     * rather than one GitLab does — and the README's own quick start promises
+     * the opposite.
+     *
+     * It was imposed, for a while, on five commands. `dashboard` was one of
+     * them: the tool's headline command, named in that quick start two lines
+     * under "Reading git.drupalcode.org needs no credential", exiting 2 for
+     * want of a token. The change that lifted the requirement landed in
+     * `AbstractMrCommand` and `IssuesCommand` and stopped there, and nothing
+     * noticed because every test that drives these injects a client.
+     *
+     * So this is structural. A file naming no write call may not reach for a
+     * factory method that can answer null, because answering null is what
+     * turns "no credential" into a refusal.
+     *
+     * `AbstractMrCommand` holds both paths on purpose — its subclasses declare
+     * which they take via `readsOnly()`, asserted just above — so it is the
+     * one file exempt, by name.
+     */
+    public function testNoCommandThatOnlyReadsDemandsACredential(): void
+    {
+        // Calls that genuinely cannot be made anonymously: the three writes
+        // the client itself refuses without a token, the push, and the
+        // memberships listing — a GET, but a question about *you*, which
+        // GitLab will not answer to nobody.
+        $needsCredential = ['merge', 'postNote', 'createMergeRequest', 'pushWork', 'membershipProjects'];
+        // Factory methods that can answer null, which is what a refusal is
+        // built from.
+        $canRefuse = ['forConsole', 'authenticated', 'fromResolvedToken'];
+
+        $offenders = [];
+        foreach (glob(__DIR__ . '/../../src/Command/*.php') ?: [] as $file) {
+            $name = basename($file, '.php');
+            if ($name === 'AbstractMrCommand') {
+                continue;
+            }
+
+            $source = file_get_contents($file);
+            self::assertIsString($source);
+
+            foreach ($needsCredential as $call) {
+                if (str_contains($source, '->' . $call . '(')) {
+                    continue 2;
+                }
+            }
+            foreach ($canRefuse as $method) {
+                if (str_contains($source, 'GitlabClientFactory::' . $method . '(')) {
+                    $offenders[$name] = $method;
+                }
+            }
+        }
+
+        self::assertSame(
+            [],
+            $offenders,
+            'These commands never write, so they must read anonymously rather than refuse: '
+            . implode(', ', array_map(
+                static fn (string $n, string $m): string => $n . ' (' . $m . ')',
+                array_keys($offenders),
+                array_values($offenders),
+            )),
+        );
+    }
+
+    /**
      * The dependency check runs before anything is constructed.
      *
      * Structural, because it cannot be reached any other way: the suite runs

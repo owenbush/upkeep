@@ -77,12 +77,14 @@ final class NotesCommand extends UpkeepCommand
         $module = self::stringArgument($input, 'module');
         $projectPath = $this->resolveProjectPath($module, self::stringOption($input, 'cockpit'));
 
-        // The factory reports the missing-token guidance itself (one wording
-        // for the whole CLI); "no credential" is an infrastructure failure.
-        $client = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);
-        if ($client === null) {
-            return ExitCode::INFRASTRUCTURE;
-        }
+        // Read anonymously: a project, its tags, and what merged since.
+        // Drafting release notes needs no credential, and cutting the release
+        // — which would — stays manual and is not this command's job.
+        $client = GitlabClientFactory::readOnlyOr(
+            $this->gitlabClient,
+            GitlabClientFactory::resolver($io),
+            $io->note(...),
+        );
 
         $project = $client->project($projectPath);
         if ($project instanceof ApiFailure) {

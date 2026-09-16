@@ -201,20 +201,34 @@ final class NotesCommandTest extends TestCase
     }
 
     /**
-     * No token configured is an infrastructure failure with the CLI-wide
-     * wording — and the guidance goes to stderr, because this command's
-     * stdout is a file the maintainer redirects. `upkeep notes widget >
-     * notes.md` must never write an error message into notes.md.
+     * Without a token this drafts anyway, reading anonymously.
+     *
+     * It used to exit 2. Drafting release notes is three GETs against a public
+     * project — drupalcode answers all of them to nobody — so the credential
+     * was upkeep's requirement rather than GitLab's, and a maintainer without
+     * a PAT on that machine could not write up a release.
+     *
+     * Whatever is said about the degraded mode goes to stderr, because this
+     * command's stdout is a file the maintainer redirects: `upkeep notes
+     * widget > notes.md` must never write a diagnostic into notes.md.
      */
-    public function testWithoutATokenTheGuidanceGoesToStderrAndStdoutStaysEmpty(): void
+    public function testWithoutATokenItStillDraftsAndStdoutCarriesOnlyTheDraft(): void
     {
         $cli = $this->cli();
         $cli->registerModule('widget');
+        $cli->withGitlab(
+            $this->withHistory([], [self::mergedMr(3, 'Fix the thing', 'alice')])->client(null),
+        );
 
         $exit = $cli->runSplittingStreams('notes', 'widget');
 
-        self::assertSame(ExitCode::INFRASTRUCTURE, $exit, $cli->errorDisplay());
-        self::assertStringContainsString('No GitLab token found', $cli->errorDisplay());
-        self::assertSame('', $cli->display(), 'stdout carries only the paste-ready draft');
+        self::assertSame(ExitCode::OK, $exit, $cli->errorDisplay());
+        self::assertStringContainsString('Fix the thing', $cli->display());
+        self::assertStringNotContainsString('No GitLab token found', $cli->errorDisplay());
+        self::assertStringNotContainsString(
+            'anonymously',
+            $cli->display(),
+            'stdout carries only the paste-ready draft',
+        );
     }
 }

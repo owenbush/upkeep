@@ -63,12 +63,15 @@ final class ApiProbeCommand extends UpkeepCommand
     {
         $module = self::stringArgument($input, 'module');
 
-        // The factory reports the missing-token guidance itself (one wording
-        // for the whole CLI); "no credential" is an infrastructure failure.
-        $client = $this->gitlabClient ?? GitlabClientFactory::forConsole($io);
-        if ($client === null) {
-            return ExitCode::INFRASTRUCTURE;
-        }
+        // Read anonymously. Every call this makes is a GET that
+        // git.drupalcode.org serves without a credential, so demanding one
+        // was a restriction upkeep imposed rather than one GitLab does. The
+        // degraded mode is announced once, in the shared wording.
+        $client = GitlabClientFactory::readOnlyOr(
+            $this->gitlabClient,
+            GitlabClientFactory::resolver($io),
+            $io->note(...),
+        );
 
         $project = $client->project($module);
         if ($project instanceof ApiFailure) {

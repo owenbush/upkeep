@@ -46,7 +46,16 @@ final class MockGitlab
         return $this;
     }
 
-    public function client(string $token = 'glpat-fake-token-never-real'): GitlabClient
+    /**
+     * A client over the routed responses.
+     *
+     * Pass null for an anonymous one — what a maintainer with no PAT gets on
+     * every read-only command, and therefore the shape those commands' tests
+     * have to drive. Injected rather than let the factory build it: an
+     * un-injected client is a real one, and a live request has no place in
+     * this suite.
+     */
+    public function client(?string $token = 'glpat-fake-token-never-real'): GitlabClient
     {
         $factory = function (string $method, string $url): MockResponse {
             $this->requests[] = ['method' => $method, 'url' => $url];
