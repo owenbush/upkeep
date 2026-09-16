@@ -254,6 +254,15 @@ checksums, and pushes a Homebrew cask to the tap.
 brew install owenbush/tap/upkeep
 ```
 
+Built for macOS and Linux, on amd64 and arm64. **Not Windows**, and not by
+oversight: all three of ddev's supported Windows configurations require WSL2,
+and the one it recommends for most users is Docker CE *inside* WSL2 — so the
+Linux binary is the Windows answer, on the same side of the filesystem
+boundary as the projects it drives. A native build would also need work it has
+not had: `killWholeGroup` is `//go:build unix`, and three `$HOME` lookups are
+not where Windows keeps a home directory. Shipping that untested would be
+worse than not shipping it.
+
 The binary is static — `CGO_ENABLED=0`, nothing linked — so it runs on any
 glibc or musl host with no runtime to install. That is the whole practical
 advantage over the PHP, and the release config is deliberate about it rather

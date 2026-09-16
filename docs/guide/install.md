@@ -89,15 +89,64 @@ command ported. It needs no PHP and no Composer — one static binary — but it
 wants the same ddev and the same token, and it reads and writes the same
 cockpit, registry and base artifacts.
 
+> Until the port is merged and a version is tagged, the only route below that
+> works is building from source. The rest describe what a release publishes.
+
+#### macOS
+
+```bash
+brew install owenbush/tap/upkeep
+```
+
+Signed with a Developer ID and notarized, so Gatekeeper runs it without
+argument.
+
+#### Linux
+
+Download the archive for your architecture from the
+[releases page](https://github.com/owenbush/upkeep/releases) — `amd64` and
+`arm64` are both built — and put the binary on your `PATH`:
+
+```bash
+tar xzf upkeep_*_linux_amd64.tar.gz
+sudo install -m 0755 upkeep /usr/local/bin/upkeep
+```
+
+Not brew: Homebrew on Linux does not install casks, and the archive is one
+command.
+
+#### Windows
+
+Through [WSL2](https://learn.microsoft.com/windows/wsl/install), using the
+Linux binary above.
+
+That is not a workaround — it is where ddev itself puts you. All three of
+ddev's supported Windows configurations require WSL2, and the one it
+recommends for "most users, best performance" is Docker CE *inside* WSL2. Your
+projects live in the WSL filesystem for the same reason: crossing the
+Windows/WSL boundary costs ddev dearly. upkeep provisions and drives those
+projects, so it belongs on the same side of that boundary.
+
+There is no native Windows binary, and adding one would be a poor trade: it
+does not compile today (the process-group kill that makes a timeout actually
+stop `ddev start` is Unix-only), `$HOME` is not where Windows keeps a home
+directory, and the result would serve a platform whose recommended setup is
+the Linux one anyway.
+
+#### From source
+
 ```bash
 cd go
 go build -o upkeep ./cmd/upkeep
 ./upkeep --help
 ```
 
-Requires Go >= 1.24. Everything else in this documentation applies to it
-unchanged; where it deliberately differs, [its own
-README](../../go/README.md) says so and why.
+Requires Go >= 1.24. `go install` does not work yet — the module lives in a
+subdirectory and declares the root path, which [resolves when the port
+replaces the PHP](../../go/README.md).
+
+Everything else in this documentation applies to the Go build unchanged; where
+it deliberately differs, [its own README](../../go/README.md) says so and why.
 
 ## Shell completion
 
