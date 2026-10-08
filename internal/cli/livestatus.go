@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -44,9 +45,53 @@ func NewLiveStatus(out io.Writer, terminal, verbose bool) *LiveStatus {
 	return &LiveStatus{out: out, terminal: terminal, verbose: verbose, width: statusWidth}
 }
 
+// controlSequence matches an ANSI escape sequence: CSI, which is the colours
+// and the cursor moves, OSC, which sets a window title and ends in BEL or ST,
+// and the two-character escapes.
+var controlSequence = regexp.MustCompile(
+	`\x1b\[[0-9;:?]*[ -/]*[@-~]` +
+		`|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?` +
+		`|\x1b[@-Z\\-_]`,
+)
+
+// plainText reduces a child's line to the text in it.
+//
+// The status line borrows one line of somebody else's output, and anything in
+// that line which sets a colour or moves a cursor is an instruction about a
+// line upkeep is about to erase and rewrite itself. Two of them actively
+// break it.
+//
+// A colour whose reset falls past the truncation below leaves the terminal
+// painted: `\x1b[2K` erases characters, not attributes, so the reset never
+// arrives and every line after it comes out in the colour of some composer
+// warning — including the results table, which goes to stdout and never went
+// near this file. That is the bug this exists for.
+//
+// A carriage return mid-line, which is how composer draws download progress,
+// returns to column zero inside the status line, so the rest of it overwrites
+// upkeep's own indent instead of following it.
+//
+// Stripping rather than trying to balance the sequences also makes
+// statusWidth mean what it says: a hundred visible columns, rather than a
+// hundred bytes of which forty were escape codes.
+func plainText(line string) string {
+	line = controlSequence.ReplaceAllString(line, "")
+
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+
+		return r
+	}, line)
+}
+
 // Line receives one line of a child's output.
 func (s *LiveStatus) Line(line string) {
-	line = strings.TrimRight(line, "\r\n")
+	line = plainText(strings.TrimRight(line, "\r\n"))
 
 	if s.verbose {
 		fmt.Fprintln(s.out, line)
@@ -57,8 +102,11 @@ func (s *LiveStatus) Line(line string) {
 		return
 	}
 
-	if len(line) > s.width {
-		line = line[:s.width-1] + "…"
+	// Measured in runes rather than bytes: a composer package name or an
+	// engine step can carry a multi-byte character, and cutting one in half
+	// puts a replacement character on the line instead of shortening it.
+	if runes := []rune(line); len(runes) > s.width {
+		line = string(runes[:s.width-1]) + "…"
 	}
 	fmt.Fprintf(s.out, "\r\x1b[2K  %s", line)
 	s.showing = true

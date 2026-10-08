@@ -239,6 +239,18 @@ and was learned the hard way — see `docs/go-port.md`.
   silent on purpose**: the first prints a path meant to be captured
   (`cd $(upkeep env:path …)`) and the second passes through your own command's
   output, so a status line in either would end up inside what you asked for.
+  **A child's escape codes never reach the terminal.** `cli.plainText` strips
+  ANSI sequences and control characters from every relayed line, and the
+  truncation counts runes. The status line is one line upkeep erases and
+  rewrites, so a child's colours and cursor moves are instructions about a line
+  it does not own — and one of them was actively breaking: a coloured composer
+  line longer than `statusWidth` lost its `\x1b[0m` to a *byte* truncation,
+  `\x1b[2K` erases characters rather than attributes, so nothing reset and every
+  line after it came out red. Including the results table, which goes to stdout
+  and never came through here — a run that passed every check said "All checks
+  green" in the colour of failure. Stripping rather than balancing the
+  sequences also makes `statusWidth` mean a hundred visible columns rather than
+  a hundred bytes of which forty were escape codes.
 - `internal/cli/command/` — one class per CLI command; thin, delegating to the
   namespaces below. All extend `internal/cli`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
