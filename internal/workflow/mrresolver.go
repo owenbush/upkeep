@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
@@ -75,8 +76,13 @@ func (r *MrResolver) Resolve(moduleName string, iid int, requestedCore string) (
 		return MrContext{}, err
 	}
 
-	if err := r.assertBranchDeclares(
-		*project, module, mergeRequest.TargetBranch, coreMajor,
+	// Read once and reused: the guard below needs to know whether GitLab
+	// published a merge ref, and so does the context. Asking twice would be
+	// two round trips for one answer.
+	mergeRefSHA := r.client.MergeRefSHA(*project, iid)
+
+	if err := r.assertMergeRequestDeclares(
+		*project, module, mergeRequest, mergeRefSHA, coreMajor,
 	); err != nil {
 		return MrContext{}, err
 	}
@@ -86,7 +92,7 @@ func (r *MrResolver) Resolve(moduleName string, iid int, requestedCore string) (
 		Project:      *project,
 		MergeRequest: mergeRequest,
 		CoreMajor:    coreMajor,
-		MergeRefSHA:  r.client.MergeRefSHA(*project, iid),
+		MergeRefSHA:  mergeRefSHA,
 	}, nil
 }
 
@@ -185,28 +191,47 @@ func (r *MrResolver) openMergeRequest(
 	return *mergeRequest, nil
 }
 
-// assertBranchDeclares refuses a core the merge request's target branch does
+// assertMergeRequestDeclares refuses a core the merge request's own tree does
 // not declare.
 //
-// Checking a branch on a core it never claimed produces a failure that says
+// Checking a tree on a core it never claimed produces a failure that says
 // nothing about the module — composer refuses to resolve, and the report reads
 // as though the contribution is broken. The same reasoning removed the core
-// multiplier from the dashboard: evidence gathered against a core the branch
-// does not support is not evidence.
+// multiplier from the dashboard: evidence gathered against a core the code does
+// not support is not evidence.
 //
 // It matters more now the core can be inferred. A module the registry does not
 // carry takes the newest core with base artifacts on this machine, which is a
-// fact about the disk and knows nothing about the branch — so without this,
+// fact about the disk and knows nothing about the code — so without this,
 // upkeep would pick a core and then blame the module for it.
 //
-// Silence is the answer whenever the branch cannot be read. No info.yml at
-// that path, a constraint nobody can parse, a closed endpoint: each of them
-// means upkeep does not know, and refusing on not-knowing would block work
-// over a file it merely failed to fetch.
-func (r *MrResolver) assertBranchDeclares(
-	project gitlab.Project, module cockpit.Module, branch, core string,
+// **The merge request's tree, not the branch it targets.** This read the
+// target branch and that was wrong for the commonest merge request upkeep
+// sees: a core-compatibility MR exists precisely to add the new core to
+// info.yml, so the target branch cannot declare it until the work lands. The
+// guard therefore refused the one thing it existed to let somebody verify —
+// `check <module> <iid> --version=12` on a Drupal 12 compatibility MR, which
+// is the fast lane's whole subject.
+//
+// Which ref is the same question `MrCheckout.preferredRef` answers, and the
+// same answer: the merge ref when GitLab publishes one, because that is the
+// tree CI analyses and the one `applyMr` checks out; the head ref otherwise,
+// since a merge request conflicting with its target has no merge ref.
+//
+// Silence is the answer whenever the tree cannot be read. No info.yml at that
+// path, a constraint nobody can parse, a closed endpoint: each of them means
+// upkeep does not know, and refusing on not-knowing would block work over a
+// file it merely failed to fetch.
+func (r *MrResolver) assertMergeRequestDeclares(
+	project gitlab.Project, module cockpit.Module,
+	mergeRequest gitlab.MergeRequest, mergeRefSHA, core string,
 ) error {
-	constraint := drupal.ConstraintIn(r.client.FileContents(project, module.Name+".info.yml", branch))
+	ref := adapter.HeadRef(mergeRequest.IID)
+	if mergeRefSHA != "" {
+		ref = adapter.MergeRef(mergeRequest.IID)
+	}
+
+	constraint := drupal.ConstraintIn(r.client.FileContents(project, module.Name+".info.yml", ref))
 	if constraint == "" {
 		return nil
 	}
@@ -231,9 +256,11 @@ func (r *MrResolver) assertBranchDeclares(
 	}
 
 	return fmt.Errorf(
-		"%s %s declares core_version_requirement %q, which does not include core %s.\n"+
-			"Checking it there would fail for reasons that say nothing about the module.\n%s",
-		module.Name, branch, constraint, core, remedy,
+		"%s !%d declares core_version_requirement %q, which does not include core %s.\n"+
+			"Checking it there would fail for reasons that say nothing about the module.\n"+
+			"If adding core %s is the work, declare it in %s.info.yml on the merge request "+
+			"and this check will run.\n%s",
+		module.Name, mergeRequest.IID, constraint, core, core, module.Name, remedy,
 	)
 }
 

@@ -484,12 +484,20 @@ and was learned the hard way — see `docs/go-port.md`.
   `^10.2` does declare core 10, and only an interval gets that right. **Null is
   "cannot tell", never "supports nothing"**, and an empty intersection returns
   the tracked set unchanged — a module vanishing from the dashboard is the
-  worst failure mode this tool has. `MrContextResolver` also **refuses a core
-  the merge request's target branch does not declare** — checking a branch on
-  a core it never claimed fails at composer resolution and reads as though the
+  worst failure mode this tool has. `MrResolver` also **refuses a core
+  the merge request's own tree does not declare** — checking a tree on a core
+  it never claimed fails at composer resolution and reads as though the
   contribution is broken. That matters more now the core can be inferred from
   the disk for an unregistered module: without it upkeep would pick a core and
-  then blame the module for it. The suggestion names only cores that are both
+  then blame the module for it. **The merge ref, or the head ref when GitLab
+  publishes none — never the branch it targets.** It read the target branch
+  first and that was backwards for the commonest merge request upkeep sees: a
+  core-compatibility MR exists to add the new core to info.yml, so the target
+  branch cannot declare it until the work lands, and the guard refused the one
+  thing it existed to let somebody verify. Same ref question
+  `MrCheckout.preferredRef` answers and the same answer, because this has to
+  agree with the tree `applyMr` will check out. The merge ref SHA is read once
+  and shared with the context rather than fetched twice. The suggestion names only cores that are both
   declared *and* built here. Unreadable info.yml, unparseable constraint,
   closed endpoint: all silence, because refusing on not-knowing blocks work
   over a file that merely failed to fetch.

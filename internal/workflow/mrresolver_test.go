@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
@@ -20,6 +21,9 @@ type fakeGitlab struct {
 	mrFailure      *gitlab.Failure
 	mergeRefSHA    string
 	infoYAML       string
+	// infoPerRef overrides infoYAML for a given ref, which is how a merge
+	// request that *adds* a core differs from the branch it targets.
+	infoPerRef map[string]string
 }
 
 func aGitlab() *fakeGitlab {
@@ -57,6 +61,10 @@ func (f *fakeGitlab) MergeRefSHA(gitlab.Project, int) string {
 
 func (f *fakeGitlab) FileContents(_ gitlab.Project, path, ref string) string {
 	f.asked = append(f.asked, "file "+path+"@"+ref)
+
+	if contents, override := f.infoPerRef[ref]; override {
+		return contents
+	}
 
 	return f.infoYAML
 }
@@ -262,7 +270,7 @@ func TestAProjectThatCannotBeReadGoesThroughTheSharedWording(t *testing.T) {
 
 // Checking a branch on a core it never claimed fails at composer resolution
 // and reads as though the contribution is broken.
-func TestACoreTheTargetBranchDoesNotDeclareIsRefused(t *testing.T) {
+func TestACoreTheMergeRequestDoesNotDeclareIsRefused(t *testing.T) {
 	client := aGitlab()
 	client.infoYAML = "name: Pathauto\ncore_version_requirement: ^10.2 || ^11\n"
 
@@ -291,9 +299,86 @@ func TestACoreTheTargetBranchDoesNotDeclareIsRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "--version=10 or --version=11") {
 		t.Errorf("the refusal does not name a core that would work: %v", err)
 	}
-	// Read from the target branch, which is where the contribution lands.
-	if !client.didAsk("file pathauto.info.yml@2.0.x") {
-		t.Errorf("it read the wrong branch: %v", client.asked)
+	// Read from the merge ref — the tree CI analyses and applyMr checks out —
+	// and never from the branch it targets.
+	if !client.didAsk("file pathauto.info.yml@" + adapter.MergeRef(12)) {
+		t.Errorf("it did not read the merge ref: %v", client.asked)
+	}
+	if client.didAsk("file pathauto.info.yml@2.0.x") {
+		t.Errorf("it read the target branch: %v", client.asked)
+	}
+}
+
+// A merge request that *adds* the core is checked against it.
+//
+// The regression this guard caused. A core-compatibility merge request exists
+// to add the new core to info.yml, so its target branch cannot declare that
+// core until the work lands — and reading the target branch refused the one
+// thing the guard existed to let somebody verify. Hit three times in one
+// sitting trying to check a Drupal 12 merge request, which is the fast lane's
+// whole subject.
+func TestAMergeRequestThatAddsTheCoreIsCheckedAgainstIt(t *testing.T) {
+	client := aGitlab()
+	// The branch it targets does not support 12 and will not until this lands.
+	client.infoYAML = "core_version_requirement: ^10.2 || ^11\n"
+	// The merge request is the change that adds it.
+	client.infoPerRef = map[string]string{
+		adapter.MergeRef(12): "core_version_requirement: ^10.2 || ^11 || ^12\n",
+	}
+
+	tracksTwelve := map[string]cockpit.Module{
+		"pathauto": {
+			Name: "pathauto", Project: "project/pathauto",
+			CoreVersions: []string{"12", "11"}, Watched: true,
+		},
+	}
+
+	context, err := NewMrResolver(tracksTwelve, client, []string{"11", "12"}).
+		Resolve("pathauto", 12, "12")
+	if err != nil {
+		t.Fatalf("it refused the merge request that adds core 12: %v", err)
+	}
+	if context.CoreMajor != "12" {
+		t.Errorf("core %q, want 12", context.CoreMajor)
+	}
+}
+
+// With no merge ref there is no merge tree, so the head ref is read — the same
+// fallback the adapter makes, for the same reason: GitLab publishes no merge
+// ref for a merge request that conflicts with its target.
+func TestWithNoMergeRefTheHeadRefIsRead(t *testing.T) {
+	client := aGitlab()
+	client.mergeRefSHA = ""
+	client.infoYAML = "core_version_requirement: ^10.2 || ^11 || ^12\n"
+
+	if _, err := NewMrResolver(watched, client, []string{"11"}).
+		Resolve("pathauto", 12, "11"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	if !client.didAsk("file pathauto.info.yml@" + adapter.HeadRef(12)) {
+		t.Errorf("it did not fall back to the head ref: %v", client.asked)
+	}
+}
+
+// The merge ref is read once and reused for the context, not asked for twice.
+func TestTheMergeRefIsAskedForOnce(t *testing.T) {
+	client := aGitlab()
+	client.infoYAML = "core_version_requirement: ^10.2 || ^11\n"
+
+	if _, err := NewMrResolver(watched, client, []string{"11"}).
+		Resolve("pathauto", 12, "11"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	asked := 0
+	for _, call := range client.asked {
+		if call == "merge ref" {
+			asked++
+		}
+	}
+	if asked != 1 {
+		t.Errorf("the merge ref was fetched %d times, want 1: %v", asked, client.asked)
 	}
 }
 
