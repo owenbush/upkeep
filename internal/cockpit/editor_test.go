@@ -217,3 +217,159 @@ func TestSeveralModulesAreAddedInOneWrite(t *testing.T) {
 		t.Errorf("added %v", added)
 	}
 }
+
+// twoModules is a registry with an entry either side of the one being changed,
+// so the edit's effect on its neighbours is observable.
+const twoModules = "modules:\n" +
+	"  jumplinks:\n    project: project/jumplinks\n    core_versions: [\"11\"]\n" +
+	"  pathauto:\n    project: project/pathauto\n    core_versions: [\"10\", \"11\"]\n"
+
+func TestSettingCoreVersionsWritesWhatTheLoaderReadsBack(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	updated, err := NewEditor(path).SetCoreVersions("jumplinks", []string{"11", "12"})
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if !slices.Equal(updated.CoreVersions, []string{"11", "12"}) {
+		t.Errorf("returned %v", updated.CoreVersions)
+	}
+
+	registry, err := RegistryFromFile(path)
+	if err != nil {
+		t.Fatalf("the registry it wrote does not load: %v", err)
+	}
+	module, _ := registry.Find("jumplinks")
+	if !slices.Equal(module.CoreVersions, []string{"11", "12"}) {
+		t.Errorf("cores %v", module.CoreVersions)
+	}
+	// Its project is untouched: only the core list was named.
+	if module.Project != "project/jumplinks" {
+		t.Errorf("project %q", module.Project)
+	}
+}
+
+// The order given is the order written, never sorted: core_versions[0] is the
+// core a command targets when --version is omitted, so sorting would retarget
+// every check of the module without saying so.
+func TestSettingCoreVersionsKeepsTheOrderGiven(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	if _, err := NewEditor(path).SetCoreVersions("pathauto", []string{"12", "10"}); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	registry, _ := RegistryFromFile(path)
+	module, _ := registry.Find("pathauto")
+	if !slices.Equal(module.CoreVersions, []string{"12", "10"}) {
+		t.Errorf("cores %v, want [12 10]", module.CoreVersions)
+	}
+}
+
+// Every other entry keeps its definition and its place in the file, because
+// the registry is a file somebody reads and an edit it did not ask for is
+// noise in a diff.
+func TestSettingCoreVersionsLeavesTheRestOfTheFileAlone(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	if _, err := NewEditor(path).SetCoreVersions("pathauto", []string{"11"}); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Index(string(written), "jumplinks") > strings.Index(string(written), "pathauto") {
+		t.Errorf("the entries were reordered:\n%s", written)
+	}
+
+	registry, _ := RegistryFromFile(path)
+	other, found := registry.Find("jumplinks")
+	if !found {
+		t.Fatalf("jumplinks was dropped:\n%s", written)
+	}
+	if !slices.Equal(other.CoreVersions, []string{"11"}) || other.Project != "project/jumplinks" {
+		t.Errorf("jumplinks changed: %+v", other)
+	}
+}
+
+// An unregistered name is a refusal, not an insert. Inventing an entry would
+// hand every survey command a project path nobody chose; modules:add is where
+// a new entry comes from.
+func TestSettingCoreVersionsRefusesAModuleWithNoEntry(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	if _, err := NewEditor(path).SetCoreVersions("token", []string{"11"}); err == nil {
+		t.Fatal("it accepted a module that is not registered")
+	} else if !strings.Contains(err.Error(), "token") {
+		t.Errorf("the refusal does not name the module: %v", err)
+	}
+
+	registry, _ := RegistryFromFile(path)
+	if _, found := registry.Find("token"); found {
+		t.Error("it registered the module anyway")
+	}
+}
+
+// A core list the loader would reject never becomes the registry: it is
+// validated from the temporary file, so the real one is still readable after.
+func TestABadCoreListNeverReachesTheRegistry(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	if _, err := NewEditor(path).SetCoreVersions("jumplinks", []string{"not-a-core"}); err == nil {
+		t.Fatal("it accepted a core version that is not a major")
+	}
+
+	registry, err := RegistryFromFile(path)
+	if err != nil {
+		t.Fatalf("the registry was corrupted: %v", err)
+	}
+	module, _ := registry.Find("jumplinks")
+	if !slices.Equal(module.CoreVersions, []string{"11"}) {
+		t.Errorf("cores %v — the rejected list was written", module.CoreVersions)
+	}
+}
+
+// An empty list is rejected the same way, by the loader's own rule rather than
+// by a second copy of it here.
+func TestAnEmptyCoreListNeverReachesTheRegistry(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	if _, err := NewEditor(path).SetCoreVersions("jumplinks", []string{}); err == nil {
+		t.Fatal("it accepted an empty core list")
+	}
+
+	if _, err := RegistryFromFile(path); err != nil {
+		t.Fatalf("the registry was corrupted: %v", err)
+	}
+}
+
+// A rejected edit leaves no temporary file beside the registry.
+func TestARejectedSetLeavesNoDebris(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	if _, err := NewEditor(path).SetCoreVersions("jumplinks", []string{"nope"}); err == nil {
+		t.Fatal("it accepted a bad core version")
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != filepath.Base(path) {
+			t.Errorf("left %q beside the registry", entry.Name())
+		}
+	}
+}
+
+// An unreadable registry is reported rather than replaced with one holding
+// only this edit.
+func TestSettingCoreVersionsOnAnUnreadableRegistryRefuses(t *testing.T) {
+	path := registryHolding(t, "\tnot: [yaml")
+
+	if _, err := NewEditor(path).SetCoreVersions("jumplinks", []string{"11"}); err == nil {
+		t.Fatal("it wrote over a registry it could not parse")
+	}
+}

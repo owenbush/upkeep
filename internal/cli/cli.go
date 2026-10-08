@@ -118,6 +118,8 @@ const (
 	FlagNoOpen       = "no-open"
 	FlagNoUpdate     = "no-update"
 	FlagScratchDir   = "scratch-dir"
+	FlagRemove       = "remove"
+	FlagSet          = "set"
 )
 
 // AddCockpit adds --cockpit.

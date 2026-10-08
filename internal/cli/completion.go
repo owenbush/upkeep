@@ -276,3 +276,40 @@ func recoverCompletion() { _ = recover() }
 func AddModuleFlagCompletion(cmd *cobra.Command) {
 	registerFlagCompletion(cmd, "module", CompleteModule)
 }
+
+// CompleteBuiltCore suggests the core majors base artifacts exist for.
+func CompleteBuiltCore(
+	cmd *cobra.Command, _ []string, typed string,
+) ([]string, cobra.ShellCompDirective) {
+	defer recoverCompletion()
+
+	where, err := Cockpit(cmd)
+	if err != nil {
+		return noSuggestions()
+	}
+
+	return suggest(CoresOnDisk(where), typed)
+}
+
+// AddTrackCompletion wires modules:track: the module name, then the cores
+// after it, then --remove.
+//
+// The positional cores come from the base artifacts on this machine, not from
+// anything the registry says. Tracking a core is a prelude to checking against
+// one, and a core with no artifact set cannot be checked — so suggesting it
+// would be suggesting the next refusal. --remove asks the opposite question
+// and completes what the module tracks today, which is what CompleteTargetCore
+// already answers.
+func AddTrackCompletion(cmd *cobra.Command) {
+	cmd.ValidArgsFunction = func(
+		cmd *cobra.Command, args []string, typed string,
+	) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return CompleteModule(cmd, args, typed)
+		}
+
+		return CompleteBuiltCore(cmd, args, typed)
+	}
+
+	registerFlagCompletion(cmd, FlagRemove, CompleteTargetCore)
+}

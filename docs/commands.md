@@ -31,6 +31,7 @@ Conventions worth knowing before the list:
 | [`merge`](#upkeep-merge) | Fast-lane merge: prompt per READY-AUTO merge request |
 | [`modules`](#upkeep-modules) | List the modules registered in the cockpit module registry |
 | [`modules:add`](#upkeep-modulesadd) | Register maintained modules from your git.drupalcode.org project memberships |
+| [`modules:track`](#upkeep-modulestrack) | Change which Drupal core majors a registered module is tracked for |
 | [`needs-work`](#upkeep-needs-work) | Post local check results as a comment on the merge request |
 | [`notes`](#upkeep-notes) | Draft paste-ready Markdown release notes: merged MRs since the module's last tag |
 | [`patch:apply`](#upkeep-patchapply) | Download a patch from a drupal.org issue and apply it in the module environment |
@@ -340,6 +341,36 @@ upkeep modules:add [module...] [flags]
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--core-versions=CORE-VERSIONS` | Comma-separated core majors the new entries track (e.g. "10,11") Default: `11`. |
+
+## `upkeep modules:track`
+
+Changes the core_versions of a module already in the registry, so the cores a
+module is checked against are a command rather than a file edit.
+
+  upkeep modules:track jumplinks           what it tracks today
+  upkeep modules:track jumplinks 12        track core 12 as well
+  upkeep modules:track jumplinks --remove=10
+  upkeep modules:track jumplinks --set=12,11
+
+Cores named as arguments are appended, so the first entry — the core a command
+targets when --version is omitted — does not move unless you say so. --set
+replaces the whole list in the order you give it, which is how that default
+changes.
+
+Writes registry.yml, and nothing else. Use `upkeep modules:add` to register a
+module that has no entry yet.
+
+```
+upkeep modules:track <module> [core...] [flags]
+```
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--remove=REMOVE` | Comma-separated core majors to stop tracking (e.g. "10") |
+| `--set=SET` | Comma-separated core majors to track, replacing the list; the first is the default (e.g. "12,11") |
 
 ## `upkeep needs-work`
 

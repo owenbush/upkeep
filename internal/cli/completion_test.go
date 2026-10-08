@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -354,4 +355,71 @@ func completionForFlag(cmd *cobra.Command, flag string) (
 	}
 
 	return complete(flag)
+}
+
+// The cores after the module name complete from the base artifacts on this
+// machine, not from the registry.
+//
+// Tracking a core is a prelude to checking against it, and a core with no
+// artifact set cannot be checked — suggesting one would be suggesting the next
+// refusal.
+func TestTrackCompletionOffersTheCoresBuiltHere(t *testing.T) {
+	root := aCompletableCockpit(t)
+
+	if got := completing(t, CompleteBuiltCore, root, nil, ""); strings.Join(got, ",") != "12" {
+		t.Errorf("got %v, want the core with artifacts on disk", got)
+	}
+	// And filtered by what has been typed, like every other completion.
+	if got := completing(t, CompleteBuiltCore, root, nil, "9"); len(got) != 0 {
+		t.Errorf("got %v for a prefix nothing matches", got)
+	}
+}
+
+// modules:track completes the module first, the built cores after it, and
+// --remove from what the module tracks today — the opposite question, so the
+// opposite source.
+func TestTrackCompletionWiresEachPositionToItsOwnQuestion(t *testing.T) {
+	root := aCompletableCockpit(t)
+	cmd := &cobra.Command{Use: "modules:track"}
+	AddCockpit(cmd)
+	AddProjectsRoot(cmd)
+	cmd.Flags().String(FlagRemove, "", "")
+	AddTrackCompletion(cmd)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--cockpit=" + root})
+	cmd.RunE = func(*cobra.Command, []string) error { return nil }
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	first, _ := cmd.ValidArgsFunction(cmd, nil, "")
+	if !slices.Contains(first, "pathauto") {
+		t.Errorf("the first argument did not complete module names: %v", first)
+	}
+
+	later, _ := cmd.ValidArgsFunction(cmd, []string{"pathauto"}, "")
+	if strings.Join(later, ",") != "12" {
+		t.Errorf("the cores after the module gave %v, want the built core", later)
+	}
+
+	// --remove asks what the module tracks, which is 11 for pathauto here and
+	// is deliberately not the same answer as the positional cores.
+	removable := completing(t, CompleteTargetCore, root, []string{"pathauto"}, "")
+	if strings.Join(removable, ",") != "11" {
+		t.Errorf("--remove gave %v, want what pathauto tracks", removable)
+	}
+}
+
+// And it stays silent whatever is wrong, like the rest of this file: a cockpit
+// that is not there, and one that cannot be resolved at all.
+func TestTrackCompletionIsSilentWhenNothingCanBeRead(t *testing.T) {
+	for name, root := range map[string]string{
+		"no cockpit at all":   filepath.Join(t.TempDir(), "nowhere"),
+		"an unusable cockpit": "",
+	} {
+		if got := completing(t, CompleteBuiltCore, root, nil, ""); len(got) != 0 {
+			t.Errorf("%s: got %v", name, got)
+		}
+	}
 }

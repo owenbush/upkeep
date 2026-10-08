@@ -284,6 +284,27 @@ and was learned the hard way — see `docs/go-port.md`.
   (`ModuleResolution::projectFailure()`, shared by the two places that report
   it). That hint lives at the *failure*, not at resolution: until drupal.org
   says there is nothing there, an unheard-of name is an ordinary request.
+- **`modules:track` is how core_versions changes.** The one registry field
+  that moves in the ordinary course of maintenance — a core major reaches
+  alpha, an old one goes end of life — and the refusal that sends people to it
+  used to end "Add it to core_versions in registry.yml", which is a tool
+  describing a file edit rather than offering to make it. Cores named as
+  arguments are **appended, never sorted or inserted**, because
+  `core_versions[0]` is what `SelectCoreVersion` targets when `--version` is
+  omitted: sorting the list would silently retarget every bare `upkeep check`
+  of that module, so moving the default is `--set`'s job and nothing else's.
+  Deliberately **not** folded into `modules:add --core-versions`: that command
+  skips a name already registered on the stance that an existing definition is
+  a maintainer's deliberate statement, and it reads GitLab for your
+  memberships — needing a credential to change a local YAML list would be
+  absurd. `cockpit.Editor` grew `SetCoreVersions` beside `Add`, both through
+  one `publish` (render, temp file, re-validate *from that file*, rename), and
+  an unregistered name is a refusal rather than an insert — inventing an entry
+  would hand every survey command a project path nobody chose. A newly tracked
+  core with no base artifacts **warns and names the build** rather than
+  refusing: tracking a core before building for it is an ordinary order to do
+  these in, and the check that needs the artifacts is the next command anyway.
+  Its stdout is empty on every path; `upkeep modules` is the reader.
 - **Reading needs no credential.** git.drupalcode.org serves a public
   project's merge requests, refs, forks and raw files anonymously — measured
   across upkeep's whole read surface — so requiring a token to *look* was a
