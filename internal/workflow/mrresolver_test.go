@@ -134,13 +134,21 @@ func TestAnUntrackedCoreIsRefusedBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-// A watched module's core list is a line somebody wrote, so that is what to
-// edit; a derived module has no entry at all and being told to edit one sends
-// a maintainer to a file that does not mention their module.
+// Each kind of module is given the command that fixes *its* problem: a watched
+// module's core list is a line somebody wrote, and `modules:track` is what
+// writes it; a derived module has no entry at all, so its answer is the
+// artifact set its list is actually made of. Being sent to the other one is
+// being sent somewhere that cannot help.
 func TestAnUntrackedCoreSaysTheRightThingForEachKindOfModule(t *testing.T) {
 	watchedErr := SelectCoreVersionError(t, watched["pathauto"], "9")
-	if !strings.Contains(watchedErr, "registry.yml") {
-		t.Errorf("a watched module was not told where its list lives: %s", watchedErr)
+	// The command, complete with the module and the core, so the line can be
+	// pasted rather than assembled.
+	if !strings.Contains(watchedErr, "upkeep modules:track pathauto 9") {
+		t.Errorf("a watched module was not given the command that tracks a core: %s", watchedErr)
+	}
+	// And not the file edit it used to name, now that a command does it.
+	if strings.Contains(watchedErr, "registry.yml") {
+		t.Errorf("a watched module was told to edit a file by hand: %s", watchedErr)
 	}
 	if !strings.Contains(watchedErr, "tracks: 10, 11") {
 		t.Errorf("the list is not ascending: %s", watchedErr)
@@ -152,6 +160,10 @@ func TestAnUntrackedCoreSaysTheRightThingForEachKindOfModule(t *testing.T) {
 	derivedErr := SelectCoreVersionError(t, derived, "12")
 	if strings.Contains(derivedErr, "registry.yml") {
 		t.Errorf("a derived module was sent to a file that does not mention it: %s", derivedErr)
+	}
+	// Nor to modules:track, which refuses a module with no entry to edit.
+	if strings.Contains(derivedErr, "modules:track") {
+		t.Errorf("a derived module was sent to a command that would refuse it: %s", derivedErr)
 	}
 	if !strings.Contains(derivedErr, "base-artifacts:build --version=12") {
 		t.Errorf("the derived module was not told how to get the core: %s", derivedErr)

@@ -118,12 +118,23 @@ func SelectCoreVersion(module cockpit.Module, requestedCore string) (string, err
 // sentence depending on where the module's core list came from.
 //
 // A watched module's core_versions is a line somebody wrote in registry.yml,
-// so that is the thing to edit. A derived module has no entry at all: its list
-// is the base artifacts on this machine, and telling a maintainer to "add it
-// to core_versions in registry.yml" sends them to edit a file that does not
-// mention their module. Reported from a real run — `--version=12` on an
-// unregistered module answered "Its registry entry tracks: 11, 10", naming a
-// registry entry that does not exist and listing the contents of a directory.
+// so that is the thing to change — and `modules:track` is the command that
+// changes it, which is what this names. It used to end "Add it to
+// core_versions in registry.yml", describing a file edit: true when nothing
+// could make that edit, and a worse answer than a command the moment one
+// could. The core goes on the end of the suggestion unquoted, so the line can
+// be pasted.
+//
+// A derived module has no entry at all: its list is the base artifacts on this
+// machine, and telling a maintainer to edit core_versions sends them to a file
+// that does not mention their module. Reported from a real run —
+// `--version=12` on an unregistered module answered "Its registry entry
+// tracks: 11, 10", naming a registry entry that does not exist and listing the
+// contents of a directory.
+//
+// Neither branch mentions the other's remedy, because tracking a core is the
+// step that then reports a missing artifact set itself: `modules:track` warns
+// and names the build. One command per refusal, each leading to the next.
 func untrackedCore(module cockpit.Module, requestedCore string) error {
 	// Listed ascending here whatever the internal order: newest-first exists
 	// so that the first entry is the default, and it reads as a mistake in
@@ -138,9 +149,10 @@ func untrackedCore(module cockpit.Module, requestedCore string) error {
 
 	if module.Watched {
 		return fmt.Errorf(
-			"module %q does not track core version %q. Its registry entry tracks: %s. "+
-				"Add it to core_versions in registry.yml to check against it",
+			"module %q does not track core version %s. Its registry entry tracks: %s.\n"+
+				"Track it with: upkeep modules:track %s %s",
 			module.Name, requestedCore, strings.Join(available, ", "),
+			module.Name, requestedCore,
 		)
 	}
 

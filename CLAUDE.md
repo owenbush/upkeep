@@ -272,10 +272,11 @@ and was learned the hard way — see `docs/go-port.md`.
   error. A registry entry always wins where there is
   one: a maintainer's `core_versions` is a deliberate statement and outranks
   anything inferred. `Module::$watched` carries that provenance, because it
-  changes what a refusal can honestly say — an unavailable core is "add it to
-  core_versions in registry.yml" for a watched module and "no base artifacts
-  for core N, build one" for a derived one, and telling somebody to edit a
-  file that does not mention their module is worse than not answering. A derived module's cores are **newest first**, because
+  changes what a refusal can honestly say, and now *which command it names* —
+  an unavailable core is `upkeep modules:track <module> <core>` for a watched
+  module and `upkeep base-artifacts:build --version=N` for a derived one, and
+  sending somebody to a command that would refuse them (there is no entry to
+  edit) is worse than not answering. A derived module's cores are **newest first**, because
   `selectCoreVersion()` documents `core_versions[0]` as the default and
   `versionsOnDisk()` sorts ascending — passed through unchanged, asking about
   an unregistered module answered for the *oldest* core built on the machine. What is **not** dropped is the refusal — a name that
@@ -288,7 +289,13 @@ and was learned the hard way — see `docs/go-port.md`.
   that moves in the ordinary course of maintenance — a core major reaches
   alpha, an old one goes end of life — and the refusal that sends people to it
   used to end "Add it to core_versions in registry.yml", which is a tool
-  describing a file edit rather than offering to make it. Cores named as
+  describing a file edit rather than offering to make it; it now names
+  `upkeep modules:track <module> <core>`, with the module and core filled in
+  so the line can be pasted. **The suggestion is tested by being run**, not by
+  being compared — `TestTheCommandAnUntrackedCoreNamesIsOneThatWorks` scrapes
+  the command out of the refusal, executes it, and asserts the original
+  command then fails for some other reason. A renamed command or an argument
+  in the wrong order fails there, where a string comparison would still pass. Cores named as
   arguments are **appended, never sorted or inserted**, because
   `core_versions[0]` is what `SelectCoreVersion` targets when `--version` is
   omitted: sorting the list would silently retarget every bare `upkeep check`

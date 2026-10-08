@@ -414,3 +414,50 @@ func TestModulesTrackReportsARegistryItCannotWrite(t *testing.T) {
 		t.Error("it failed silently")
 	}
 }
+
+// The command an untracked core is refused with is one that actually runs.
+//
+// A refusal naming a command is only worth something if the line can be
+// pasted, so this scrapes the suggestion out of the refusal and executes it
+// rather than asserting on its text: a renamed command, a changed flag or an
+// argument in the wrong order all fail here, where a string comparison would
+// still pass. The second run proves the suggestion fixed the thing it was
+// offered for — it fails for a different reason, not this one.
+func TestTheCommandAnUntrackedCoreNamesIsOneThatWorks(t *testing.T) {
+	root := aTrackingCockpit(t)
+
+	code, _, stderr := invoke(t, "env:path", "jumplinks", "--version=12", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
+	}
+	suggested := suggestedUpkeepCommand(t, stderr)
+
+	if code, _, stderr := invoke(t, append(suggested, "--cockpit="+root)...); code != workflow.OK {
+		t.Fatalf("the suggested command failed: upkeep %s\n%s", strings.Join(suggested, " "), stderr)
+	}
+	if got := coresOf(t, root, "jumplinks"); got != "11,12" {
+		t.Errorf("the suggested command did not track the core: %q", got)
+	}
+
+	_, _, stderr = invoke(t, "env:path", "jumplinks", "--version=12", "--cockpit="+root)
+
+	if strings.Contains(stderr, "does not track core version") {
+		t.Errorf("the core is still untracked after doing what it said: %q", stderr)
+	}
+}
+
+// suggestedUpkeepCommand is the `upkeep …` line a refusal offers, as argv.
+func suggestedUpkeepCommand(t *testing.T, stderr string) []string {
+	t.Helper()
+
+	for _, line := range strings.Split(stderr, "\n") {
+		_, suggestion, found := strings.Cut(line, "upkeep ")
+		if found {
+			return strings.Fields(suggestion)
+		}
+	}
+	t.Fatalf("the refusal named no command to run:\n%s", stderr)
+
+	return nil
+}
