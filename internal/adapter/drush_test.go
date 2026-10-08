@@ -37,7 +37,7 @@ func TestTheToolchainHintFiresOnlyForAnUnconstrainedPreRelease(t *testing.T) {
 	// It must name the flag and carry a runnable line: the whole point is that
 	// composer's forty lines never mention there is a flag.
 	for _, want := range []string{
-		"--" + ToolRequireFlag + "='^13@dev'", // pasteable, with a branch that works
+		"--" + ToolRequireFlag + "='^14@dev'", // pasteable, with the branch that works
 		"--version=12",                        // the core this run was about
 		"--stability=beta",                    // and the stability it was built at
 		DrushPackage,
@@ -47,6 +47,13 @@ func TestTheToolchainHintFiresOnlyForAnUnconstrainedPreRelease(t *testing.T) {
 		}
 	}
 
+	// 13.x-dev clears guzzle and then fails on symfony against core 12, so
+	// suggesting it sends somebody to a second identical wall. This assertion
+	// is the correction: it was the advice once.
+	if strings.Contains(hint, "^13@dev") {
+		t.Errorf("the hint suggests a branch that cannot resolve against core 12:%s", hint)
+	}
+
 	// A released core: the toolchain resolves, so a failure is something else
 	// and this advice would be a guess.
 	if got := ToolRequireHint("11.4.8", ""); got != "" {
@@ -54,7 +61,7 @@ func TestTheToolchainHintFiresOnlyForAnUnconstrainedPreRelease(t *testing.T) {
 	}
 	// A constraint was already given: repeating the suggestion that was taken
 	// buries whatever composer actually said. Same rule as UnresolvableHint.
-	if got := ToolRequireHint("12.0.0-beta1", "^13@dev"); got != "" {
+	if got := ToolRequireHint("12.0.0-beta1", "^14@dev"); got != "" {
 		t.Errorf("an answered run got the hint again:%s", got)
 	}
 }

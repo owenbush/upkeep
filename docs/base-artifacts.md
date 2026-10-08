@@ -82,43 +82,74 @@ Accepted values are composer's own, loosest first: `dev`, `alpha`, `beta`,
 than handed to composer — which answers a bad `@` suffix with a parse error
 about the whole constraint.
 
-### A core so new that drush has no release for it
+### A core so new that nothing installs into it
 
-Resolving the tree is only half of it. The build then installs drush into the
-throwaway copy to run `site:install`, and on a pre-release core that can fail
-on its own:
+Resolving the tree is only half of it, and the other half was broken.
+
+`composer create-project drupal/recommended-project:^12@beta` applies that
+stability to **the one install** and does not write it into the `composer.json`
+it creates. So the tree is left declaring composer's default, `stable`, while
+its lock holds a beta core — and every later `composer require` in it is a
+partial update that composer refuses, over *core*, not over whatever you were
+installing:
 
 ```
-Problem 1
-  - drupal/core-recommended is locked to version 12.0.0-beta1 ...
-  - drush/drush[12.0.0-rc1, ..., 13.8.0] require guzzlehttp/guzzle ^7.0 ->
-    found guzzlehttp/guzzle[...7.15.5] but the package is fixed to 8.2.0
+$ composer require psr/log:^3
+Your requirements could not be resolved to an installable set of packages.
+  - drupal/core is fixed to 12.0.0-beta1 (lock file version) by a partial
+    update but that version is rejected by your minimum-stability.
 ```
 
-Measured at the time of writing: core `12.0.0-beta1` requires
-`guzzlehttp/guzzle ^8.0.1`, drush's newest release is `13.8.0` and requires
-`^7.0`, and **none of drush's 244 tagged releases supports guzzle 8**. So
-composer's own suggestion — `--with-all-dependencies` — cannot help: there is
-no guzzle that satisfies both sides, and no amount of letting it upgrade
-things will invent one. The development branches do: `13.x-dev` accepts
-`^7.0 || ^8.0`.
+That is a stable package with nothing to do with any of this. Wiring the
+module, installing the module's dev requirements, provisioning the check
+toolchain and installing drush are all `composer require`, so **no environment
+seeded from a pre-release tree could do anything at all**.
+
+So a pre-release tree now records its own stability, immediately after the
+resolve and before anything copies it:
 
 ```bash
-upkeep base-artifacts:build --version=12 --stability=beta --drush='^13@dev'
+composer config minimum-stability dev
+composer config prefer-stable true
 ```
 
-**A flag, for the same reason `--stability` is one.** An unpinned development
-branch is a thing that can break overnight, and choosing one on somebody's
-behalf — inside the build that produces the tree every later verdict is
-measured against — is not a trade the tool makes. The failure names the flag
-and prints a runnable line instead, and is suppressed on a released core and
-once a constraint was given, by the same rule as the resolve hint above.
+`dev` rather than the stability that was asked for, because `beta` fixes the
+above and still cannot install a dev toolchain (below). `prefer-stable` is what
+makes `dev` safe and is not optional: without it, composer takes a dev version
+of everything it can. Measured on a real resolve of core `12.0.0-beta1` plus
+drush `^14@dev` — **no already-locked package moved**, and exactly three ended
+up at dev: drush and the two of its dependencies that have no release. Nothing
+is written for a released core; that tree is correct as composer left it.
 
-Prefer `^13@dev` to a bare `*@dev`: composer takes the highest match, which is
-`14.x-dev`, and that pulls `grasmash/yaml-cli: 4.x-dev` and
-`chi-teck/drupal-code-generator: ^4@dev` along with it — transitive dev
-requirements that run into the project's `minimum-stability` wall. `13.x-dev`
-has no dev-pinned dependencies.
+### drush, on a core that new
+
+Even with the tree fixed, drush needs naming. Core `12.0.0-beta1` pins
+`guzzlehttp/guzzle ^8.0.1` and `symfony/* ^8.1`, and:
+
+| drush | | |
+|---|---|---|
+| `13.8.0` (newest release) | guzzle `^7.0` | no |
+| `13.x-dev` | symfony `^6 \|\| ^7` | no |
+| `14.x-dev` | guzzle `^7.8.2 \|\| ^8.0`, symfony `^7 \|\| ^8` | **yes** |
+
+None of drush's tagged releases supports guzzle 8, so composer's own
+suggestion — `--with-all-dependencies` — cannot help: no guzzle and no symfony
+satisfies both sides at once. Only `14.x-dev` does, and it has no release.
+
+```bash
+upkeep base-artifacts:build --version=12 --stability=beta --drush='^14@dev'
+```
+
+Not `^13@dev`. That was this page's advice once and it was wrong: `13.x-dev`
+clears guzzle, which is the constraint composer names first, and then fails on
+symfony. Reading the one dependency in the error message is how that happened.
+
+**A flag, for the same reason `--stability` is one.** An unpinned development
+branch can break overnight, and choosing one on somebody's behalf inside the
+build that produces the tree every later verdict is measured against is not a
+trade the tool makes. The failure names the flag and prints a runnable line
+instead, suppressed on a released core and once a constraint was given — the
+same rule as the resolve hint above.
 
 ## 3. Rebuilding
 
@@ -181,18 +212,26 @@ artifact set that no command could use. The key is omitted when empty and
 optional on read, so every set built before it existed still reads — as
 "whatever the engine defaults to", which is what those sets used.
 
-The stability needs no such record, because it is *derivable*: `meta.yml`
-already holds the resolved `core_version`, and `StabilityOf` reads the
-stability straight back out of `12.0.0-beta1`. Nothing about drush's
-constraint can be derived from the tree, so it is stored.
+`--stability` needs no such record in `meta.yml`, because it is *derivable*:
+the file already holds the resolved `core_version`, and `StabilityOf` reads the
+stability straight back out of `12.0.0-beta1`. Nothing about drush's constraint
+can be derived from anything, so it is stored.
 
-### The stability is not persisted
+### `--stability` is not persisted, but the tree's own stability is
 
-It is a property of the invocation, not of the artifact set. A `--force`
-rebuild that omits `--stability` goes back to plain `^12`. While 12 is still
-pre-release that fails — with the hint naming the flag, so it tells you rather
-than doing something surprising — and once 12 is released, plain `^12` is what
-you wanted anyway.
+Two different things, and the distinction is easy to lose.
+
+**The flag is a property of the invocation.** A `--force` rebuild that omits
+`--stability` goes back to plain `^12`. While 12 is still pre-release that
+fails — with the hint naming the flag, so it tells you rather than doing
+something surprising — and once 12 is released, plain `^12` is what you wanted
+anyway.
+
+**The resolved tree's stability is a property of the tree**, and is written
+into its `composer.json` as `minimum-stability` plus `prefer-stable` (§2). That
+is not the flag being remembered; it is the tree declaring what it is, so that
+`composer require` inside it and inside every environment copied from it works
+at all. Without it none of them did.
 
 If you need to know what a set actually holds, read **Exact core** in
 `base-artifacts:status`; that is the resolved version from the lock, which is

@@ -81,7 +81,7 @@ upkeep base-artifacts:build [flags]
 | Option | What it does |
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
-| `--drush=DRUSH` | Composer constraint for drush/drush, for a core whose dependencies no released version satisfies yet (e.g. "^13@dev"). Recorded in the artifact meta and reused by every environment seeded from this set |
+| `--drush=DRUSH` | Composer constraint for drush/drush, for a core whose dependencies no released version satisfies yet (e.g. "^14@dev"). Recorded in the artifact meta and reused by every environment seeded from this set |
 | `--force` | Deliberately rebuild over an existing artifact set |
 | `--scratch-dir=SCRATCH-DIR` | Directory for the throwaway site-install project (must be a path your container runtime mounts, e.g. under your home directory) Default: `~/.upkeep/scratch`. |
 | `--stability=STABILITY` | Lowest release stability to accept (dev, alpha, beta, RC, stable). Needed while a core major is still in alpha or beta, which is when compatibility work happens |

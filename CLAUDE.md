@@ -635,18 +635,34 @@ and was learned the hard way — see `docs/go-port.md`.
   on core's constraint only — `drupal/coder@alpha` carries no version
   constraint at all and would admit an alpha of a package with nothing to do
   with the seeded core.
-  **A core so new that drush has no release for it is a second wall, and
-  `--drush` is the flag for it.** Resolving the tree is half the build; it then
-  installs drush into the throwaway to run `site:install`, and that can fail on
-  its own. Measured: core `12.0.0-beta1` requires `guzzlehttp/guzzle ^8.0.1`,
-  drush's newest release (13.8.0) requires `^7.0`, and **none of drush's 244
-  tagged releases supports guzzle 8** — so composer's own
-  `--with-all-dependencies` suggestion cannot help, because no guzzle satisfies
-  both sides. `13.x-dev` accepts `^7.0 || ^8.0` and has no dev-pinned
-  dependencies, where `14.x-dev` drags in `grasmash/yaml-cli: 4.x-dev` and runs
-  into `minimum-stability`. A flag rather than a fallback for the same reason
-  `--stability` is one, with the added one that an unpinned dev branch can
-  break overnight. **The constraint is persisted and the stability is not**, an
+  **A pre-release tree records its own stability, and without that nothing
+  installs into it.** `composer create-project drupal/recommended-project:^12@beta`
+  applies the stability to that one install and never writes it into the
+  composer.json it creates, so the tree declares `stable` while its lock holds
+  a beta core — and every later `composer require` is a partial update composer
+  refuses *over core*, whatever you were installing. Verified with a real
+  resolve: `composer require psr/log:^3`, entirely stable and unrelated, fails
+  that way. Wiring the module, its dev requirements, the check toolchain and
+  the drush install are all `composer require`, so **no environment seeded from
+  a pre-release tree could do anything at all** — `--drush` addressed a symptom
+  of this. `Builder.persistStability` runs `composer config minimum-stability
+  dev` and `prefer-stable true` after the resolve and before anything copies
+  the tree. `dev` rather than the stability asked for, because `beta` fixes the
+  above and still cannot install a dev toolchain; `prefer-stable` is what makes
+  `dev` safe and is not optional — measured, core 12.0.0-beta1 plus drush
+  `^14@dev` moved no already-locked package and left exactly three at dev.
+  Nothing is written for a released core, whose tree must stay byte-identical
+  to what the previous version produced.
+  **`--drush` is still needed on top of it.** Core `12.0.0-beta1` pins guzzle
+  `^8.0.1` and symfony `^8.1`; drush 13.8.0 wants guzzle `^7.0`, `13.x-dev`
+  wants symfony `^6 || ^7`, and only `14.x-dev` (guzzle `^7.8.2 || ^8.0`,
+  symfony `^7 || ^8`) fits — so `--with-all-dependencies` cannot help, nothing
+  satisfies both sides. **The hint said `^13@dev` first and that was wrong**:
+  13.x-dev clears guzzle, which is the constraint composer names first, then
+  fails on symfony. Checking the one dependency in the error message is how
+  that happened, and a test now pins `^13@dev` out of the hint. A flag rather
+  than a fallback for the same reason `--stability` is one, with the added one
+  that an unpinned dev branch can break overnight. **The constraint is persisted and the stability is not**, an
   asymmetry that is the point: `meta.yml` takes `tool_require`, because
   `check`/`review`/`dev` do not take the flag and should not, so a set built
   with a constraint provisioning then ignored would be a working artifact set

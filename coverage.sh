@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 FLOORS=$(
 	cat <<'EOF'
 internal/adapter              95.5
-internal/baseartifact         96.3
+internal/baseartifact         96.4
 internal/check               100.0
 internal/cli                  99.7
 internal/cli/command          97.7

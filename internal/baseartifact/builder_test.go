@@ -71,6 +71,17 @@ func (r *scriptedRunner) Capture([]string, string, time.Duration) proc.Captured 
 	return proc.Captured{}
 }
 
+// indexOf is where a command ran, for the orderings that matter.
+func (r *scriptedRunner) indexOf(fragment string) int {
+	for at, line := range r.ran {
+		if strings.Contains(line, fragment) {
+			return at
+		}
+	}
+
+	return -1
+}
+
 func (r *scriptedRunner) didRun(fragments ...string) bool {
 	for _, line := range r.ran {
 		matched := true
@@ -941,5 +952,107 @@ func TestTheInstallIsToldTheResolvedCoreVersion(t *testing.T) {
 
 	if site.coreVersion == "" || site.coreVersion == "11" {
 		t.Errorf("the install got %q, want the resolved version", site.coreVersion)
+	}
+}
+
+// resolvingCore makes the fake create-project write a lock holding the given
+// core version, which is what decides whether the tree is a pre-release one.
+func resolvingCore(t *testing.T, runner *scriptedRunner, coreVersion string) {
+	t.Helper()
+
+	runner.does("composer create-project", func(command []string) {
+		treePath := command[3]
+		if err := os.MkdirAll(treePath, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		lock := `{"packages":[{"name":"drupal/core","version":"` + coreVersion + `"}]}`
+		if err := os.WriteFile(filepath.Join(treePath, "composer.lock"), []byte(lock), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	})
+}
+
+// A pre-release tree records its own stability, because create-project does
+// not.
+//
+// `create-project drupal/recommended-project:^12@beta` applies beta to that
+// one install and writes nothing into the composer.json it creates, so the
+// tree is left declaring composer's default. Every later `composer require` in
+// it is then a partial update against a lock holding a beta core, and composer
+// refuses over *core* rather than over what is being installed — verified with
+// a real resolve, where `composer require psr/log:^3` fails that way. Which
+// made every environment seeded from such a tree unusable: wiring the module,
+// its dev requirements, the check toolchain and the drush install are all
+// `composer require`.
+func TestAPreReleaseTreeRecordsItsOwnStability(t *testing.T) {
+	runner, site := newScripted(), newSite()
+	builder, _, _ := aBuilder(t, runner, site)
+	resolvingCore(t, runner, "12.0.0-beta1")
+
+	if _, err := builder.Build("12", false, "beta", ""); err != nil {
+		t.Fatalf("build: %v\n%s", err, runner.transcript())
+	}
+
+	if !runner.didRun("composer config minimum-stability dev") {
+		t.Errorf("the tree does not carry a stability:\n%s", runner.transcript())
+	}
+	// Not optional, and not a detail: without it, `dev` invites a dev version
+	// of everything. With it, a verified resolve moved no already-locked
+	// package and left only the three that have no release.
+	if !runner.didRun("composer config prefer-stable true") {
+		t.Errorf("minimum-stability was widened with nothing holding it back:\n%s", runner.transcript())
+	}
+}
+
+// A released tree is left exactly as composer created it.
+//
+// It is already correct, and it should be byte-identical to the tree the
+// previous version of upkeep produced — writing keys into it would change
+// every artifact set for a reason that does not apply to it.
+func TestAReleasedTreeIsNotTouched(t *testing.T) {
+	runner, site := newScripted(), newSite()
+	builder, _, _ := aBuilder(t, runner, site)
+
+	if _, err := builder.Build("11", false, "", ""); err != nil {
+		t.Fatalf("build: %v\n%s", err, runner.transcript())
+	}
+
+	if runner.didRun("composer config") {
+		t.Errorf("a released tree was edited:\n%s", runner.transcript())
+	}
+}
+
+// Recording it happens before the throwaway is copied from the tree, or the
+// copy would be the one tree that still cannot install anything.
+func TestTheStabilityIsRecordedBeforeTheTreeIsCopied(t *testing.T) {
+	runner, site := newScripted(), newSite()
+	builder, _, _ := aBuilder(t, runner, site)
+	resolvingCore(t, runner, "12.0.0-beta1")
+
+	if _, err := builder.Build("12", false, "beta", ""); err != nil {
+		t.Fatalf("build: %v\n%s", err, runner.transcript())
+	}
+
+	config := runner.indexOf("composer config minimum-stability")
+	if config < 0 {
+		t.Fatalf("it was never recorded:\n%s", runner.transcript())
+	}
+	// The site fake is what copies the tree, so the install standing in for it
+	// is the ordering boundary that matters.
+	if validate := runner.indexOf("composer validate"); validate > config {
+		t.Errorf("recorded before the tree was even validated:\n%s", runner.transcript())
+	}
+}
+
+// A tree whose stability cannot be recorded fails the build rather than
+// producing an artifact set every environment then fails against.
+func TestATreeThatCannotRecordItsStabilityFailsTheBuild(t *testing.T) {
+	runner, site := newScripted(), newSite()
+	runner.fails("composer config")
+	builder, _, _ := aBuilder(t, runner, site)
+	resolvingCore(t, runner, "12.0.0-beta1")
+
+	if _, err := builder.Build("12", false, "beta", ""); err == nil {
+		t.Fatalf("the build reported success:\n%s", runner.transcript())
 	}
 }

@@ -346,7 +346,66 @@ func (b *Builder) resolveTree(coreMajor, treePath, stability string) (string, er
 	}
 	b.log("Resolved drupal/core " + coreVersion + ".")
 
+	if err := b.persistStability(treePath, coreVersion); err != nil {
+		return "", err
+	}
+
 	return coreVersion, nil
+}
+
+// persistStability records a pre-release tree's stability in the tree itself.
+//
+// `composer create-project drupal/recommended-project:^12@beta` applies that
+// stability to the one install and **does not write it into the composer.json
+// it creates**, which leaves the tree declaring composer's default, `stable`.
+// Every later `composer require` in it is then a partial update against a lock
+// holding a beta core, and composer refuses the lot — not over what is being
+// installed, over core:
+//
+//   - drupal/core is fixed to 12.0.0-beta1 (lock file version) by a partial
+//     update but that version is rejected by your minimum-stability.
+//
+// Measured with a real resolve: `composer require psr/log:^3`, a stable
+// package with nothing to do with any of this, fails exactly that way. So
+// every environment seeded from a pre-release tree was unusable — wiring the
+// module, the module's dev requirements, the check toolchain and the drush
+// install are all `composer require`, and all of them would have hit it. Not a
+// drush problem; drush was where it surfaced.
+//
+// `dev` rather than the stability that was asked for, because `beta` fixes the
+// above and still cannot install a dev toolchain — drush 14.x-dev, the only
+// branch whose symfony and guzzle constraints admit core 12, requires
+// grasmash/yaml-cli 4.x-dev. One setting covering both beats two that have to
+// agree.
+//
+// `prefer-stable` is what makes that safe, and is not optional: without it,
+// `dev` invites a dev version of everything. With it, a verified resolve of
+// core 12.0.0-beta1 plus drush ^14@dev moved **no** already-locked package and
+// left exactly three at dev — drush and the two of its dependencies that have
+// no release.
+//
+// Through `composer config` rather than by rewriting the JSON, so the file
+// keeps the formatting and key order drupal/recommended-project shipped.
+// Nothing is written for a released core: that tree is correct as it stands,
+// and it should be byte-identical to the one the previous version produced.
+func (b *Builder) persistStability(treePath, coreVersion string) error {
+	if StabilityOf(coreVersion) == "" {
+		return nil
+	}
+
+	b.log(fmt.Sprintf(
+		"Recording the tree's pre-release stability (%s is not a release) ...", coreVersion,
+	))
+	for _, setting := range [][]string{
+		{"composer", "config", "minimum-stability", "dev"},
+		{"composer", "config", "prefer-stable", "true"},
+	} {
+		if _, err := b.runner.Run(setting, treePath, buildTimeout); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // installAndDump brings up a throwaway site from the tree and exports the

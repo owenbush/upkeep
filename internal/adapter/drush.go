@@ -27,7 +27,7 @@ const ToolRequireFlag = "drush"
 // ToolRequireFlagHelp is what `--help` says about it.
 const ToolRequireFlagHelp = "Composer constraint for " + DrushPackage +
 	", for a core whose dependencies no released version satisfies yet " +
-	"(e.g. \"^13@dev\"). Recorded in the artifact meta and reused by every " +
+	"(e.g. \"^14@dev\"). Recorded in the artifact meta and reused by every " +
 	"environment seeded from this set"
 
 // ToolRequire is the composer argument that installs the toolchain.
@@ -45,13 +45,23 @@ func ToolRequire(constraint string) string {
 // ToolRequireHint is what to add when installing the toolchain fails, and it
 // is only ever about a pre-release core.
 //
-// A Drupal major in alpha or beta can require a dependency no drush *release*
-// has caught up with. Measured: core 12.0.0-beta1 requires
-// guzzlehttp/guzzle ^8.0.1, the newest drush release (13.8.0) requires ^7.0,
-// and none of drush's tagged releases supports guzzle 8 — so composer's own
-// suggestion, `--with-all-dependencies`, cannot help, because no guzzle
-// satisfies both sides. A drush development branch can: 13.x-dev accepts
-// `^7.0 || ^8.0`.
+// A Drupal major in alpha or beta can require dependencies no drush *release*
+// has caught up with. Measured against core 12.0.0-beta1, which pins
+// guzzlehttp/guzzle ^8.0.1 and symfony/* ^8.1:
+//
+//	drush 13.8.0 (newest release)  guzzle ^7.0            — no
+//	drush 13.x-dev                 symfony ^6 || ^7       — no
+//	drush 14.x-dev                 guzzle ^7.8.2 || ^8.0,
+//	                               symfony ^7 || ^8       — yes
+//
+// So composer's own suggestion, `--with-all-dependencies`, cannot help: no
+// guzzle and no symfony satisfies both sides at once. Only 14.x-dev does, and
+// it has no release.
+//
+// `^13@dev` is the answer this used to give and it was wrong — 13.x-dev clears
+// guzzle, which is the constraint composer complains about first, and then
+// fails on symfony. Checking the one dependency in the error message is how
+// that happened; the table above is a real resolve.
 //
 // Naming the branch is left to the operator rather than substituted quietly.
 // A base artifact set is the one place a silent substitution is least
@@ -74,7 +84,7 @@ func ToolRequireHint(coreVersion, constraint string) string {
 			"require a dependency no release of it supports yet, and composer's "+
 			"--with-all-dependencies cannot bridge that — no version satisfies both sides.\n"+
 			"A development branch usually can. To build against one, naming the branch yourself:\n"+
-			"  upkeep base-artifacts:build --version=%s --stability=%s --%s='^13@dev'",
+			"  upkeep base-artifacts:build --version=%s --stability=%s --%s='^14@dev'",
 		DrushPackage, coreVersion,
 		baseartifact.MajorOf(coreVersion), baseartifact.StabilityOf(coreVersion), ToolRequireFlag,
 	)
