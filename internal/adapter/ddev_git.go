@@ -454,10 +454,22 @@ func (d *DdevContrib) PushWork(
 			where = "a detached HEAD"
 		}
 
+		// The environment is named, and that is the whole point of this
+		// message. An environment is per (module x core), so the commonest
+		// cause of this refusal is not being on the wrong branch — it is
+		// looking at the wrong *environment*, because publish defaulted the
+		// core to core_versions[0] while the work was done against another
+		// one. Reported from a real run: the branch was checked out in
+		// upkeep-jumplinks-d12 and publish went looking in d11, where an
+		// earlier check had left mr-1. Without the environment in the message
+		// that reads as a branch mistake and sends you to switch branches in
+		// the wrong place.
 		return "", fmt.Errorf(
-			"the module working copy is on %q, not %q. Publishing would push a branch you are not looking "+
-				"at; switch to it first",
-			where, branch.Name,
+			"the module working copy in %s (Drupal %s) is on %q, not %q.\n"+
+				"Publishing would push a branch you are not looking at. Either switch to it there, "+
+				"or — if the work is in another environment — pass the core it was done against "+
+				"(--version=N), because an environment is per module and core.",
+			environment.ProjectName, environment.CoreMajor, where, branch.Name,
 		)
 	}
 

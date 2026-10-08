@@ -47,8 +47,16 @@ will want next:
   Module path  /…/upkeep-jumplinks-d12/module
 
   Check it as you work:  upkeep check jumplinks --working-copy --version=12
-  Send the work back:    upkeep publish jumplinks 3628056 --branch project-update-bot-only
+  Send the work back:    upkeep publish jumplinks 3628056 --branch project-update-bot-only --version=12
 ```
+
+**`--version` is not optional on any of these.** An environment is one per
+module *and core*, and every command defaults the core to the first entry in
+the module's `core_versions`. `modules:track jumplinks 12` appends, precisely
+so that adding a core does not silently retarget your bare `upkeep check` — so
+a module tracking `["11", "12"]` defaults to 11 while you are working in the 12
+environment. Omit it and the command goes looking in a different directory,
+and refuses on a branch that was never there.
 
 The issue node id and the branch name are printed because you have no reason to
 know either and every reason to mistype them.
@@ -71,7 +79,7 @@ When it passes, commit and push it back:
 cd "$(upkeep env:path jumplinks --version=12)/module"
 git commit -am "Declare Drupal 12 compatibility"
 cd -
-upkeep publish jumplinks 3628056 --branch project-update-bot-only
+upkeep publish jumplinks 3628056 --branch project-update-bot-only --version=12
 ```
 
 `publish` finds the merge request already open on that branch and reports

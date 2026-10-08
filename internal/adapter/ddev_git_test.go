@@ -740,8 +740,16 @@ func TestPushingNeverForces(t *testing.T) {
 	}
 }
 
-// Publishing a branch you are not looking at is not what anyone meant.
-func TestPushingRefusesWhenTheWorkingCopyIsElsewhere(t *testing.T) {
+// Publishing a branch you are not looking at is not what anyone meant — and
+// the refusal has to name the environment it looked in.
+//
+// An environment is per (module x core), so the commonest cause of this is not
+// being on the wrong branch but looking in the wrong *environment*: publish
+// defaults the core to core_versions[0], and a module tracking 11 then 12
+// defaults to 11 while the work was done against 12. Reported from a real run.
+// Naming only the branch reads as a branch mistake and sends somebody to
+// switch branches in a directory that never had the work.
+func TestPushingRefusesWhenTheWorkingCopyIsElsewhereAndNamesWhereItLooked(t *testing.T) {
 	runner := cleanOn("2.0.x")
 
 	remote := IssueForkRemote(3603341, "git@git.drupal.org:issue/pathauto-3603341.git")
@@ -749,8 +757,15 @@ func TestPushingRefusesWhenTheWorkingCopyIsElsewhere(t *testing.T) {
 	if err == nil {
 		t.Fatal("it pushed a branch the working copy was not on")
 	}
-	if !strings.Contains(err.Error(), "switch to it first") {
-		t.Errorf("the refusal does not say what to do: %v", err)
+	for _, want := range []string{
+		"upkeep-pathauto-d11", // which environment
+		"Drupal 11",           // and which core, since that is what selects it
+		"3603341-fix",         // the branch that is not there
+		"--version=N",         // and the flag that points at the other one
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q: %v", want, err)
+		}
 	}
 	if runner.didRun("push") {
 		t.Errorf("it pushed anyway:\n%s", runner.transcript())

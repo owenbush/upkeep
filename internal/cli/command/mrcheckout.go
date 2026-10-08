@@ -221,7 +221,13 @@ func reportMrCheckout(
 	cli.Println(cmd, "")
 	cli.Printf(cmd, "  Check it as you work:  upkeep check %s --working-copy --version=%s\n",
 		moduleName, coreMajor)
-	cli.Printf(cmd, "  Send the work back:    upkeep publish %s %d --branch %s\n",
-		moduleName, nid, branch)
+	// --version is not optional here, and leaving it off is a bug this line
+	// shipped with: an environment is per (module x core), and publish
+	// defaults the core to core_versions[0]. A module tracking 11 and then 12
+	// defaults to 11 — `modules:track` appends precisely so adding a core does
+	// not move that default — so the printed command went looking in the
+	// wrong environment and refused on a branch that was never there.
+	cli.Printf(cmd, "  Send the work back:    upkeep publish %s %d --branch %s --version=%s\n",
+		moduleName, nid, branch, coreMajor)
 	cli.Println(cmd, "")
 }

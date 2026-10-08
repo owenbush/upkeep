@@ -182,7 +182,12 @@ func TestAMergeRequestsOwnBranchIsCheckedOutFromItsFork(t *testing.T) {
 
 	// The report carries the publish line, because it holds the issue node id
 	// and the branch — two things nobody should have to work out.
-	if !strings.Contains(stdout, "upkeep publish jumplinks 3628056 --branch project-update-bot-only") {
+	// --version included, and that is the assertion: an environment is per
+	// (module x core) and publish defaults the core to core_versions[0], so a
+	// line without it sends somebody to the wrong environment. This line
+	// shipped without it once and did exactly that.
+	if !strings.Contains(stdout,
+		"upkeep publish jumplinks 3628056 --branch project-update-bot-only --version=11") {
 		t.Errorf("the report does not say how to send the work back:\n%s", stdout)
 	}
 	// And the local check that needs neither a push nor a merge request.
