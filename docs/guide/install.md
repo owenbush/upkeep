@@ -94,11 +94,64 @@ upkeep --help
 
 ## Shell completion
 
+A `brew install` wires this up for you — the cask generates the bash, zsh and
+fish completions at install time, and there is nothing to do. The rest of this
+section is for a binary you built or downloaded yourself.
+
+**Completion keys on the command name, so `upkeep` has to be on your `PATH`.**
+A binary you run as `./upkeep` gets none: the shell is completing the word
+`./upkeep`, which is not the command the script registers. Check that the
+`upkeep` your shell finds is the one you mean, which matters if an older
+install is still around:
+
 ```bash
-upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep   # bash
-upkeep completion zsh  > ~/.zsh/completions/_upkeep               # zsh
-upkeep completion fish > ~/.config/fish/completions/upkeep.fish   # fish
+which upkeep     # expect your Go binary, not ~/.composer/vendor/bin/upkeep
 ```
+
+### zsh
+
+The file on its own does nothing — zsh only reads completions from directories
+on its `fpath`, and only when `compinit` runs after they are added:
+
+```bash
+mkdir -p ~/.zsh/completions
+upkeep completion zsh > ~/.zsh/completions/_upkeep
+```
+
+Then in `~/.zshrc`, **above** the line that runs `compinit` (with oh-my-zsh,
+above `source $ZSH/oh-my-zsh.sh`, which runs it for you):
+
+```bash
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+Open a new shell. If nothing completes, zsh is probably serving a cached dump:
+
+```bash
+rm -f ~/.zcompdump* && exec zsh
+```
+
+### fish
+
+Nothing else to do; fish reads this directory itself.
+
+```bash
+upkeep completion fish > ~/.config/fish/completions/upkeep.fish
+```
+
+### bash
+
+```bash
+upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep
+```
+
+On macOS this needs Homebrew's bash and bash-completion v2 — the bash Apple
+ships is 3.2, which cannot show the descriptions below and does not read that
+directory. `brew install bash bash-completion@2`, then follow what that formula
+prints. zsh is the default shell on macOS and needs none of this.
+
+### What completes
 
 Open a new shell and TAB completes command names, options, **your registered
 module machine names**, and the core versions each module actually tracks:
@@ -118,3 +171,17 @@ from outside the cockpit.
 Values nothing local can enumerate — an MR IID, an issue node id — are not
 completed, because guessing them would mean a network round trip on every press
 of TAB.
+
+Every command and flag carries its one-line description, so TAB is also how you
+read the surface without leaving the prompt:
+
+```
+$ upkeep modules:<TAB>
+modules:add      -- Register maintained modules from your git.drupalcode.org project memberships
+modules:track    -- Change which Drupal core majors a registered module is tracked for
+modules:untrack  -- Stop watching a module: remove its entry from the cockpit module registry
+```
+
+zsh and fish show those descriptions out of the box. bash shows them only with
+bash-completion v2; with v1 you get the names alone, which is the shell's limit
+and not something upkeep can supply.
