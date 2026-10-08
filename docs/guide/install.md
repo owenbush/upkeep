@@ -108,10 +108,29 @@ install is still around:
 which upkeep     # expect your Go binary, not ~/.composer/vendor/bin/upkeep
 ```
 
-### zsh
+### zsh, if you are working on upkeep
 
-The file on its own does nothing — zsh only reads completions from directories
-on its `fpath`, and only when `compinit` runs after they are added:
+One line in `~/.zshrc`, **below** whatever runs `compinit`:
+
+```bash
+eval "$(upkeep completion zsh)"
+```
+
+No directory to create, no `fpath`, and no completion dump to go stale — which
+were three of the four ways the file below goes wrong. It regenerates from the
+binary at every shell start, so a command you add and rebuild completes
+immediately, with no step to remember. That is the reason to prefer it while
+the surface is still moving.
+
+The cost is running `upkeep` once per shell start. It is a static binary doing
+one thing, so this is a few milliseconds; if you measure your startup and care,
+use the installed file instead.
+
+### zsh, for an installed binary
+
+Generated once, so nothing runs at shell start. The file on its own does
+nothing, though — zsh reads completions only from directories on its `fpath`,
+and only when `compinit` runs *after* they are added:
 
 ```bash
 mkdir -p ~/.zsh/completions
@@ -132,6 +151,9 @@ Open a new shell. If nothing completes, zsh is probably serving a cached dump:
 rm -f ~/.zcompdump* && exec zsh
 ```
 
+Regenerate the file whenever you upgrade, or the completions describe the
+version you had. A `brew upgrade` does it for you; a `go build` does not.
+
 ### fish
 
 Nothing else to do; fish reads this directory itself.
@@ -140,10 +162,20 @@ Nothing else to do; fish reads this directory itself.
 upkeep completion fish > ~/.config/fish/completions/upkeep.fish
 ```
 
+The same trade as zsh applies — `upkeep completion fish | source` in
+`~/.config/fish/config.fish` tracks a binary you are rebuilding, at the cost of
+running it each time.
+
 ### bash
 
 ```bash
 upkeep completion bash | sudo tee /etc/bash_completion.d/upkeep
+```
+
+Or, tracking a binary you are rebuilding, in `~/.bashrc`:
+
+```bash
+source <(upkeep completion bash)
 ```
 
 On macOS this needs Homebrew's bash and bash-completion v2 — the bash Apple
