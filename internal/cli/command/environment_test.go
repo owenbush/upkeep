@@ -28,6 +28,9 @@ type fakeEngine struct {
 	ensureErr   error
 	checkedOut  []string
 	checkoutErr error
+	// What a merge-request checkout was asked to do, so a test can assert the
+	// fork, the anonymous fetch URL and the branch all reached the engine.
+	mrCheckouts []string
 	stage       adapter.Log
 }
 
@@ -45,6 +48,14 @@ func (e *fakeEngine) EnsureEnv(module cockpit.Module, coreMajor string) (adapter
 	}
 
 	return e.environment, nil
+}
+
+func (e *fakeEngine) CheckoutMergeRequestBranch(
+	_ adapter.Environment, remote adapter.GitRemote, fetchURL, branch string,
+) error {
+	e.mrCheckouts = append(e.mrCheckouts, branch+" from "+fetchURL+" remote "+remote.Name+"="+remote.URL)
+
+	return e.checkoutErr
 }
 
 func (e *fakeEngine) CheckoutBranch(_ adapter.Environment, branch string) error {

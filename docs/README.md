@@ -23,6 +23,7 @@ module — registered or not.
 
 - [The dashboard](guide/dashboard.md) — everything open, and what a row represents
 - [Work on an issue](guide/issue-loop.md) — `issues` → `start` → `publish`
+- [Work on somebody else's MR](guide/taking-over-an-mr.md) — `mr:checkout` → `check --working-copy` → `publish`
 - [Patch contributions](guide/patches.md) — the work a merge-request view cannot see
 - [Running checks](guide/checks.md) — the isolated flow, and how it matches drupal.org CI
 - [Review, merge and release notes](guide/review-and-merge.md)

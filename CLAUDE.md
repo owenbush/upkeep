@@ -129,6 +129,27 @@ and was learned the hard way — see `docs/go-port.md`.
   *existing* environment — which is every environment after the first. The
   packages are gated on their own absence from `vendor/` instead, so a reused
   environment costs a directory test rather than a composer round trip.
+- **`mr:checkout` is the way in to *changing* a merge request**, as against
+  reading one. `check` and `review` fetch the merge ref onto the managed
+  `mr-<iid>` branch — force-updated on every apply, refused by `publish` — so a
+  commit there is a commit waiting to be destroyed, and the merge tree is a
+  tree that exists on neither side and can be pushed nowhere. This fetches the
+  merge request's **own source branch** from the fork it lives on, adds the
+  SSH remote `publish` already uses, and prints the `publish` line with the
+  issue nid and branch filled in. Resolution is `SourceProjectID` →
+  `IssueForkNids` → `IssueFork`, all existing API: the source project id alone
+  does not say which issue it belongs to, and the issue is what names the
+  remote. **It deliberately does not check the declared core** — the reason to
+  take over a merge request is often that it does not support the core yet, and
+  refusing the checkout because the branch lacks what you are about to add
+  would be the tool declining its own purpose; `check` asks that, where a
+  verdict is produced. Fetch is anonymous HTTPS and push is SSH, the same split
+  as everywhere else, so taking over somebody's work needs no credential until
+  it goes back. An existing local branch is **resumed, never reset**. Two
+  refusals, two messages, because one in the other's words would be a lie: a
+  zero `SourceProjectID` means GitLab did not say where the branch is, which is
+  not "it is on the project itself" — a distinction a surviving mutant found.
+  `docs/guide/taking-over-an-mr.md` is the worked example.
 - **The module is linked in, never installed as a package.** It used to be a
   Composer path repository plus `composer require drupal/<module>:<branch>-dev`,
   and that cost two things. It **enforced the module's declared `drupal/core`

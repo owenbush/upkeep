@@ -1317,3 +1317,169 @@ func TestALinkThatCannotBeMadeFailsTheWiring(t *testing.T) {
 		t.Error("wiring reported success over a directory it could not create")
 	}
 }
+
+// aFork is where a merge request's branch lives, and the remote that pushes
+// back to it.
+func aFork() GitRemote {
+	return IssueForkRemote(3628056, "git@git.drupal.org:issue/jumplinks-3628056.git")
+}
+
+const forkHTTPS = "https://git.drupalcode.org/issue/jumplinks-3628056.git"
+
+// The merge request's own branch is fetched from the fork and checked out,
+// with the push remote added — the manual sequence this replaces.
+func TestAMergeRequestBranchIsFetchedFromItsForkAndCheckedOut(t *testing.T) {
+	runner := cleanOn("1.0.x")
+	// No local branch of that name yet.
+	runner.fails("rev-parse --verify refs/heads/project-update-bot-only")
+
+	if err := engineWith(runner).CheckoutMergeRequestBranch(
+		anEnvironment(t), aFork(), forkHTTPS, "project-update-bot-only",
+	); err != nil {
+		t.Fatalf("checkout: %v\n%s", err, runner.transcript())
+	}
+
+	// The remote is added with the SSH URL GitLab advertises, under the name
+	// publish uses, so pushing back needs no re-pointing.
+	if !runner.didRun("remote add issue-3628056 git@git.drupal.org:issue/jumplinks-3628056.git") {
+		t.Errorf("the push remote was not added:\n%s", runner.transcript())
+	}
+	// The fetch is the anonymous HTTPS URL, so taking over somebody's merge
+	// request needs no key.
+	if !runner.didRun("fetch " + forkHTTPS + " project-update-bot-only") {
+		t.Errorf("it did not fetch from the fork anonymously:\n%s", runner.transcript())
+	}
+	// Tracking, so a later plain `git push` goes to the right place.
+	if !runner.didRun("checkout -b project-update-bot-only --track issue-3628056/project-update-bot-only") {
+		t.Errorf("the branch was not checked out tracking the fork:\n%s", runner.transcript())
+	}
+}
+
+// An existing local branch is resumed exactly as it stands.
+//
+// It may hold commits that exist nowhere else — somebody's half-finished work
+// on this very merge request — and `checkout -B` on it would be the
+// destruction this command exists to avoid.
+func TestAnExistingLocalBranchIsResumedNotReset(t *testing.T) {
+	runner := cleanOn("1.0.x").
+		answer("rev-parse --verify refs/heads/project-update-bot-only", "abc123\n")
+
+	if err := engineWith(runner).CheckoutMergeRequestBranch(
+		anEnvironment(t), aFork(), forkHTTPS, "project-update-bot-only",
+	); err != nil {
+		t.Fatalf("checkout: %v\n%s", err, runner.transcript())
+	}
+
+	if !runner.didRun("checkout project-update-bot-only") {
+		t.Errorf("it did not check the branch out:\n%s", runner.transcript())
+	}
+	for _, destructive := range []string{"checkout -B", "checkout -b", "reset"} {
+		if runner.didRun(destructive) {
+			t.Errorf("%q ran against an existing branch:\n%s", destructive, runner.transcript())
+		}
+	}
+}
+
+// A dirty working copy is refused before anything is fetched: switching branch
+// under uncommitted work either fails or carries it somewhere it was not
+// meant to go.
+func TestADirtyWorkingCopyRefusesAMergeRequestCheckout(t *testing.T) {
+	runner := newRunner().
+		answer("status --porcelain", " M jumplinks.info.yml\n").
+		answer("symbolic-ref --short HEAD", "1.0.x\n").
+		answer("rev-list --count @{upstream}..HEAD", "0\n")
+
+	err := engineWith(runner).CheckoutMergeRequestBranch(
+		anEnvironment(t), aFork(), forkHTTPS, "project-update-bot-only",
+	)
+	if err == nil {
+		t.Fatalf("a dirty working copy was switched:\n%s", runner.transcript())
+	}
+	if !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
+	if runner.didRun("fetch") {
+		t.Errorf("it fetched anyway:\n%s", runner.transcript())
+	}
+}
+
+// A failed fetch stops the checkout: carrying on would put the working copy on
+// a stale branch and report it as the merge request's.
+func TestAFailedForkFetchStopsTheCheckout(t *testing.T) {
+	runner := cleanOn("1.0.x")
+	runner.fails("fetch")
+
+	if err := engineWith(runner).CheckoutMergeRequestBranch(
+		anEnvironment(t), aFork(), forkHTTPS, "project-update-bot-only",
+	); err == nil {
+		t.Fatalf("it carried on:\n%s", runner.transcript())
+	}
+	if runner.didRun("checkout -b") {
+		t.Errorf("it checked out after a failed fetch:\n%s", runner.transcript())
+	}
+}
+
+// A remote that cannot be added stops the checkout, because the branch would
+// then be fetched with nowhere to push it back to.
+func TestARemoteThatCannotBeAddedStopsTheCheckout(t *testing.T) {
+	runner := cleanOn("1.0.x")
+	runner.fails("remote add")
+
+	if err := engineWith(runner).CheckoutMergeRequestBranch(
+		anEnvironment(t), aFork(), forkHTTPS, "project-update-bot-only",
+	); err == nil {
+		t.Fatalf("it carried on:\n%s", runner.transcript())
+	}
+	if runner.didRun("fetch") {
+		t.Errorf("it fetched with no remote to push back to:\n%s", runner.transcript())
+	}
+}
+
+// Either way of checking the branch out can fail, and neither may be reported
+// as a successful checkout.
+func TestAFailedBranchCheckoutStopsTheMergeRequestCheckout(t *testing.T) {
+	for name, script := range map[string]func(*recordingRunner){
+		"a new tracking branch": func(r *recordingRunner) {
+			r.fails("rev-parse --verify refs/heads/project-update-bot-only")
+			r.fails("checkout -b")
+		},
+		"an existing one": func(r *recordingRunner) {
+			r.answer("rev-parse --verify refs/heads/project-update-bot-only", "abc123\n")
+			r.fails("checkout project-update-bot-only")
+		},
+	} {
+		runner := cleanOn("1.0.x")
+		script(runner)
+
+		if err := engineWith(runner).CheckoutMergeRequestBranch(
+			anEnvironment(t), aFork(), forkHTTPS, "project-update-bot-only",
+		); err == nil {
+			t.Errorf("%s: a failed checkout was reported as done:\n%s", name, runner.transcript())
+		}
+	}
+}
+
+// Switching to a merge request's branch resolves what that branch declares it
+// needs: a contribution can add a dependency, and without this the checks fail
+// on a missing class rather than on the contribution.
+func TestAMergeRequestCheckoutResolvesTheBranchsDependencies(t *testing.T) {
+	runner := cleanOn("1.0.x")
+	runner.fails("rev-parse --verify refs/heads/project-update-bot-only")
+	environment := anEnvironment(t)
+	requiring(t, environment, `"drupal/token":"^1.0"`)
+
+	if err := engineWith(runner).CheckoutMergeRequestBranch(
+		environment, aFork(), forkHTTPS, "project-update-bot-only",
+	); err != nil {
+		t.Fatalf("checkout: %v\n%s", err, runner.transcript())
+	}
+
+	checkout := runner.indexOfCommand("checkout -b project-update-bot-only")
+	resolve := runner.indexOfCommand("composer require", "drupal/token")
+	if checkout < 0 || resolve < 0 {
+		t.Fatalf("missing steps:\n%s", runner.transcript())
+	}
+	if checkout > resolve {
+		t.Errorf("dependencies were resolved before the branch moved:\n%s", runner.transcript())
+	}
+}

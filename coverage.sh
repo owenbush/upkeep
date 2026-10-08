@@ -26,7 +26,7 @@ internal/adapter              95.7
 internal/baseartifact         96.4
 internal/check               100.0
 internal/cli                  99.7
-internal/cli/command          97.7
+internal/cli/command          97.8
 internal/cockpit              94.9
 internal/config              100.0
 internal/dashboard            97.0

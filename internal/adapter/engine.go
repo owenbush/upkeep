@@ -119,6 +119,13 @@ type Engine interface {
 	// reports false when there is no environment to read.
 	InspectWorkingCopy(moduleName, coreMajor string) (WorkingCopyStatus, bool)
 
+	// CheckoutMergeRequestBranch puts the working copy on a merge request's
+	// own source branch — the one a push can go back to, not the managed
+	// mr-<iid> branch an apply force-updates.
+	CheckoutMergeRequestBranch(
+		environment Environment, remote GitRemote, fetchURL, branch string,
+	) error
+
 	// CheckoutBranch puts the module working copy on a branch.
 	CheckoutBranch(environment Environment, branch string) error
 

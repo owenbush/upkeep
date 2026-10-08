@@ -33,6 +33,7 @@ Conventions worth knowing before the list:
 | [`modules:add`](#upkeep-modulesadd) | Register maintained modules from your git.drupalcode.org project memberships |
 | [`modules:track`](#upkeep-modulestrack) | Change which Drupal core majors a registered module is tracked for |
 | [`modules:untrack`](#upkeep-modulesuntrack) | Stop watching a module: remove its entry from the cockpit module registry |
+| [`mr:checkout`](#upkeep-mrcheckout) | Check out a merge request's own branch to work on it, with the remote to push back |
 | [`needs-work`](#upkeep-needs-work) | Post local check results as a comment on the merge request |
 | [`notes`](#upkeep-notes) | Draft paste-ready Markdown release notes: merged MRs since the module's last tag |
 | [`patch:apply`](#upkeep-patchapply) | Download a patch from a drupal.org issue and apply it in the module environment |
@@ -397,6 +398,36 @@ upkeep modules:untrack <module> [flags]
 | Option | What it does |
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+
+## `upkeep mr:checkout`
+
+Puts the module working copy on a merge request's source branch — the branch a
+push can go back to — and adds the remote it came from.
+
+  upkeep mr:checkout jumplinks 1
+  upkeep mr:checkout jumplinks 1 --version=12
+
+Unlike `check` and `review`, which fetch the merge ref onto a disposable
+branch to produce a verdict, this is for changing the contribution: commit here
+and `upkeep publish` updates the merge request that is already open on it.
+
+It does not require the code to declare the target core. Taking over a merge
+request to *add* that support is the usual reason to run this.
+
+Nothing is reset: an existing local branch is resumed exactly as it stands.
+
+```
+upkeep mr:checkout <module> <iid> [flags]
+```
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
+| `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
+| `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
 
 ## `upkeep needs-work`
 

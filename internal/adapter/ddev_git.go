@@ -488,6 +488,68 @@ func (d *DdevContrib) RecordedBaseBranch(environment Environment) string {
 	return recorded
 }
 
+// CheckoutMergeRequestBranch puts the working copy on a merge request's own
+// source branch, fetched from wherever that branch lives.
+//
+// The branch, not the merge ref. `check` and `review` fetch
+// refs/merge-requests/<iid>/merge into the managed mr-<iid> branch, which is
+// right for reading a verdict and wrong for working: that branch is force-
+// updated on every apply, so a commit on it is a commit waiting to be
+// destroyed, and `publish` refuses it for the same reason. This is the branch
+// GitLab would accept a push to, so work committed here can go back to the
+// merge request that is already open on it.
+//
+// Two URLs, deliberately. The fetch is the fork's HTTPS URL, used directly
+// rather than through the remote, so taking up somebody's merge request needs
+// no key — the same anonymous read that checking one has always needed. The
+// remote carries the SSH push URL GitLab advertises, under the name `publish`
+// already uses, so pushing back is a credential away rather than a
+// re-pointing away.
+//
+// Nothing is forced and nothing is reset. An existing local branch is checked
+// out as it stands, exactly as startWork resumes one: it may hold commits that
+// exist nowhere else, and `checkout -B` on it would be the destruction this
+// command exists to avoid.
+func (d *DdevContrib) CheckoutMergeRequestBranch(
+	environment Environment, remote GitRemote, fetchURL, branch string,
+) error {
+	dir := moduleWorkingCopy(environment.ProjectPath)
+
+	status := InspectWorkingCopy(dir, d.runner)
+	if status.IsDirty() {
+		return fmt.Errorf(
+			"cannot check out %q: the module working copy has uncommitted changes:\n  %s\n"+
+				"Commit or stash them first",
+			branch, strings.Join(status.Describe(), "\n  "),
+		)
+	}
+
+	if err := d.ensureRemote(dir, remote); err != nil {
+		return err
+	}
+
+	d.log("Fetching " + branch + " from " + fetchURL + " ...")
+	if _, err := d.git(dir, "fetch", fetchURL, branch+":refs/remotes/"+remote.Name+"/"+branch); err != nil {
+		return err
+	}
+
+	if _, held := d.gitProbe(dir, "rev-parse", "--verify", "refs/heads/"+branch); held {
+		d.log("Resuming the existing local " + branch + " as it stands ...")
+		if _, err := d.git(dir, "checkout", branch); err != nil {
+			return err
+		}
+	} else {
+		d.log("Checking out " + branch + " ...")
+		if _, err := d.git(
+			dir, "checkout", "-b", branch, "--track", remote.Name+"/"+branch,
+		); err != nil {
+			return err
+		}
+	}
+
+	return d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName)
+}
+
 // CheckoutBranch puts the module working copy on a branch.
 func (d *DdevContrib) CheckoutBranch(environment Environment, branch string) error {
 	dir := moduleWorkingCopy(environment.ProjectPath)

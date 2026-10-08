@@ -77,6 +77,7 @@ func NewRoot(surface Surface) *cobra.Command {
 		NewIssue(clients, issues, surface.Browser),
 		NewIssues(clients, issues),
 		NewMerge(clients, surface.Prompts),
+		NewMrCheckout(surface.Engines, clients),
 		NewModules(),
 		NewModulesAdd(clients, surface.Prompts),
 		NewModulesTrack(),
