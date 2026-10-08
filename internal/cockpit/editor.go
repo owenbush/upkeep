@@ -10,7 +10,8 @@ import (
 	"github.com/owenbush/upkeep/internal/filesystem"
 )
 
-// Editor changes an existing registry file.
+// Editor changes an existing registry file: adds entries, changes one's core
+// versions, removes one.
 //
 // Writes go through parse, merge, validate, publish: the merged registry is
 // written to a sibling temporary file, re-validated *from that file* with the
@@ -130,6 +131,46 @@ func (e *Editor) SetCoreVersions(name string, versions []string) (Module, error)
 	}
 
 	return updated, nil
+}
+
+// Remove drops one registered module's entry entirely and returns what it
+// held, so the caller can say what was given up.
+//
+// What was removed is returned rather than discarded, because the core list is
+// a judgement somebody made and this file is the only place it lived; the
+// command prints it so untracking is not a silent loss.
+//
+// Emptying the registry is allowed: `modules: {}` is what `init` scaffolds and
+// what the loader accepts, so unwatching the last module leaves a cockpit in
+// its first-run state rather than a broken one.
+func (e *Editor) Remove(name string) (Module, error) {
+	existing, err := RegistryFromFile(e.registryPath)
+	if err != nil {
+		return Module{}, err
+	}
+
+	removed, registered := existing.Find(name)
+	if !registered {
+		return Module{}, fmt.Errorf("module %q is not registered in %s", name, e.registryPath)
+	}
+
+	document := &yaml.Node{Kind: yaml.MappingNode}
+	for _, each := range existing.Names() {
+		if each == name {
+			continue
+		}
+		module, _ := existing.Find(each)
+		document.Content = append(document.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: module.Name},
+			mappingFor(entry{Project: module.Project, CoreVersions: module.CoreVersions}),
+		)
+	}
+
+	if err := e.publish(document); err != nil {
+		return Module{}, err
+	}
+
+	return removed, nil
 }
 
 // publish renders the document and makes it the registry.

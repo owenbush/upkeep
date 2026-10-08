@@ -313,3 +313,36 @@ func AddTrackCompletion(cmd *cobra.Command) {
 
 	registerFlagCompletion(cmd, FlagRemove, CompleteTargetCore)
 }
+
+// AddWatchedModuleCompletion makes a command's first argument complete as a
+// *watched* module name — the registry's entries and nothing else.
+//
+// Narrower than AddModuleCompletion on purpose. That one also offers every
+// module an environment has been provisioned for, which is right for a subject
+// command: the registry is a watchlist rather than a gate, so a module nobody
+// registered is still workable. A command that edits a registry entry is the
+// one case where that is wrong — a module with no entry has nothing to edit,
+// so offering it would be offering the next refusal.
+func AddWatchedModuleCompletion(cmd *cobra.Command) {
+	cmd.ValidArgsFunction = func(
+		cmd *cobra.Command, args []string, typed string,
+	) ([]string, cobra.ShellCompDirective) {
+		defer recoverCompletion()
+
+		if len(args) > 0 {
+			return noSuggestions()
+		}
+
+		where, err := Cockpit(cmd)
+		if err != nil {
+			return noSuggestions()
+		}
+
+		names := make([]string, 0, len(registryModules(where)))
+		for name := range registryModules(where) {
+			names = append(names, name)
+		}
+
+		return suggest(names, typed)
+	}
+}

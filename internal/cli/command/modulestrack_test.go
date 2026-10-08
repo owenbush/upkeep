@@ -447,17 +447,22 @@ func TestTheCommandAnUntrackedCoreNamesIsOneThatWorks(t *testing.T) {
 	}
 }
 
-// suggestedUpkeepCommand is the `upkeep …` line a refusal offers, as argv.
+// suggestedUpkeepCommand is the command a message offers, as argv.
+//
+// Keyed on ": upkeep ", which is the convention across these messages: a line
+// a reader is meant to paste ends with a colon and then the command, while a
+// command merely *mentioned* in prose is backticked mid-sentence (`Run `+
+// "`upkeep prune`"+` to reclaim …`). Matching any "upkeep " would pick up the
+// second kind, which is not a line anybody can run.
 func suggestedUpkeepCommand(t *testing.T, stderr string) []string {
 	t.Helper()
 
 	for _, line := range strings.Split(stderr, "\n") {
-		_, suggestion, found := strings.Cut(line, "upkeep ")
-		if found {
+		if _, suggestion, found := strings.Cut(line, ": upkeep "); found {
 			return strings.Fields(suggestion)
 		}
 	}
-	t.Fatalf("the refusal named no command to run:\n%s", stderr)
+	t.Fatalf("no pasteable command was offered:\n%s", stderr)
 
 	return nil
 }

@@ -32,6 +32,7 @@ Conventions worth knowing before the list:
 | [`modules`](#upkeep-modules) | List the modules registered in the cockpit module registry |
 | [`modules:add`](#upkeep-modulesadd) | Register maintained modules from your git.drupalcode.org project memberships |
 | [`modules:track`](#upkeep-modulestrack) | Change which Drupal core majors a registered module is tracked for |
+| [`modules:untrack`](#upkeep-modulesuntrack) | Stop watching a module: remove its entry from the cockpit module registry |
 | [`needs-work`](#upkeep-needs-work) | Post local check results as a comment on the merge request |
 | [`notes`](#upkeep-notes) | Draft paste-ready Markdown release notes: merged MRs since the module's last tag |
 | [`patch:apply`](#upkeep-patchapply) | Download a patch from a drupal.org issue and apply it in the module environment |
@@ -371,6 +372,30 @@ upkeep modules:track <module> [core...] [flags]
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--remove=REMOVE` | Comma-separated core majors to stop tracking (e.g. "10") |
 | `--set=SET` | Comma-separated core majors to track, replacing the list; the first is the default (e.g. "12,11") |
+
+## `upkeep modules:untrack`
+
+Removes a module's registry entry, so the survey commands stop covering it.
+
+  upkeep modules:untrack jumplinks
+
+Nothing on disk is removed and nothing stops working: the registry is a
+watchlist, not a gate, so `check`, `review`, `dev` and the rest still take the
+module by name. What changes is that `dashboard`, `patches`, `modules`,
+`status` and `prune` no longer iterate it.
+
+To reclaim its environments and cached results, run `upkeep prune`. To change
+which cores it tracks rather than stop watching it, run `upkeep modules:track`.
+
+```
+upkeep modules:untrack <module> [flags]
+```
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 
 ## `upkeep needs-work`
 

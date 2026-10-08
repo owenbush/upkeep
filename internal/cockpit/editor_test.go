@@ -373,3 +373,116 @@ func TestSettingCoreVersionsOnAnUnreadableRegistryRefuses(t *testing.T) {
 		t.Fatal("it wrote over a registry it could not parse")
 	}
 }
+
+func TestRemovingDropsTheEntryAndReturnsIt(t *testing.T) {
+	path := registryHolding(t, twoModules)
+
+	removed, err := NewEditor(path).Remove("pathauto")
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	// Returned rather than discarded: the core list is a judgement somebody
+	// made and this file was the only place it lived.
+	if !slices.Equal(removed.CoreVersions, []string{"10", "11"}) {
+		t.Errorf("returned cores %v", removed.CoreVersions)
+	}
+	if removed.Project != "project/pathauto" {
+		t.Errorf("returned project %q", removed.Project)
+	}
+
+	registry, err := RegistryFromFile(path)
+	if err != nil {
+		t.Fatalf("the registry it wrote does not load: %v", err)
+	}
+	if _, still := registry.Find("pathauto"); still {
+		t.Error("the entry is still there")
+	}
+	if _, kept := registry.Find("jumplinks"); !kept {
+		t.Error("it removed more than it was asked to")
+	}
+}
+
+// Removing the last entry leaves a registry the loader still reads: `modules:
+// {}` is what init scaffolds, so an emptied cockpit is in its first-run state
+// rather than a broken one.
+func TestRemovingTheLastModuleLeavesAReadableRegistry(t *testing.T) {
+	path := registryHolding(t,
+		"modules:\n  pathauto:\n    project: project/pathauto\n    core_versions: [\"11\"]\n")
+
+	if _, err := NewEditor(path).Remove("pathauto"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	registry, err := RegistryFromFile(path)
+	if err != nil {
+		t.Fatalf("the emptied registry does not load: %v", err)
+	}
+	if names := registry.Names(); len(names) != 0 {
+		t.Errorf("it still holds %v", names)
+	}
+}
+
+// An unregistered name is a refusal: there is nothing to remove, and the file
+// must not be rewritten for it.
+func TestRemovingAModuleWithNoEntryRefuses(t *testing.T) {
+	path := registryHolding(t, twoModules)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	if _, err := NewEditor(path).Remove("token"); err == nil {
+		t.Fatal("it accepted a module that is not registered")
+	} else if !strings.Contains(err.Error(), "token") {
+		t.Errorf("the refusal does not name the module: %v", err)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("the registry was rewritten anyway:\n%s", after)
+	}
+}
+
+// An unreadable registry is reported rather than replaced with one holding
+// everything except the name asked about.
+func TestRemovingFromAnUnreadableRegistryRefuses(t *testing.T) {
+	path := registryHolding(t, "\tnot: [yaml")
+
+	if _, err := NewEditor(path).Remove("pathauto"); err == nil {
+		t.Fatal("it wrote over a registry it could not parse")
+	}
+}
+
+// A registry that cannot be written is reported rather than reported as
+// removed.
+//
+// Every other way of failing a removal is ruled out by what it does: the
+// entries it keeps were already valid, so nothing it renders can be rejected,
+// and the only thing left to go wrong is the write itself.
+func TestARemovalThatCannotBeWrittenRefuses(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into every directory regardless of its mode")
+	}
+
+	path := registryHolding(t, twoModules)
+	if err := os.Chmod(filepath.Dir(path), 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(path), 0o755) })
+
+	if _, err := NewEditor(path).Remove("pathauto"); err == nil {
+		t.Fatal("it reported a removal it could not write")
+	}
+
+	// And the registry is still the one it started with.
+	registry, err := RegistryFromFile(path)
+	if err != nil {
+		t.Fatalf("the registry was damaged: %v", err)
+	}
+	if _, kept := registry.Find("pathauto"); !kept {
+		t.Error("the entry went despite the write failing")
+	}
+}

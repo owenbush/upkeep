@@ -240,8 +240,9 @@ func TestADirectoryNamedLikeARegistryIsNotACockpit(t *testing.T) {
 	}
 }
 
-// The listing, and the empty case that tells somebody where to add entries.
-func TestModulesListsTheRegistryAndSaysWhereToAddTo(t *testing.T) {
+// The listing, and the empty case — which names the command that registers a
+// module rather than the file it would be typed into.
+func TestModulesListsTheRegistryAndNamesTheCommandThatFillsIt(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "cockpit")
 	if code, _, _ := invoke(t, "init", root); code != workflow.OK {
 		t.Fatalf("exit %d", code)
@@ -251,8 +252,13 @@ func TestModulesListsTheRegistryAndSaysWhereToAddTo(t *testing.T) {
 	if code != workflow.OK {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(stdout, filepath.Join(root, cockpit.RegistryFilename)) {
-		t.Errorf("an empty registry did not say where to add: %q", stdout)
+	if !strings.Contains(stdout, "upkeep modules:add") {
+		t.Errorf("an empty registry did not name the command that fills it: %q", stdout)
+	}
+	// And not the path: modules:add is what knows how to find what you
+	// maintain, and it reports a missing credential properly.
+	if strings.Contains(stdout, cockpit.RegistryFilename) {
+		t.Errorf("an empty registry sent somebody to edit a file: %q", stdout)
 	}
 
 	where, _ := cockpit.New(root)

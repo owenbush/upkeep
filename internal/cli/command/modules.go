@@ -34,7 +34,12 @@ func runModules(cmd *cobra.Command, _ []string) (int, error) {
 	}
 
 	if len(modules) == 0 {
-		cli.Printf(cmd, "No modules registered yet. Add entries to %s.\n", where.RegistryPath())
+		// The command, not the file. It is the one that knows how to find what
+		// you maintain, and it reports a missing credential properly — which
+		// is the reason somebody would end up editing the file instead, and a
+		// better thing to be told than a path.
+		cli.Printf(cmd, "No modules registered yet. Register the ones you maintain with: "+
+			"upkeep modules:add\n")
 
 		return workflow.OK, nil
 	}

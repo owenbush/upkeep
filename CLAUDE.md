@@ -312,6 +312,25 @@ and was learned the hard way — see `docs/go-port.md`.
   refusing: tracking a core before building for it is an ordinary order to do
   these in, and the check that needs the artifacts is the next command anyway.
   Its stdout is empty on every path; `upkeep modules` is the reader.
+- **`modules:untrack` is the last hand-edit on this surface**, and with it no
+  message in the tool sends anybody to `registry.yml` with an editor.
+  `modules:track`'s refusal for emptying a core list now names it, and
+  `upkeep modules` on an empty registry names `modules:add` rather than a
+  path — the command is what knows how to find what you maintain, and it
+  reports a missing credential properly, which is the reason somebody would
+  have been editing the file. Untracking **writes without asking**: nothing on
+  disk is touched, because the registry is a watchlist and not a gate, so the
+  module drops out of the surveys and every subject command still takes it by
+  name. The environments and cached results are `prune`'s business and that
+  one does ask. What the report carries is the **core list**, in the shape of
+  the `modules:add` that restores it: that list is a judgement somebody made
+  and this file was the only place it lived, while the project path comes back
+  from GitLab, which is its authority. Emptying the registry is allowed —
+  `modules: {}` is what `init` scaffolds, so unwatching the last module leaves
+  a first-run cockpit rather than a broken one. Completion is narrower than
+  every subject command's (`AddWatchedModuleCompletion`): those also offer a
+  module an environment exists for, which is right for them and wrong here,
+  since a module with no entry has nothing to edit.
 - **Reading needs no credential.** git.drupalcode.org serves a public
   project's merge requests, refs, forks and raw files anonymously — measured
   across upkeep's whole read surface — so requiring a token to *look* was a

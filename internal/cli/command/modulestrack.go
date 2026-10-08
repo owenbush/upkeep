@@ -158,9 +158,9 @@ func trackedAfter(
 
 	if len(wanted) == 0 {
 		return nil, fmt.Errorf(
-			"that would leave %q tracking no core at all, and the registry needs at least one. "+
-				"To stop watching the module entirely, remove its entry from registry.yml",
-			module.Name,
+			"that would leave %q tracking no core at all, and the registry needs at least one.\n"+
+				"To stop watching it entirely: upkeep modules:untrack %s",
+			module.Name, module.Name,
 		)
 	}
 

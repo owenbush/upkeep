@@ -423,3 +423,50 @@ func TestTrackCompletionIsSilentWhenNothingCanBeRead(t *testing.T) {
 		}
 	}
 }
+
+// A command that edits a registry entry completes the registry's modules and
+// nothing else.
+//
+// AddModuleCompletion also offers every module an environment exists for,
+// which is right for a subject command — the registry is a watchlist rather
+// than a gate. It is wrong here: a module with no entry has nothing to edit,
+// so offering it would be offering the next refusal.
+func TestWatchedModuleCompletionOffersOnlyTheRegistry(t *testing.T) {
+	root := aCompletableCockpit(t)
+	cmd := &cobra.Command{Use: "modules:untrack"}
+	AddCockpit(cmd)
+	AddProjectsRoot(cmd)
+	AddWatchedModuleCompletion(cmd)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--cockpit=" + root})
+	cmd.RunE = func(*cobra.Command, []string) error { return nil }
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	got, directive := cmd.ValidArgsFunction(cmd, nil, "")
+	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
+		t.Errorf("it allowed a file listing (directive %d)", directive)
+	}
+	if strings.Join(got, ",") != "pathauto,token" {
+		t.Errorf("got %v, want the registry's entries alone", got)
+	}
+	// The provisioned-but-unregistered module that AddModuleCompletion offers
+	// is exactly what this must not.
+	if slices.Contains(got, "field_visibility_conditions") {
+		t.Errorf("it offered a module with no registry entry: %v", got)
+	}
+
+	// Only the first argument is a module; there is no second.
+	if extra, _ := cmd.ValidArgsFunction(cmd, []string{"pathauto"}, ""); len(extra) != 0 {
+		t.Errorf("a second argument completed: %v", extra)
+	}
+
+	// And silence when the cockpit cannot be resolved.
+	cmd.SetArgs([]string{"--cockpit="})
+	_ = cmd.Execute()
+	if values, _ := cmd.ValidArgsFunction(cmd, nil, ""); len(values) != 0 {
+		t.Errorf("an unusable cockpit suggested %v", values)
+	}
+}
