@@ -412,34 +412,13 @@ func (d *DdevContrib) assertBootstraps(
 // creates a symlink at web/modules/contrib/<module>, and never owns the
 // checkout.
 func (d *DdevContrib) wireModule(module cockpit.Module, projectPath string) error {
-	d.log("Wiring the module working copy via a Composer path repository ...")
+	d.log("Linking the module working copy into the site ...")
 
-	composerPath := filepath.Join(projectPath, "composer.json")
-	contents, err := os.ReadFile(composerPath)
-	if err != nil {
-		return fmt.Errorf("cannot read the project composer.json at %q: %w", composerPath, err)
-	}
-
-	wired, err := WithPathRepository(string(contents), "./"+moduleDir)
-	if err != nil {
-		return err
-	}
-	// Read-modify-write over a file the environment cannot function without:
-	// the rewrite is atomic, so a crash can never leave an unparseable
-	// composer.json behind a still-valid completion marker.
-	if err := filesystem.Write(composerPath, []byte(wired), filesystem.ModeShared); err != nil {
+	if err := d.linkWorkingCopy(projectPath, module.Name); err != nil {
 		return err
 	}
 
-	// Pin the exact branch the working copy has checked out: a bare "*@dev"
-	// could resolve to a different dev branch published on the Drupal composer
-	// endpoint instead of the path repository.
-	branch, err := d.git(moduleWorkingCopy(projectPath), "symbolic-ref", "--short", "HEAD")
-	if err != nil {
-		return err
-	}
-
-	return d.requireWorkingCopyBranch(projectPath, module.Name, strings.TrimSpace(branch))
+	return d.syncModuleDependencies(projectPath, module.Name)
 }
 
 // adaptAddOnConfig rewrites the add-on's shipped config for upkeep's

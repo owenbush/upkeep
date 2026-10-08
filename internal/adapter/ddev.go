@@ -19,8 +19,9 @@ import (
 //	    (seeded base tree: composer.json, web/, vendor/, ...)
 //	    .ddev/            engine project config + pinned add-on
 //	    module/           git working copy of the module (adapter/git-owned;
-//	                      composer only ever symlinks to it, never writes in it)
-//	    web/modules/contrib/<module>  -> symlink into module/ (composer path repo)
+//	                      nothing else ever writes in it)
+//	    web/modules/contrib/<module>  -> symlink into module/, made by the
+//	                      adapter; the module is never installed as a package
 //	    .upkeep-env.yml   the provisioning completion marker, and the identity
 //	                      the reuse decision is made against
 const (

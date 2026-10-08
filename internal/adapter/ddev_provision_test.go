@@ -64,15 +64,6 @@ func aSuccessfulProvision(t *testing.T, runner *recordingRunner, projectPath str
 		does("add-on get "+EngineAddOnName, func() {
 			write(filepath.Join(projectPath, ".ddev", EngineAddOnConfigFilename), shippedAddOnConfig)
 		}).
-		does("composer require drupal/pathauto", func() {
-			link := filepath.Join(projectPath, "web", "modules", "contrib", "pathauto")
-			if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-				t.Fatalf("mkdir: %v", err)
-			}
-			if err := os.Symlink(moduleWorkingCopy(projectPath), link); err != nil {
-				t.Skipf("symlinks unavailable: %v", err)
-			}
-		}).
 		answer("symbolic-ref --short HEAD", "2.0.x\n").
 		answer("drush status", "11.4.6\n").
 		answer("describe", describeJSON("running", projectPath, "https://upkeep-pathauto-d11.ddev.site"))
@@ -99,7 +90,6 @@ func TestProvisioningRunsItsStepsInOrder(t *testing.T) {
 		{"add-on get", EngineAddOnName},
 		{"ddev start"},
 		{"composer require drush/drush"},
-		{"composer require drupal/pathauto"},
 		{"import-db"},
 		{"drush status"},
 	}

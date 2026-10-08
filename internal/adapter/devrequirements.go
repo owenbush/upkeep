@@ -42,6 +42,40 @@ import (
 // and a configuration referencing something missing reports its own failure
 // clearly enough.
 func ModuleDevRequirements(moduleDir string) []string {
+	return modulePackages(moduleDir, "require-dev")
+}
+
+// ModuleRequirements is the package names in the module's own require, which
+// are what the site needs for the module to run.
+//
+// **drupal/core is dropped, and that is the point.** The module is wired in by
+// a symlink rather than installed as a package, so its declared core
+// constraint is not a requirement the environment has to satisfy — and it must
+// not be, because a module declares the cores it *supports* and upkeep exists
+// to test the one it does not support yet. Requiring it would refuse to build
+// an environment for the compatibility work that environment is for, which is
+// exactly what it used to do:
+//
+//	drupal/jumplinks 1.0.x-dev requires drupal/core ^10.3 || ^11 -> ... the
+//	package is fixed to 12.0.0-beta1 (lock file version)
+//
+// The decision that question deserves is made once, at the orchestrator, by
+// MrResolver.assertBranchDeclares — which can be reasoned about and overridden.
+// Having composer enforce it a second time, inside provisioning, is a gate
+// with no override and no diagnosis.
+func ModuleRequirements(moduleDir string) []string {
+	kept := []string{}
+	for _, name := range modulePackages(moduleDir, "require") {
+		if name != "drupal/core" {
+			kept = append(kept, name)
+		}
+	}
+
+	return kept
+}
+
+// modulePackages reads one requirement block out of the module's manifest.
+func modulePackages(moduleDir, block string) []string {
 	contents, err := os.ReadFile(filepath.Join(moduleDir, "composer.json"))
 	if err != nil {
 		return []string{}
@@ -55,18 +89,18 @@ func ModuleDevRequirements(moduleDir string) []string {
 		return []string{}
 	}
 
-	raw, present := manifest.values["require-dev"]
+	raw, present := manifest.values[block]
 	if !present {
 		return []string{}
 	}
 
-	var requireDev orderedJSON
-	if err := json.Unmarshal(raw, &requireDev); err != nil || !requireDev.isObject {
+	var required orderedJSON
+	if err := json.Unmarshal(raw, &required); err != nil || !required.isObject {
 		return []string{}
 	}
 
 	packages := []string{}
-	for _, name := range requireDev.keys {
+	for _, name := range required.keys {
 		// A package name always has a vendor. php, ext-* and lib-* do not, and
 		// that is exactly the test the PHP side uses.
 		if strings.Contains(name, "/") {

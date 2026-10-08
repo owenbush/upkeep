@@ -9,33 +9,114 @@ import (
 	"github.com/owenbush/upkeep/internal/filesystem"
 )
 
-// requireWorkingCopyBranch pins the composer requirement to the branch the
-// working copy has checked out, resolving through the path repository.
+// moduleSymlink is where the add-on's checks look for the module: the
+// adaptation repoints DRUPAL_PROJECTS_PATH at modules/contrib, and the
+// commands target <PROJECTS_PATH>/<module> beneath it.
+func moduleSymlink(projectPath, moduleName string) string {
+	return filepath.Join(projectPath, "web", EngineProjectsPath, moduleName)
+}
+
+// linkWorkingCopy puts the module where Drupal and the add-on look for it.
 //
-// Every branch switch in the working copy must be followed by this sync: a
-// stale pin — "1.0.x-dev" while the checkout is mr-2 — makes every later
-// composer resolution in the project unsatisfiable. The partial update also
-// materialises dependencies the checked-out branch newly requires in the
-// module's own composer.json.
-func (d *DdevContrib) requireWorkingCopyBranch(projectPath, moduleName, branch string) error {
-	if _, err := d.runner.Run([]string{
-		"ddev", "composer", "require",
-		fmt.Sprintf("drupal/%s:%s", moduleName, DevConstraintForBranch(branch)),
-		"--no-interaction",
-	}, projectPath, 0); err != nil {
+// A symlink we make, rather than one composer makes as a side effect of
+// installing the module as a package. Drupal discovers modules by scanning the
+// filesystem and the add-on's checks target a path, so neither needs the
+// module in composer.lock — and requiring it there cost more than it bought:
+//
+//   - **It made the environment refuse the work it exists for.** A module
+//     declares the cores it *supports*, so installing it as a package
+//     enforced that constraint against the seeded core, and an environment
+//     for the core whose support you are adding could not be built at all.
+//   - **It put a composer resolve on every branch switch.** The requirement
+//     pinned <branch>-dev, so applying a merge request, applying a patch,
+//     starting work and plain checkout each had to re-pin, each of which could
+//     fail on its own.
+//
+// Relative, so the project tree stays relocatable: an absolute link would
+// break the moment the projects root moved, which is a thing `--projects-root`
+// invites.
+//
+// Replaced rather than reused when something is already there. The one thing
+// that must never happen is a real directory at this path — that is a copy git
+// does not own, so an apply would mutate one tree while the checks read
+// another — and a stale link from an earlier layout is no reason to refuse.
+func (d *DdevContrib) linkWorkingCopy(projectPath, moduleName string) error {
+	link := moduleSymlink(projectPath, moduleName)
+	if err := filesystem.EnsureDirectory(filepath.Dir(link), filesystem.ModeSharedDir); err != nil {
 		return err
 	}
 
-	// Composer must symlink to the working copy and never mirror it: a mirror
-	// is a copy git does not own, so the next apply would mutate one tree and
-	// the checks would run against another.
-	installed := filepath.Join(projectPath, "web", "modules", "contrib", moduleName)
-	info, err := os.Lstat(installed)
+	if info, err := os.Lstat(link); err == nil {
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf(
+				"refusing to wire the module: %q is a real directory, not a link into the working "+
+					"copy. Something copied the module there, and checks would read that copy while "+
+					"git changed the other. Remove it, or re-provision the environment",
+				link,
+			)
+		}
+		if err := os.Remove(link); err != nil {
+			return fmt.Errorf("cannot replace the module link at %q: %w", link, err)
+		}
+	}
+
+	// ../../../module — out of modules/contrib, out of web, to the project
+	// root the working copy sits in.
+	target := filepath.Join("..", "..", "..", moduleDir)
+	if err := os.Symlink(target, link); err != nil {
+		return fmt.Errorf("cannot link the module working copy into %q: %w", link, err)
+	}
+
+	return nil
+}
+
+// syncModuleDependencies installs what the checked-out branch of the module
+// says it needs.
+//
+// Every branch switch in the working copy must be followed by this: a merge
+// request or a patch can add a dependency, and the checks would then fail on a
+// missing class rather than on anything the contribution got wrong. It is the
+// half of the old composer pin that was worth keeping — the pin itself only
+// existed to make the module resolvable as a package.
+//
+// drupal/core is not among them (ModuleRequirements drops it), so a module
+// that does not yet declare the seeded core still wires.
+//
+// Nothing to install is the common case — most modules require only core —
+// and composer is not run for an empty list, which would add a container round
+// trip to every branch switch. The link is still checked either way.
+func (d *DdevContrib) syncModuleDependencies(projectPath, moduleName string) error {
+	packages := ModuleRequirements(moduleWorkingCopy(projectPath))
+	if len(packages) > 0 {
+		d.log("Installing the module's own dependencies (" + strings.Join(packages, ", ") + ") ...")
+		command := append([]string{"ddev", "composer", "require"}, packages...)
+		if _, err := d.runner.Run(append(command, "--no-interaction"), projectPath, 0); err != nil {
+			return err
+		}
+	}
+
+	// Checked whether or not anything was installed. The link is what every
+	// check reads the module through, and the cost of looking is one Lstat
+	// against a container round trip saved — so there is no reason to make the
+	// guarantee conditional on there having been work to do.
+	return d.assertModuleIsLinked(projectPath, moduleName)
+}
+
+// assertModuleIsLinked holds the ownership constraint after anything composer
+// did.
+//
+// composer installs the module's dependencies into the same modules/contrib
+// directory the module is linked into, and `composer/installers` is perfectly
+// capable of writing over a path it thinks it owns. A real directory there is
+// a copy git does not own: the next apply would mutate the working copy while
+// the checks read the copy, and the two would disagree silently.
+func (d *DdevContrib) assertModuleIsLinked(projectPath, moduleName string) error {
+	link := moduleSymlink(projectPath, moduleName)
+	info, err := os.Lstat(link)
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		return fmt.Errorf(
-			"module wiring violated the ownership constraint: %q is not a symlink into the working copy "+
-				"(composer mirrored the package instead)",
-			installed,
+			"module wiring violated the ownership constraint: %q is not a symlink into the working copy",
+			link,
 		)
 	}
 

@@ -22,7 +22,7 @@ cd "$(dirname "$0")"
 # package                     floor  why it is not higher
 FLOORS=$(
 	cat <<'EOF'
-internal/adapter              95.5
+internal/adapter              95.7
 internal/baseartifact         96.4
 internal/check               100.0
 internal/cli                  99.7

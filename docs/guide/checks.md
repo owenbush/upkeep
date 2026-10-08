@@ -30,7 +30,7 @@ upkeep check field_visibility_conditions 2 --version=11
 
 runs that MR through the full isolated flow: ensure the (module × core)
 environment exists (built from the base artifact on first use), apply the MR
-via a Composer path repository, run every check, print the per-check report,
+by symlink, run every check, print the per-check report,
 and cache the results where the dashboard reads them.
 
 Flags: `--version=N` selects the target core major (must be tracked by the
@@ -70,8 +70,8 @@ make the next `patch:apply` or `start` refuse on a dirty working copy.
 Your module's own `require-dev` is installed alongside the check toolchain,
 because a ruleset that references `./vendor/phpcompatibility/…` needs the
 package your module requires and the site does not. CI has it because
-`composer install` runs in your module's repository; here your module is a
-path repository of the site, and composer never installs a path dependency's
+`composer install` runs in your module's repository; here your module is
+linked into the site rather than installed as a package, so nothing installs its
 dev requirements. If any of them cannot be installed the run carries on with a
 warning — a version conflict in a linting dependency should not take down your
 tests.

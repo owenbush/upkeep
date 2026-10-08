@@ -118,8 +118,8 @@ and was learned the hard way — see `docs/go-port.md`.
   field_visibility_conditions' ruleset references
   `./vendor/phpcompatibility/php-compatibility/…`, which its composer.json
   requires and the site does not. CI has it because `composer install` runs in
-  the module repository; here the module is a path repository, and **composer
-  never installs a path dependency's require-dev**. A failed install warns
+  the module repository; here the module is linked in rather than installed,
+  so nothing installs its require-dev for it. A failed install warns
   rather than refusing: a version conflict in a linting dependency must not
   take down phpunit, the install check and the smoke test, and phpcs names a
   missing sniff itself. **It runs whether or not the toolchain is already
@@ -129,6 +129,33 @@ and was learned the hard way — see `docs/go-port.md`.
   *existing* environment — which is every environment after the first. The
   packages are gated on their own absence from `vendor/` instead, so a reused
   environment costs a directory test rather than a composer round trip.
+- **The module is linked in, never installed as a package.** It used to be a
+  Composer path repository plus `composer require drupal/<module>:<branch>-dev`,
+  and that cost two things. It **enforced the module's declared `drupal/core`
+  against the seeded core**, so an environment for the core whose support you
+  are adding could not be built — `drupal/jumplinks 1.0.x-dev requires
+  drupal/core ^10.3 || ^11 -> ... fixed to 12.0.0-beta1`, on the exact work
+  upkeep exists for. And it **put a composer resolve on every branch switch**,
+  because the pin named `<branch>-dev` and `applyMr`, `applyPatch`,
+  `startWork` and plain checkout each had to re-sync it. Now
+  `linkWorkingCopy` makes the symlink itself (relative, so the tree stays
+  relocatable under a moved `--projects-root`) and `syncModuleDependencies`
+  installs only what the module's own `require` names — `ModuleRequirements`,
+  the sibling of `ModuleDevRequirements`, **with `drupal/core` dropped**. Which
+  is the point: a module declares the cores it *supports*, and whether this
+  core should be tested is one decision made once at the orchestrator, in
+  `assertBranchDeclares`, where it can be reasoned about and overridden rather
+  than enforced a second time inside composer with no diagnosis. The
+  dependency sync is the half of the pin worth keeping — an MR can add a
+  dependency, and without it the checks fail on a missing class rather than on
+  the contribution. **The ownership check runs whether or not anything was
+  installed**: composer puts those dependencies into the same
+  `modules/contrib`, and `composer/installers` will write over a path it thinks
+  it owns — a real directory there is a copy git does not own, so an apply
+  would mutate one tree while the checks read the other. `internal/adapter/wiring.go`
+  keeps the removed path-repository code's rationale as a note, because "wire
+  it through a path repository" is the obvious design and will be proposed
+  again.
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and

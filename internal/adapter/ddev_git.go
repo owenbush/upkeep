@@ -90,8 +90,8 @@ func (d *DdevContrib) ApplyMr(environment Environment, mergeRequest gitlab.Merge
 		))
 	}
 
-	d.log("Syncing the composer pin to the MR branch (and resolving any dependencies the MR adds) ...")
-	if err := d.requireWorkingCopyBranch(environment.ProjectPath, environment.ModuleName, head); err != nil {
+	d.log("Resolving any dependencies the MR adds ...")
+	if err := d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName); err != nil {
 		return err
 	}
 
@@ -165,8 +165,8 @@ func (d *DdevContrib) ApplyPatch(environment Environment, patch PatchApplication
 		return err
 	}
 
-	d.log("Syncing the composer pin to the patch branch ...")
-	if err := d.requireWorkingCopyBranch(environment.ProjectPath, environment.ModuleName, branch); err != nil {
+	d.log("Resolving any dependencies the patch adds ...")
+	if err := d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName); err != nil {
 		return err
 	}
 
@@ -318,7 +318,7 @@ func (d *DdevContrib) StartWork(
 		}
 		d.log(fmt.Sprintf("Resumed existing work branch %q.", branch.Name))
 
-		return true, d.requireWorkingCopyBranch(environment.ProjectPath, environment.ModuleName, branch.Name)
+		return true, d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName)
 	}
 
 	// A branch already pushed but not yet local — the maintainer started this
@@ -334,7 +334,7 @@ func (d *DdevContrib) StartWork(
 		}
 		d.log(fmt.Sprintf("Resumed work branch %q from origin.", branch.Name))
 
-		return true, d.requireWorkingCopyBranch(environment.ProjectPath, environment.ModuleName, branch.Name)
+		return true, d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName)
 	}
 
 	// The base defaults to whatever the working copy already sits on — the
@@ -366,7 +366,7 @@ func (d *DdevContrib) StartWork(
 		return false, err
 	}
 
-	return false, d.requireWorkingCopyBranch(environment.ProjectPath, environment.ModuleName, branch.Name)
+	return false, d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName)
 }
 
 // PromotePatch applies a patch onto the issue's work branch and commits it
@@ -505,7 +505,7 @@ func (d *DdevContrib) CheckoutBranch(environment Environment, branch string) err
 		return err
 	}
 
-	return d.requireWorkingCopyBranch(environment.ProjectPath, environment.ModuleName, branch)
+	return d.syncModuleDependencies(environment.ProjectPath, environment.ModuleName)
 }
 
 // resolveBase reads the base the working copy implies.

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/proc"
 )
@@ -831,26 +832,73 @@ func TestPushingADirtyWorkingCopyIsRefused(t *testing.T) {
 	}
 }
 
-// Every branch switch must be followed by the composer pin sync, or every
-// later resolution in the project is unsatisfiable.
-func TestEveryBranchSwitchSyncsTheComposerPin(t *testing.T) {
+// requiring makes the module working copy declare a dependency, which is what
+// a branch switch has to pick up.
+func requiring(t *testing.T, environment Environment, requires string) {
+	t.Helper()
+
+	manifest := `{"name":"drupal/pathauto","require":{"drupal/core":"^10 || ^11",` + requires + `}}`
+	path := filepath.Join(environment.ProjectPath, moduleDir, "composer.json")
+	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+// Every branch switch resolves what that branch declares it needs.
+//
+// A merge request or a patch can add a dependency, and without this the checks
+// fail on a missing class rather than on anything the contribution got wrong.
+// It is the half of the old composer pin worth keeping — the pin itself only
+// existed to make the module resolvable as a package, which is what made an
+// environment for an undeclared core impossible to build.
+func TestEveryBranchSwitchResolvesWhatTheBranchRequires(t *testing.T) {
 	runner := cleanOn("2.0.x").
 		answer("ls-remote origin", "abc\t"+MergeRef(12)+"\n").
 		answer("rev-parse --abbrev-ref HEAD", "mr-12\n").
 		answer("rev-parse HEAD", "merge222\n")
+	environment := anEnvironment(t)
+	requiring(t, environment, `"drupal/token":"^1.0"`)
 
-	if err := engineWith(runner).ApplyMr(anEnvironment(t), anMr(12, "2.0.x")); err != nil {
+	if err := engineWith(runner).ApplyMr(environment, anMr(12, "2.0.x")); err != nil {
 		t.Fatalf("apply: %v\n%s", err, runner.transcript())
 	}
 
-	if !runner.didRun("composer require drupal/pathauto:dev-mr-12") {
-		t.Errorf("the composer pin was not synced to the branch:\n%s", runner.transcript())
+	if !runner.didRun("composer require drupal/token") {
+		t.Errorf("the branch's dependency was not resolved:\n%s", runner.transcript())
+	}
+	// And never the module itself: installing it as a package is what enforced
+	// its declared core against the seeded one.
+	if runner.didRun("composer require drupal/pathauto") {
+		t.Errorf("the module was required as a package:\n%s", runner.transcript())
+	}
+	// drupal/core is dropped, or a module declaring ^10 || ^11 could not be
+	// wired into a core 12 environment at all.
+	if runner.didRun("composer require drupal/core") {
+		t.Errorf("the module's core constraint was imposed on the site:\n%s", runner.transcript())
 	}
 }
 
-// Composer must symlink to the working copy and never mirror it: a mirror is a
-// copy git does not own, so the next apply would mutate one tree and the
-// checks would run against another.
+// A module requiring nothing but core costs no composer call at all.
+func TestABranchWithNoDependenciesRunsNoComposer(t *testing.T) {
+	runner := cleanOn("2.0.x")
+	environment := anEnvironment(t)
+	requiring(t, environment, "")
+
+	if err := engineWith(runner).CheckoutBranch(environment, "3.0.x"); err != nil {
+		t.Fatalf("checkout: %v\n%s", err, runner.transcript())
+	}
+
+	if runner.didRun("composer require") {
+		t.Errorf("composer ran for an empty requirement list:\n%s", runner.transcript())
+	}
+}
+
+// The module must be reached through a symlink and never a copy: a copy is a
+// tree git does not own, so the next apply would mutate one and the checks
+// would read the other. Held on every branch switch, whether or not anything
+// was installed — composer puts the module's dependencies into the same
+// directory, and composer/installers is capable of writing over a path it
+// thinks it owns.
 func TestAMirroredModuleIsARefusal(t *testing.T) {
 	runner := cleanOn("2.0.x").
 		answer("ls-remote origin", "abc\t"+MergeRef(12)+"\n").
@@ -888,23 +936,25 @@ func TestNoRecordedBaseBranchIsEmptyRatherThanAGuess(t *testing.T) {
 	}
 }
 
-// Switching branches syncs the composer pin: a stale pin — "1.0.x-dev" while
-// the checkout is mr-2 — makes every later composer resolution in the project
-// unsatisfiable.
-func TestSwitchingBranchesSyncsTheComposerPin(t *testing.T) {
+// Dependencies are resolved after the branch moves, never before: the
+// requirements being installed are the ones the new branch declares, and the
+// manifest is only on disk once the checkout has happened.
+func TestSwitchingBranchesResolvesAfterTheBranchMoves(t *testing.T) {
 	runner := cleanOn("2.0.x")
+	environment := anEnvironment(t)
+	requiring(t, environment, `"drupal/token":"^1.0"`)
 
-	if err := engineWith(runner).CheckoutBranch(anEnvironment(t), "3.0.x"); err != nil {
+	if err := engineWith(runner).CheckoutBranch(environment, "3.0.x"); err != nil {
 		t.Fatalf("checkout: %v\n%s", err, runner.transcript())
 	}
 
 	checkout := runner.indexOfCommand("checkout 3.0.x")
-	pin := runner.indexOfCommand("composer require", "drupal/pathauto:3.0.x-dev")
-	if checkout < 0 || pin < 0 {
+	resolve := runner.indexOfCommand("composer require", "drupal/token")
+	if checkout < 0 || resolve < 0 {
 		t.Fatalf("missing steps:\n%s", runner.transcript())
 	}
-	if checkout > pin {
-		t.Errorf("the pin was synced before the branch moved:\n%s", runner.transcript())
+	if checkout > resolve {
+		t.Errorf("dependencies were resolved before the branch moved:\n%s", runner.transcript())
 	}
 }
 
@@ -1088,5 +1138,182 @@ func TestPublishingFromTheWrongPlaceIsARefusalThatSaysWhereYouAre(t *testing.T) 
 		if runner.didRun("push") {
 			t.Errorf("%q: it pushed anyway:\n%s", where, runner.transcript())
 		}
+	}
+}
+
+// anUnwiredEnvironment is a project whose module working copy exists but which
+// has nothing in web/modules/contrib yet — a fresh provision, before wiring.
+func anUnwiredEnvironment(t *testing.T) Environment {
+	t.Helper()
+
+	projectPath := filepath.Join(t.TempDir(), "upkeep-pathauto-d11")
+	if err := os.MkdirAll(filepath.Join(projectPath, moduleDir), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	return Environment{
+		ModuleName: "pathauto", CoreMajor: "11",
+		ProjectName: "upkeep-pathauto-d11", ProjectPath: projectPath,
+	}
+}
+
+// The link is made, and made relative, so the project tree stays relocatable
+// — an absolute link breaks the moment the projects root moves, which
+// --projects-root invites.
+func TestTheModuleIsLinkedRelativelyIntoTheSite(t *testing.T) {
+	environment := anUnwiredEnvironment(t)
+
+	if err := engineWith(newRunner()).linkWorkingCopy(
+		environment.ProjectPath, environment.ModuleName,
+	); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+
+	link := moduleSymlink(environment.ProjectPath, environment.ModuleName)
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("not a symlink: %v", err)
+	}
+	if filepath.IsAbs(target) {
+		t.Errorf("the link is absolute: %q", target)
+	}
+	// And it resolves to the working copy rather than merely existing.
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		t.Fatalf("the link does not resolve: %v", err)
+	}
+	expected, err := filepath.EvalSymlinks(moduleWorkingCopy(environment.ProjectPath))
+	if err != nil {
+		t.Fatalf("working copy: %v", err)
+	}
+	if resolved != expected {
+		t.Errorf("the link points at %q, want %q", resolved, expected)
+	}
+}
+
+// A link left by an earlier layout is replaced rather than refused: it is not
+// a tree anybody owns, and refusing would make an existing environment
+// unusable over a detail re-provisioning would fix anyway.
+func TestAStaleModuleLinkIsReplaced(t *testing.T) {
+	environment := anUnwiredEnvironment(t)
+	link := moduleSymlink(environment.ProjectPath, environment.ModuleName)
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink("/somewhere/else", link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	if err := engineWith(newRunner()).linkWorkingCopy(
+		environment.ProjectPath, environment.ModuleName,
+	); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+
+	if target, _ := os.Readlink(link); strings.Contains(target, "somewhere/else") {
+		t.Errorf("the stale link survived: %q", target)
+	}
+}
+
+// A real directory there is refused, and this is the one case that must be:
+// it is a copy git does not own, so an apply would mutate the working copy
+// while the checks read the copy, and the two would disagree in silence.
+func TestARealDirectoryWhereTheLinkGoesIsARefusal(t *testing.T) {
+	environment := anUnwiredEnvironment(t)
+	if err := os.MkdirAll(
+		moduleSymlink(environment.ProjectPath, environment.ModuleName), 0o755,
+	); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	err := engineWith(newRunner()).linkWorkingCopy(
+		environment.ProjectPath, environment.ModuleName,
+	)
+	if err == nil {
+		t.Fatal("a real directory was overwritten")
+	}
+	if !strings.Contains(err.Error(), "real directory") {
+		t.Errorf("the refusal does not say what is wrong: %v", err)
+	}
+}
+
+// A failed dependency install fails the operation: the checks would otherwise
+// run against a site missing something the branch says it needs, and report
+// the contribution as broken.
+func TestAFailedDependencyInstallIsNotSwallowed(t *testing.T) {
+	runner := newRunner()
+	runner.fails("composer require")
+	environment := anEnvironment(t)
+	requiring(t, environment, `"drupal/token":"^1.0"`)
+
+	if err := engineWith(runner).syncModuleDependencies(
+		environment.ProjectPath, environment.ModuleName,
+	); err == nil {
+		t.Fatalf("it carried on:\n%s", runner.transcript())
+	}
+}
+
+// A link that cannot be made fails the wiring rather than leaving an
+// environment whose checks would read nothing.
+//
+// Each of the three ways it can fail is reachable, and all three matter: the
+// directory, the replacement of what is there, and the link itself.
+func TestALinkThatCannotBeMadeFailsTheWiring(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into every directory regardless of its mode")
+	}
+
+	locked := func(t *testing.T, stale bool) Environment {
+		t.Helper()
+
+		environment := anUnwiredEnvironment(t)
+		contrib := filepath.Dir(moduleSymlink(environment.ProjectPath, environment.ModuleName))
+		if err := os.MkdirAll(contrib, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if stale {
+			if err := os.Symlink("/elsewhere", moduleSymlink(
+				environment.ProjectPath, environment.ModuleName,
+			)); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+		}
+		if err := os.Chmod(contrib, 0o555); err != nil {
+			t.Fatalf("chmod: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(contrib, 0o755) })
+
+		return environment
+	}
+
+	// The link cannot be created.
+	fresh := locked(t, false)
+	if err := engineWith(newRunner()).linkWorkingCopy(
+		fresh.ProjectPath, fresh.ModuleName,
+	); err == nil {
+		t.Error("a link that could not be created was reported as made")
+	}
+
+	// What is already there cannot be removed to make way for it.
+	occupied := locked(t, true)
+	if err := engineWith(newRunner()).linkWorkingCopy(
+		occupied.ProjectPath, occupied.ModuleName,
+	); err == nil {
+		t.Error("a link that could not be replaced was reported as replaced")
+	}
+
+	// And the directory it goes in cannot be made at all, which is the case
+	// that reaches wiring through provisioning rather than directly.
+	environment := anUnwiredEnvironment(t)
+	web := filepath.Join(environment.ProjectPath, "web")
+	if err := os.MkdirAll(web, 0o555); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(web, 0o755) })
+
+	if err := engineWith(newRunner()).wireModule(
+		cockpit.Module{Name: environment.ModuleName}, environment.ProjectPath,
+	); err == nil {
+		t.Error("wiring reported success over a directory it could not create")
 	}
 }

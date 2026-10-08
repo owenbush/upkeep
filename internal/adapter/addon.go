@@ -43,13 +43,12 @@ const (
 // the universe"): its post-start hook symlinks all project-root files into the
 // docroot via symlink-project, and its check commands target
 // web/<DRUPAL_PROJECTS_PATH>. Upkeep environments instead seed the project
-// root from the canonical base tree and wire the module in with a Composer
-// path repository, so:
+// root from the canonical base tree and link the module in, so:
 //
 //   - the post-start symlink-project hook is removed (against a full project
 //     tree it would symlink the whole codebase into itself), and
-//   - DRUPAL_PROJECTS_PATH is repointed at modules/contrib, where the
-//     path-repository install lands the module symlink — the add-on's
+//   - DRUPAL_PROJECTS_PATH is repointed at modules/contrib, where
+//     linkWorkingCopy puts the module symlink — the add-on's
 //     phpunit/phpcs/phpstan commands then target exactly the module under
 //     maintenance, the seeded tree being otherwise module-free.
 //
