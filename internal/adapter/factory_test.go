@@ -176,7 +176,7 @@ func TestTheFactoryBuildsAnArtifactBuilderThatRedactsToo(t *testing.T) {
 
 	// The resolve is the build's first child, so a failing one is the
 	// cheapest way to reach the runner the factory wired in.
-	if _, err := builder.Build("11", false, ""); err == nil {
+	if _, err := builder.Build("11", false, "", ""); err == nil {
 		t.Error("a build over a failing composer succeeded")
 	}
 	if printed == nil {
@@ -203,7 +203,7 @@ func TestABuiltArtifactBuilderWithNoLogsStillWorks(t *testing.T) {
 
 	// An impossible core major refuses before anything runs, which is enough
 	// to reach the log on the way past.
-	if _, err := builder.Build("eleven", false, ""); err == nil {
+	if _, err := builder.Build("eleven", false, "", ""); err == nil {
 		t.Error("it built artifacts for a core major that cannot name a directory")
 	}
 }

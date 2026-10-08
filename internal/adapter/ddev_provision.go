@@ -319,11 +319,18 @@ func (d *DdevContrib) build(
 		return Environment{}, err
 	}
 
-	d.log("Requiring drush (container-side composer) ...")
+	// The constraint the base artifact set was built with, not a fresh
+	// decision: against a pre-release core the plain package may not resolve
+	// at all, and asking for the flag again here would make a working
+	// artifact set unusable by every command that did not repeat it.
+	toolPackage := ToolRequire(artifactMeta.ToolRequire)
+	d.log("Requiring " + toolPackage + " (container-side composer) ...")
 	if _, err := d.runner.Run([]string{
-		"ddev", "composer", "require", "drush/drush", "--no-interaction",
+		"ddev", "composer", "require", toolPackage, "--no-interaction",
 	}, projectPath, 0); err != nil {
-		return Environment{}, err
+		return Environment{}, fmt.Errorf(
+			"%w%s", err, ToolRequireHint(artifactMeta.CoreVersion, artifactMeta.ToolRequire),
+		)
 	}
 
 	if err := d.wireModule(module, projectPath); err != nil {

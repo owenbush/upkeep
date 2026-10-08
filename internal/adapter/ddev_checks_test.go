@@ -34,6 +34,16 @@ func withToolchain(t *testing.T, environment Environment) Environment {
 func artifactsFor(t *testing.T, coreMajor, coreVersion string) *baseartifact.Layout {
 	t.Helper()
 
+	return artifactsRequiring(t, coreMajor, coreVersion, "")
+}
+
+// artifactsRequiring is the same, for a set built with a toolchain override —
+// which every environment seeded from it has to install the same way.
+func artifactsRequiring(
+	t *testing.T, coreMajor, coreVersion, toolRequire string,
+) *baseartifact.Layout {
+	t.Helper()
+
 	layout := baseartifact.NewLayout(t.TempDir())
 	metaPath, err := layout.MetaPath(coreMajor)
 	if err != nil {
@@ -46,6 +56,7 @@ func artifactsFor(t *testing.T, coreMajor, coreVersion string) *baseartifact.Lay
 	meta := baseartifact.Meta{
 		CoreVersion: coreVersion, CoreMajor: coreMajor,
 		PHPVersion: "8.3", DBEngine: "mariadb:10.11", BuiltAt: time.Now(),
+		ToolRequire: toolRequire,
 	}
 	contents, err := meta.ToYAML()
 	if err != nil {

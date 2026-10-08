@@ -42,6 +42,14 @@ build that fails costs the attempt and leaves the existing set untouched.`,
 		"Lowest release stability to accept (%s). Needed while a core major is still in "+
 			"alpha or beta, which is when compatibility work happens",
 		strings.Join(baseartifact.Stabilities, ", ")))
+	// How the engine installs its toolchain, for a core whose dependencies no
+	// released version of it satisfies yet. The flag's *name* comes from the
+	// adapter along with everything else about that tool: which tool it is is
+	// engine knowledge, and a command that spelled it would be the
+	// orchestrator reaching past the boundary. Recorded in the artifact meta,
+	// so every environment seeded from the set installs the same toolchain
+	// without repeating this.
+	cmd.Flags().String(adapter.ToolRequireFlag, "", adapter.ToolRequireFlagHelp)
 	cli.AddScratchDir(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddVerbose(cmd)
@@ -89,7 +97,10 @@ func runBaseArtifactsBuild(cmd *cobra.Command, engines adapter.Factory) (int, er
 	// when a stable constraint resolves nothing would make every later verdict
 	// a statement about a tree nobody asked for, and a base artifact set is
 	// the one place a silent substitution is least acceptable.
-	meta, err := builder.Build(coreMajor, cli.Switched(cmd, "force"), cli.Flag(cmd, "stability"))
+	meta, err := builder.Build(
+		coreMajor, cli.Switched(cmd, "force"),
+		cli.Flag(cmd, "stability"), cli.Flag(cmd, adapter.ToolRequireFlag),
+	)
 	if err != nil {
 		return 0, err
 	}

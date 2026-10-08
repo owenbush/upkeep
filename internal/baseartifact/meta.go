@@ -19,6 +19,20 @@ type Meta struct {
 	PHPVersion  string
 	DBEngine    string
 	BuiltAt     time.Time
+
+	// ToolRequire is the composer argument the engine installed its
+	// site-management toolchain with, or empty for whatever the engine
+	// defaults to.
+	//
+	// Opaque here on purpose: which package that is, and what it is called, is
+	// the adapter's knowledge and this package must not hold it. What this
+	// package knows is that the choice belongs to the artifact set rather than
+	// to a command — every environment seeded from this tree installs the same
+	// toolchain, and against a pre-release core the default may not resolve at
+	// all, so asking for it again at provision time would make a working set
+	// unusable by any command that did not repeat the flag. The same stance
+	// StabilityOf takes, for the same reason.
+	ToolRequire string
 }
 
 // metaFile is the on-disk shape, and the field order is the order it is
@@ -29,6 +43,9 @@ type metaFile struct {
 	PHPVersion  string `yaml:"php_version"`
 	DBEngine    string `yaml:"db_engine"`
 	BuiltAt     string `yaml:"built_at"`
+	// Omitted when empty, so a set built for a released core writes the file
+	// it always wrote and an older reader sees nothing new.
+	ToolRequire string `yaml:"tool_require,omitempty"`
 }
 
 // metaTimeLayouts are the shapes a built_at can arrive in. PHP's
@@ -72,6 +89,13 @@ func MetaFromYAML(contents string) (Meta, error) {
 		values[key] = value.Value
 	}
 
+	// Optional, and read after the required keys: a set built before this
+	// existed carries no toolchain override, which means the engine default.
+	toolRequire := ""
+	if value, present := fields["tool_require"]; present && value.Kind == yaml.ScalarNode {
+		toolRequire = value.Value
+	}
+
 	builtAt, err := parseMetaTime(values["built_at"])
 	if err != nil {
 		return Meta{}, fmt.Errorf(
@@ -85,6 +109,7 @@ func MetaFromYAML(contents string) (Meta, error) {
 		PHPVersion:  values["php_version"],
 		DBEngine:    values["db_engine"],
 		BuiltAt:     builtAt,
+		ToolRequire: toolRequire,
 	}, nil
 }
 
@@ -106,6 +131,7 @@ func (m Meta) ToYAML() (string, error) {
 		PHPVersion:  m.PHPVersion,
 		DBEngine:    m.DBEngine,
 		BuiltAt:     m.BuiltAt.Format(time.RFC3339),
+		ToolRequire: m.ToolRequire,
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot render the meta: %w", err)

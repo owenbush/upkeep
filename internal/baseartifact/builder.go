@@ -55,6 +55,7 @@ type InstallSite interface {
 	// tree and writes the gzipped dump, reporting what it installed on.
 	CleanInstallAndDump(
 		coreMajor, treePath, throwawayPath, projectName, dumpPath string,
+		coreVersion, toolRequire string,
 	) (InstallEnvironment, error)
 
 	// Teardown disposes of the throwaway project. It reports nothing: a
@@ -113,7 +114,7 @@ func NewBuilder(
 // the core with no artifact set at all and every environment for it unusable.
 // The expensive, failure-prone part now happens beside the live set, and only
 // a rename touches it.
-func (b *Builder) Build(coreMajor string, force bool, stability string) (Meta, error) {
+func (b *Builder) Build(coreMajor string, force bool, stability, toolRequire string) (Meta, error) {
 	if err := AssertStability(stability); err != nil {
 		return Meta{}, err
 	}
@@ -143,7 +144,7 @@ func (b *Builder) Build(coreMajor string, force bool, stability string) (Meta, e
 		return Meta{}, err
 	}
 
-	meta, err := b.resolveAndInstall(coreMajor, staged, stability)
+	meta, err := b.resolveAndInstall(coreMajor, staged, stability, toolRequire)
 	if err != nil {
 		// Never leave a partial artifact set behind: an existing version
 		// directory must always mean the last build completed.
@@ -265,13 +266,15 @@ func (b *Builder) removeStaleStaging(coreMajor string) {
 }
 
 // resolveAndInstall is the build itself, writing into the staged paths.
-func (b *Builder) resolveAndInstall(coreMajor string, paths Paths, stability string) (Meta, error) {
+func (b *Builder) resolveAndInstall(
+	coreMajor string, paths Paths, stability, toolRequire string,
+) (Meta, error) {
 	coreVersion, err := b.resolveTree(coreMajor, paths.Tree, stability)
 	if err != nil {
 		return Meta{}, err
 	}
 
-	environment, err := b.installAndDump(coreMajor, paths.Tree, paths.Dump)
+	environment, err := b.installAndDump(coreMajor, paths.Tree, paths.Dump, coreVersion, toolRequire)
 	if err != nil {
 		return Meta{}, err
 	}
@@ -282,6 +285,7 @@ func (b *Builder) resolveAndInstall(coreMajor string, paths Paths, stability str
 		PHPVersion:  environment.PHPVersion,
 		DBEngine:    environment.DBEngine,
 		BuiltAt:     time.Now(),
+		ToolRequire: toolRequire,
 	}
 
 	// Checked writes: a missing meta or canonical marker makes the set read as
@@ -347,7 +351,9 @@ func (b *Builder) resolveTree(coreMajor, treePath, stability string) (string, er
 
 // installAndDump brings up a throwaway site from the tree and exports the
 // clean-install dump.
-func (b *Builder) installAndDump(coreMajor, treePath, dumpPath string) (InstallEnvironment, error) {
+func (b *Builder) installAndDump(
+	coreMajor, treePath, dumpPath, coreVersion, toolRequire string,
+) (InstallEnvironment, error) {
 	suffix := make([]byte, 3)
 	_, _ = rand.Read(suffix)
 
@@ -359,7 +365,7 @@ func (b *Builder) installAndDump(coreMajor, treePath, dumpPath string) (InstallE
 	}
 
 	environment, err := b.site.CleanInstallAndDump(
-		coreMajor, treePath, throwaway, projectName, dumpPath,
+		coreMajor, treePath, throwaway, projectName, dumpPath, coreVersion, toolRequire,
 	)
 	// Torn down whether or not it worked: a failed install leaves containers
 	// and volumes exactly as a successful one does.

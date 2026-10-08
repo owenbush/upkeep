@@ -635,6 +635,33 @@ and was learned the hard way — see `docs/go-port.md`.
   on core's constraint only — `drupal/coder@alpha` carries no version
   constraint at all and would admit an alpha of a package with nothing to do
   with the seeded core.
+  **A core so new that drush has no release for it is a second wall, and
+  `--drush` is the flag for it.** Resolving the tree is half the build; it then
+  installs drush into the throwaway to run `site:install`, and that can fail on
+  its own. Measured: core `12.0.0-beta1` requires `guzzlehttp/guzzle ^8.0.1`,
+  drush's newest release (13.8.0) requires `^7.0`, and **none of drush's 244
+  tagged releases supports guzzle 8** — so composer's own
+  `--with-all-dependencies` suggestion cannot help, because no guzzle satisfies
+  both sides. `13.x-dev` accepts `^7.0 || ^8.0` and has no dev-pinned
+  dependencies, where `14.x-dev` drags in `grasmash/yaml-cli: 4.x-dev` and runs
+  into `minimum-stability`. A flag rather than a fallback for the same reason
+  `--stability` is one, with the added one that an unpinned dev branch can
+  break overnight. **The constraint is persisted and the stability is not**, an
+  asymmetry that is the point: `meta.yml` takes `tool_require`, because
+  `check`/`review`/`dev` do not take the flag and should not, so a set built
+  with a constraint provisioning then ignored would be a working artifact set
+  no command could use — while the stability is *derivable* from the recorded
+  `core_version` via `StabilityOf`. The key is `omitempty` and optional on
+  read, so every set built before it existed still reads.
+  **The adapter boundary shaped this, and the invariant caught the first
+  attempt.** `drush` is one of the forbidden words, so none of it could live
+  where it was first written (`baseartifact`, and a `--drush` string in the
+  command): `internal/adapter/drush.go` holds the package, the hint, *and the
+  flag's own name*, and `base-artifacts:build` declares a flag whose name it
+  asks the adapter for. The orchestrator genuinely does not know which tool it
+  selects; `baseartifact.Meta` calls the field `ToolRequire` and treats it as
+  opaque. An engine driving something other than drush answers differently in
+  one file and no command changes.
   **A rebuild is staged beside the live set, never over it.** `--force` used to
   `rm -rf` the version directory and *then* resolve into the empty space, so a
   routine "pick up the newer alpha" rebuild that hit a network blip left the

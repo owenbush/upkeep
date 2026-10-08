@@ -264,3 +264,60 @@ func loadExpectedMetas(t *testing.T) map[string]expectedMeta {
 
 	return expected
 }
+
+// The toolchain override round-trips, because every environment seeded from
+// the set has to install the same one.
+func TestTheToolchainOverrideRoundTrips(t *testing.T) {
+	original := Meta{
+		CoreVersion: "12.0.0-beta1", CoreMajor: "12",
+		PHPVersion: "8.5.0", DBEngine: "mariadb:10.11",
+		BuiltAt: time.Now().UTC().Truncate(time.Second), ToolRequire: "^13@dev",
+	}
+
+	contents, err := original.ToYAML()
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	read, err := MetaFromYAML(contents)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if read.ToolRequire != "^13@dev" {
+		t.Errorf("tool_require %q", read.ToolRequire)
+	}
+}
+
+// A set built for a released core writes the file it always wrote: the key is
+// omitted rather than written empty, so a meta.yml does not change shape for
+// every artifact set that never needed this.
+func TestNoToolchainOverrideWritesNoKey(t *testing.T) {
+	contents, err := Meta{
+		CoreVersion: "11.4.8", CoreMajor: "11",
+		PHPVersion: "8.3.14", DBEngine: "mariadb:10.11", BuiltAt: time.Now(),
+	}.ToYAML()
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	if strings.Contains(contents, "tool_require") {
+		t.Errorf("an unused key was written:\n%s", contents)
+	}
+}
+
+// A meta written before this existed still reads, and reads as "whatever the
+// engine defaults to".
+//
+// Every artifact set on disk right now is one of these, and a required key
+// would have made all of them unreadable — every environment for every core
+// unusable until rebuilt.
+func TestAMetaWithoutTheKeyStillReads(t *testing.T) {
+	read, err := MetaFromYAML("core_version: 11.4.8\ncore_major: \"11\"\n" +
+		"php_version: 8.3.14\ndb_engine: mariadb:10.11\nbuilt_at: 2026-01-02T03:04:05Z\n")
+	if err != nil {
+		t.Fatalf("an older meta no longer reads: %v", err)
+	}
+	if read.ToolRequire != "" {
+		t.Errorf("it invented a constraint: %q", read.ToolRequire)
+	}
+}

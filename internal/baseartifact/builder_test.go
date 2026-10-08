@@ -100,6 +100,11 @@ type fakeSite struct {
 	writeDump   bool
 	afterDump   func()
 	environment InstallEnvironment
+	// What the build handed down about the tree it resolved, so a test can
+	// assert the drush constraint reached the install rather than stopping at
+	// the flag.
+	toolRequire string
+	coreVersion string
 }
 
 func newSite() *fakeSite {
@@ -111,8 +116,11 @@ func newSite() *fakeSite {
 
 func (s *fakeSite) CleanInstallAndDump(
 	coreMajor, treePath, throwawayPath, projectName, dumpPath string,
+	coreVersion, toolRequire string,
 ) (InstallEnvironment, error) {
 	s.installed = append(s.installed, projectName)
+	s.toolRequire = toolRequire
+	s.coreVersion = coreVersion
 	if s.fail != nil {
 		return InstallEnvironment{}, s.fail
 	}
@@ -166,7 +174,7 @@ func TestABuildLeavesACompleteArtifactSet(t *testing.T) {
 	runner, site := newScripted(), newSite()
 	builder, layout, _ := aBuilder(t, runner, site)
 
-	meta, err := builder.Build("11", false, "")
+	meta, err := builder.Build("11", false, "", "")
 	if err != nil {
 		t.Fatalf("build: %v\n%s", err, runner.transcript())
 	}
@@ -203,11 +211,11 @@ func TestAnExistingSetIsNotRebuiltWithoutForce(t *testing.T) {
 	runner, site := newScripted(), newSite()
 	builder, layout, _ := aBuilder(t, runner, site)
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 
-	_, err := builder.Build("11", false, "")
+	_, err := builder.Build("11", false, "", "")
 	if err == nil {
 		t.Fatal("it rebuilt over an existing set")
 	}
@@ -232,7 +240,7 @@ func TestARebuildIsStagedBesideTheLiveSetAndSwappedIn(t *testing.T) {
 	runner, site := newScripted(), newSite()
 	builder, layout, _ := aBuilder(t, runner, site)
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 
@@ -252,7 +260,7 @@ func TestARebuildIsStagedBesideTheLiveSetAndSwappedIn(t *testing.T) {
 		}
 	})
 
-	if _, err := builder.Build("11", true, ""); err != nil {
+	if _, err := builder.Build("11", true, "", ""); err != nil {
 		t.Fatalf("rebuild: %v\n%s", err, runner.transcript())
 	}
 
@@ -296,7 +304,7 @@ func TestAFailedRebuildLeavesTheExistingSetUntouched(t *testing.T) {
 		runner, site := newScripted(), newSite()
 		builder, layout, said := aBuilder(t, runner, site)
 
-		if _, err := builder.Build("11", false, ""); err != nil {
+		if _, err := builder.Build("11", false, "", ""); err != nil {
 			t.Fatalf("build: %v", err)
 		}
 		versionDir, _ := layout.VersionDir("11")
@@ -306,7 +314,7 @@ func TestAFailedRebuildLeavesTheExistingSetUntouched(t *testing.T) {
 		}
 
 		runner.fails(failing)
-		if _, err := builder.Build("11", true, ""); err == nil {
+		if _, err := builder.Build("11", true, "", ""); err == nil {
 			t.Errorf("%s failed and the rebuild reported success", failing)
 		}
 
@@ -329,7 +337,7 @@ func TestAFailedFirstBuildLeavesNothingThatReadsAsASet(t *testing.T) {
 	site.fail = errors.New("the site would not install")
 	builder, layout, _ := aBuilder(t, runner, site)
 
-	if _, err := builder.Build("11", false, ""); err == nil {
+	if _, err := builder.Build("11", false, "", ""); err == nil {
 		t.Fatal("a failed install reported success")
 	}
 
@@ -361,7 +369,7 @@ func TestABuildInProgressIsNotACoreAnybodyCanBeOffered(t *testing.T) {
 		}
 	})
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 }
@@ -383,7 +391,7 @@ func TestStagingFromAnInterruptedBuildIsCollectedByTheNextOne(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 
@@ -408,7 +416,7 @@ func TestTheThrowawaySiteIsTornDownEitherWay(t *testing.T) {
 		}
 		builder, _, _ := aBuilder(t, runner, site)
 
-		_, _ = builder.Build("11", false, "")
+		_, _ = builder.Build("11", false, "", "")
 
 		if len(site.tornDown) != 1 {
 			t.Errorf("%s: torn down %v", name, site.tornDown)
@@ -438,7 +446,7 @@ func TestAnEmptyDumpIsABuildFailure(t *testing.T) {
 		dumpPath, _ := layout.DumpPath("11")
 		runner.does("composer create-project", func([]string) { write(dumpPath) })
 
-		if _, err := builder.Build("11", false, ""); err == nil {
+		if _, err := builder.Build("11", false, "", ""); err == nil {
 			t.Errorf("%s was accepted as a build", name)
 		}
 	}
@@ -451,7 +459,7 @@ func TestAResolveThatFindsNothingNamesTheStabilityFlag(t *testing.T) {
 	runner.fails("composer create-project")
 	builder, _, _ := aBuilder(t, runner, site)
 
-	_, err := builder.Build("12", false, "")
+	_, err := builder.Build("12", false, "", "")
 	if err == nil {
 		t.Fatal("a failed resolve reported success")
 	}
@@ -471,7 +479,7 @@ func TestAResolveThatFailedWithAStabilityDoesNotRepeatTheAdvice(t *testing.T) {
 	runner.fails("composer create-project")
 	builder, _, _ := aBuilder(t, runner, site)
 
-	_, err := builder.Build("12", false, "alpha")
+	_, err := builder.Build("12", false, "alpha", "")
 	if err == nil {
 		t.Fatal("a failed resolve reported success")
 	}
@@ -485,7 +493,7 @@ func TestAnUnknownStabilityIsRefusedBeforeAnyWork(t *testing.T) {
 	runner, site := newScripted(), newSite()
 	builder, _, _ := aBuilder(t, runner, site)
 
-	if _, err := builder.Build("12", false, "nearly-ready"); err == nil {
+	if _, err := builder.Build("12", false, "nearly-ready", ""); err == nil {
 		t.Fatal("it built with a stability composer does not know")
 	}
 	if len(runner.ran) != 0 {
@@ -499,7 +507,7 @@ func TestTheCanonicalTreeIsResolvedWithNothingAddedToIt(t *testing.T) {
 	runner, site := newScripted(), newSite()
 	builder, _, _ := aBuilder(t, runner, site)
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 
@@ -520,7 +528,7 @@ func TestACoreThatIsNotAMajorIsRefused(t *testing.T) {
 	builder, _, _ := aBuilder(t, runner, site)
 
 	for _, core := range []string{"11.2", "", "../escape", "v11"} {
-		if _, err := builder.Build(core, false, ""); err == nil {
+		if _, err := builder.Build(core, false, "", ""); err == nil {
 			t.Errorf("%q was built", core)
 		}
 	}
@@ -537,7 +545,7 @@ func TestARetireThatFailsSaysTheExistingSetIsUntouched(t *testing.T) {
 	runner, site := newScripted(), newSite()
 	builder, layout, _ := aBuilder(t, runner, site)
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	versionDir, _ := layout.VersionDir("11")
@@ -557,7 +565,7 @@ func TestARetireThatFailsSaysTheExistingSetIsUntouched(t *testing.T) {
 		}
 	})
 
-	_, err := builder.Build("11", true, "")
+	_, err := builder.Build("11", true, "", "")
 	if err == nil {
 		t.Fatal("a failed retire reported success")
 	}
@@ -593,7 +601,7 @@ func TestASwapThatFailsNamesEverythingAndDeletesNothing(t *testing.T) {
 		}
 	})
 
-	_, err := builder.Build("11", false, "")
+	_, err := builder.Build("11", false, "", "")
 	if err == nil {
 		t.Fatal("a failed swap reported success")
 	}
@@ -632,7 +640,7 @@ func TestABuilderWithNoLogStillBuilds(t *testing.T) {
 
 	builder := NewBuilder(layout, site, filepath.Join(t.TempDir(), "scratch"), runner, nil)
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("build: %v\n%s", err, runner.transcript())
 	}
 }
@@ -666,7 +674,7 @@ func TestNoBuildStepIsSwallowed(t *testing.T) {
 		})
 		runner.does("rm -rf", func(command []string) { _ = os.RemoveAll(command[2]) })
 
-		_, err := NewBuilder(NewLayout(root), newSite(), scratch, runner, nil).Build("11", false, "")
+		_, err := NewBuilder(NewLayout(root), newSite(), scratch, runner, nil).Build("11", false, "", "")
 
 		return err
 	}
@@ -717,7 +725,7 @@ func TestCleanupThatWillNotGoIsReportedRatherThanFatal(t *testing.T) {
 	builder, _, said := aBuilder(t, runner, site)
 	runner.fails("rm -rf")
 
-	if _, err := builder.Build("11", false, ""); err != nil {
+	if _, err := builder.Build("11", false, "", ""); err != nil {
 		t.Fatalf("a finished build failed over its own cleanup: %v", err)
 	}
 	if !strings.Contains(strings.Join(*said, "\n"), "Could not remove") {
@@ -743,7 +751,7 @@ func TestABuildThatCannotWriteIsAFailureAndLeavesNoSet(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(layout.Dir, 0o755) })
 
-	if _, err := builder.Build("11", false, ""); err == nil {
+	if _, err := builder.Build("11", false, "", ""); err == nil {
 		t.Fatal("it built into a directory it cannot write")
 	}
 	if len(site.installed) != 0 {
@@ -776,7 +784,7 @@ func TestASetMissingEitherSidecarIsNotOfferedAsACore(t *testing.T) {
 			}
 		}
 
-		if _, err := builder.Build("11", false, ""); err == nil {
+		if _, err := builder.Build("11", false, "", ""); err == nil {
 			t.Errorf("a set with no %s was reported as built", name)
 		}
 
@@ -819,7 +827,7 @@ func TestATreeWithNoResolvedCoreVersionIsABuildFailure(t *testing.T) {
 
 		builder := NewBuilder(layout, site, filepath.Join(t.TempDir(), "scratch"), runner, nil)
 
-		_, err := builder.Build("11", false, "")
+		_, err := builder.Build("11", false, "", "")
 		if err == nil {
 			t.Errorf("%s was accepted as a build", name)
 
@@ -864,7 +872,7 @@ func TestAScratchDirectoryThatCannotBeMadeIsAFailure(t *testing.T) {
 
 	builder := NewBuilder(layout, site, filepath.Join(locked, "scratch"), runner, nil)
 
-	if _, err := builder.Build("11", false, ""); err == nil {
+	if _, err := builder.Build("11", false, "", ""); err == nil {
 		t.Fatal("it installed into a scratch directory it could not make")
 	}
 	if len(site.installed) != 0 {
@@ -897,5 +905,41 @@ func TestThePathSetIsResolvedTogether(t *testing.T) {
 		if _, err := layout.PathsFor(core); err == nil {
 			t.Errorf("%q was resolved", core)
 		}
+	}
+}
+
+// The toolchain override travels from the flag to the install and into the
+// meta, which is the whole chain: chosen once, used by the build, and then
+// available to every environment seeded from the set.
+func TestTheToolchainOverrideReachesTheInstallAndTheMeta(t *testing.T) {
+	runner, site := newScripted(), newSite()
+	builder, _, _ := aBuilder(t, runner, site)
+
+	meta, err := builder.Build("11", false, "", "^13@dev")
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	if site.toolRequire != "^13@dev" {
+		t.Errorf("the install was handed %q", site.toolRequire)
+	}
+	if meta.ToolRequire != "^13@dev" {
+		t.Errorf("the meta recorded %q", meta.ToolRequire)
+	}
+}
+
+// The install is also told the resolved core version, which is what decides
+// whether a failure gets the pre-release diagnosis: the major alone cannot
+// say, since 12 is a pre-release one day and a release the next.
+func TestTheInstallIsToldTheResolvedCoreVersion(t *testing.T) {
+	runner, site := newScripted(), newSite()
+	builder, _, _ := aBuilder(t, runner, site)
+
+	if _, err := builder.Build("11", false, "", ""); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	if site.coreVersion == "" || site.coreVersion == "11" {
+		t.Errorf("the install got %q, want the resolved version", site.coreVersion)
 	}
 }

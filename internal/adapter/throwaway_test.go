@@ -15,7 +15,7 @@ func TestAThrowawayInstallRunsItsStepsInOrder(t *testing.T) {
 		answer("describe", `{"raw":{"dbinfo":{"database_type":"mariadb","database_version":"10.11"}}}`)
 
 	environment, err := NewThrowawaySite(runner, nil).CleanInstallAndDump(
-		"11", "/artifacts/11/tree", "/scratch/upkeep-base-d11-abc", "upkeep-base-d11-abc", "/artifacts/11/dump.sql.gz",
+		"11", "/artifacts/11/tree", "/scratch/upkeep-base-d11-abc", "upkeep-base-d11-abc", "/artifacts/11/dump.sql.gz", "11.4.8", "",
 	)
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, runner.transcript())
@@ -56,7 +56,7 @@ func TestDrushGoesOnlyIntoTheThrowawayCopy(t *testing.T) {
 	runner := newRunner()
 
 	if _, err := NewThrowawaySite(runner, nil).CleanInstallAndDump(
-		"11", "/artifacts/11/tree", "/scratch/throwaway", "throwaway", "/artifacts/11/dump.sql.gz",
+		"11", "/artifacts/11/tree", "/scratch/throwaway", "throwaway", "/artifacts/11/dump.sql.gz", "11.4.8", "",
 	); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestTheDatabaseEngineIsRecordedOrSaidToBeUnknown(t *testing.T) {
 		}
 
 		environment, err := NewThrowawaySite(runner, nil).CleanInstallAndDump(
-			"11", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz",
+			"11", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz", "11.4.8", "",
 		)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -115,7 +115,7 @@ func TestNoThrowawayStepIsSwallowed(t *testing.T) {
 	install := func(runner *recordingRunner) error {
 		runner.answer("php -r", "8.3.14\n")
 		_, err := NewThrowawaySite(runner, nil).CleanInstallAndDump(
-			"11", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz",
+			"11", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz", "11.4.8", "",
 		)
 
 		return err
@@ -205,5 +205,63 @@ func TestATreeThatWillNotGoIsReportedRatherThanFatal(t *testing.T) {
 
 	if !strings.Contains(strings.Join(said, "\n"), "could not be removed") {
 		t.Errorf("it went silently: %v", said)
+	}
+}
+
+// The constraint reaches the container, rather than stopping at the flag.
+func TestAToolchainConstraintReachesTheComposerRequire(t *testing.T) {
+	runner := newRunner().
+		answer("php -r", "8.3.14\n").
+		answer("describe", `{"raw":{"dbinfo":{"database_type":"mariadb","database_version":"10.11"}}}`)
+
+	if _, err := NewThrowawaySite(runner, nil).CleanInstallAndDump(
+		"12", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz",
+		"12.0.0-beta1", "^13@dev",
+	); err != nil {
+		t.Fatalf("install: %v\n%s", err, runner.transcript())
+	}
+
+	if !runner.didRun("composer require drush/drush:^13@dev") {
+		t.Errorf("the constraint did not reach composer:\n%s", runner.transcript())
+	}
+	// And not the bare package as well, which would resolve to a release that
+	// cannot work and then be overwritten or conflict.
+	if runner.didRun("composer require drush/drush --no-interaction") {
+		t.Errorf("it required the bare package too:\n%s", runner.transcript())
+	}
+}
+
+// A toolchain that will not install on a pre-release core says what can be
+// done about it, after composer's own words.
+//
+// Without this the operator gets forty lines of composer resolver output whose
+// actual meaning — no release of this tool resolves against this core yet — is
+// never stated, and which never mentions that there is a flag.
+func TestAFailedToolchainInstallNamesTheFlag(t *testing.T) {
+	runner := newRunner().
+		answer("php -r", "8.3.14\n").
+		fails("composer require")
+
+	_, err := NewThrowawaySite(runner, nil).CleanInstallAndDump(
+		"12", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz", "12.0.0-beta1", "",
+	)
+	if err == nil {
+		t.Fatal("a failed toolchain install was swallowed")
+	}
+	if !strings.Contains(err.Error(), "--"+ToolRequireFlag) {
+		t.Errorf("the failure did not name the flag: %v", err)
+	}
+
+	// On a released core the same failure gets no such advice: the toolchain
+	// resolves there, so this would be a guess dressed as a diagnosis.
+	released := newRunner().answer("php -r", "8.3.14\n").fails("composer require")
+	_, err = NewThrowawaySite(released, nil).CleanInstallAndDump(
+		"11", "/tree", "/scratch/throwaway", "throwaway", "/dump.sql.gz", "11.4.8", "",
+	)
+	if err == nil {
+		t.Fatal("a failed toolchain install was swallowed")
+	}
+	if strings.Contains(err.Error(), "--"+ToolRequireFlag) {
+		t.Errorf("a released core was given pre-release advice: %v", err)
 	}
 }

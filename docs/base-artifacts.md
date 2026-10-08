@@ -82,6 +82,44 @@ Accepted values are composer's own, loosest first: `dev`, `alpha`, `beta`,
 than handed to composer — which answers a bad `@` suffix with a parse error
 about the whole constraint.
 
+### A core so new that drush has no release for it
+
+Resolving the tree is only half of it. The build then installs drush into the
+throwaway copy to run `site:install`, and on a pre-release core that can fail
+on its own:
+
+```
+Problem 1
+  - drupal/core-recommended is locked to version 12.0.0-beta1 ...
+  - drush/drush[12.0.0-rc1, ..., 13.8.0] require guzzlehttp/guzzle ^7.0 ->
+    found guzzlehttp/guzzle[...7.15.5] but the package is fixed to 8.2.0
+```
+
+Measured at the time of writing: core `12.0.0-beta1` requires
+`guzzlehttp/guzzle ^8.0.1`, drush's newest release is `13.8.0` and requires
+`^7.0`, and **none of drush's 244 tagged releases supports guzzle 8**. So
+composer's own suggestion — `--with-all-dependencies` — cannot help: there is
+no guzzle that satisfies both sides, and no amount of letting it upgrade
+things will invent one. The development branches do: `13.x-dev` accepts
+`^7.0 || ^8.0`.
+
+```bash
+upkeep base-artifacts:build --version=12 --stability=beta --drush='^13@dev'
+```
+
+**A flag, for the same reason `--stability` is one.** An unpinned development
+branch is a thing that can break overnight, and choosing one on somebody's
+behalf — inside the build that produces the tree every later verdict is
+measured against — is not a trade the tool makes. The failure names the flag
+and prints a runnable line instead, and is suppressed on a released core and
+once a constraint was given, by the same rule as the resolve hint above.
+
+Prefer `^13@dev` to a bare `*@dev`: composer takes the highest match, which is
+`14.x-dev`, and that pulls `grasmash/yaml-cli: 4.x-dev` and
+`chi-teck/drupal-code-generator: ^4@dev` along with it — transitive dev
+requirements that run into the project's `minimum-stability` wall. `13.x-dev`
+has no dev-pinned dependencies.
+
 ## 3. Rebuilding
 
 ```bash
@@ -130,6 +168,23 @@ highest version available. The same command walks itself forward through beta,
 RC and the stable release with no intervention. Pass a tighter stability only
 when you want to *stop* accepting the looser ones — `--stability=beta` once
 betas exist and you no longer want alphas.
+
+### The toolchain constraint *is* persisted, and the stability is not
+
+An asymmetry worth the words, because they look like the same kind of thing.
+
+`--drush` is recorded in `meta.yml` as `tool_require`, and every environment
+seeded from the set installs drush that way without being told again. It has
+to be: `check`, `review` and `dev` do not take the flag and should not, so a
+set built with a constraint that provisioning then ignored would be a working
+artifact set that no command could use. The key is omitted when empty and
+optional on read, so every set built before it existed still reads — as
+"whatever the engine defaults to", which is what those sets used.
+
+The stability needs no such record, because it is *derivable*: `meta.yml`
+already holds the resolved `core_version`, and `StabilityOf` reads the
+stability straight back out of `12.0.0-beta1`. Nothing about drush's
+constraint can be derived from the tree, so it is stored.
 
 ### The stability is not persisted
 

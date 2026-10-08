@@ -122,3 +122,11 @@ func UnresolvableHint(coreMajor, stability string) string {
 		coreMajor, coreMajor, coreMajor,
 	)
 }
+
+// MajorOf is the leading major number of a core version, for echoing a command
+// back with the same --version the run was given.
+func MajorOf(coreVersion string) string {
+	major, _, _ := strings.Cut(coreVersion, ".")
+
+	return major
+}

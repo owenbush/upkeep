@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
@@ -104,15 +105,18 @@ func (r *buildingRunner) ran(fragment string) bool {
 // installingSite stands in for the throwaway project the clean install runs
 // in, writing the dump the build then keeps.
 type installingSite struct {
-	installed []string
-	tornDown  []string
-	fail      error
+	installed   []string
+	tornDown    []string
+	fail        error
+	toolRequire string
 }
 
 func (s *installingSite) CleanInstallAndDump(
 	_, _, _, projectName, dumpPath string,
+	_, toolRequire string,
 ) (baseartifact.InstallEnvironment, error) {
 	s.installed = append(s.installed, projectName)
+	s.toolRequire = toolRequire
 	if s.fail != nil {
 		return baseartifact.InstallEnvironment{}, s.fail
 	}
@@ -411,5 +415,42 @@ func TestABuildRefusesAnImpossibleCoreVersion(t *testing.T) {
 		if len(runner.commands) != 0 {
 			t.Errorf("%q ran %v before refusing", version, runner.commands)
 		}
+	}
+}
+
+// The flag reaches the install, and its name comes from the adapter.
+//
+// Named through the constant rather than typed here, for the same reason the
+// command declares it that way: which tool it selects is engine knowledge, and
+// a test that hardcoded the spelling would pin the orchestrator to it.
+func TestTheToolchainFlagReachesTheInstall(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	runner, site := aBuildingRunner(t), &installingSite{}
+
+	code, _, stderr := runBuildCommand(t, runner, site,
+		"base-artifacts:build", "--version=11",
+		"--"+adapter.ToolRequireFlag+"=^13@dev", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if site.toolRequire != "^13@dev" {
+		t.Errorf("the install was handed %q", site.toolRequire)
+	}
+}
+
+// Omitting it hands down nothing, so the engine installs its default — which
+// is what every released core wants.
+func TestOmittingTheToolchainFlagHandsDownNothing(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	runner, site := aBuildingRunner(t), &installingSite{}
+
+	if code, _, stderr := runBuildCommand(t, runner, site,
+		"base-artifacts:build", "--version=11", "--cockpit="+root); code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+
+	if site.toolRequire != "" {
+		t.Errorf("it invented a constraint: %q", site.toolRequire)
 	}
 }

@@ -44,6 +44,7 @@ func NewThrowawaySite(runner proc.Runner, log Log) *ThrowawaySite {
 // Drupal with the minimal profile, and exports the gzipped dump.
 func (s *ThrowawaySite) CleanInstallAndDump(
 	coreMajor, treePath, throwawayPath, projectName, dumpPath string,
+	coreVersion, toolRequire string,
 ) (baseartifact.InstallEnvironment, error) {
 	// Seeded by tree copy — the path verified byte-identical to a fresh
 	// resolve — and never by a second resolve, which could pick up a release
@@ -75,11 +76,18 @@ func (s *ThrowawaySite) CleanInstallAndDump(
 	// drush goes into the throwaway copy only; the canonical tree must stay
 	// module-free. Run composer inside the container so resolution happens
 	// against the same PHP the site will run on.
-	s.log("Requiring drush in the throwaway copy (container-side composer) ...")
+	toolPackage := ToolRequire(toolRequire)
+	s.log("Requiring " + toolPackage + " in the throwaway copy (container-side composer) ...")
 	if _, err := s.runner.Run([]string{
-		"ddev", "composer", "require", "drush/drush", "--no-interaction",
+		"ddev", "composer", "require", toolPackage, "--no-interaction",
 	}, throwawayPath, throwawayTimeout); err != nil {
-		return baseartifact.InstallEnvironment{}, err
+		// Composer's own words first, then what can be done about them — the
+		// same order a refused resolve uses. Against a pre-release core the
+		// commonest cause is that no drush *release* resolves yet, and nothing
+		// in composer's forty lines says there is a flag for it.
+		return baseartifact.InstallEnvironment{}, fmt.Errorf(
+			"%w%s", err, ToolRequireHint(coreVersion, toolRequire),
+		)
 	}
 
 	s.log("Installing Drupal (minimal profile, module-free) ...")

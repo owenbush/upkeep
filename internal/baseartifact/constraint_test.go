@@ -101,3 +101,19 @@ func TestTheStabilitiesAreOrderedLoosestFirst(t *testing.T) {
 		t.Errorf("got %v", Stabilities)
 	}
 }
+
+// The major is the leading number of a resolved version, so a message can echo
+// back the --version the run was given rather than a different spelling of it.
+func TestTheMajorOfACoreVersion(t *testing.T) {
+	for version, want := range map[string]string{
+		"12.0.0-beta1":  "12",
+		"13.0.0-alpha3": "13",
+		"11.4.8":        "11",
+		"11":            "11",
+		"":              "",
+	} {
+		if got := MajorOf(version); got != want {
+			t.Errorf("MajorOf(%q) = %q, want %q", version, got, want)
+		}
+	}
+}

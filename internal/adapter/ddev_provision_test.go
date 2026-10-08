@@ -691,3 +691,48 @@ func TestEnsuringAnImpossibleModuleNameIsRefused(t *testing.T) {
 		t.Errorf("it ran something for a name that cannot exist:\n%s", runner.transcript())
 	}
 }
+
+// Provisioning installs the toolchain the way the base artifact set did, not
+// the way a flag that is not on this command would.
+//
+// `base-artifacts:build --drush` is where the constraint is chosen, and every
+// environment seeded from that tree needs it too — against a pre-release core
+// the bare package may not resolve at all. Re-deciding here would mean a
+// working artifact set that no `check` or `review` could use, because neither
+// takes the flag and neither should.
+func TestProvisioningInstallsTheToolchainTheArtifactSetRecorded(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "projects")
+	runner := newRunner()
+	engine := NewDdevContrib(
+		artifactsRequiring(t, "11", "11.4.6", "^13@dev"), root, runner, nil,
+	)
+	projectPath := filepath.Join(root, "upkeep-pathauto-d11")
+	aSuccessfulProvision(t, runner, projectPath)
+
+	if _, err := engine.EnsureEnv(pathauto, "11"); err != nil {
+		t.Fatalf("ensure: %v\n%s", err, runner.transcript())
+	}
+
+	if !runner.didRun("composer require drush/drush:^13@dev") {
+		t.Errorf("the recorded constraint was not used:\n%s", runner.transcript())
+	}
+	if runner.didRun("composer require drush/drush --no-interaction") {
+		t.Errorf("it required the bare package as well:\n%s", runner.transcript())
+	}
+}
+
+// And a set with nothing recorded installs the bare package, which is what
+// every released core wants and what every existing artifact set on disk says.
+func TestProvisioningInstallsTheBarePackageWhenNothingWasRecorded(t *testing.T) {
+	root, engine, runner := aProjectsRoot(t, "11")
+	projectPath := filepath.Join(root, "upkeep-pathauto-d11")
+	aSuccessfulProvision(t, runner, projectPath)
+
+	if _, err := engine.EnsureEnv(pathauto, "11"); err != nil {
+		t.Fatalf("ensure: %v\n%s", err, runner.transcript())
+	}
+
+	if !runner.didRun("composer require drush/drush --no-interaction") {
+		t.Errorf("the bare package was not used:\n%s", runner.transcript())
+	}
+}
