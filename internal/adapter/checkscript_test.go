@@ -12,10 +12,10 @@ func everyScript() map[string]string {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
 	scripts := map[string]string{
-		"phpstan, module's own config": PhpstanScript(module, "phpstan.neon"),
-		"phpstan, fallback":            PhpstanScript(module, ""),
-		"phpcs, module's own ruleset":  PhpcsScript(module, "phpcs.xml.dist"),
-		"phpcs, fallback":              PhpcsScript(module, ""),
+		"phpstan, module's own config": PhpstanScript(module, "phpstan.neon", ""),
+		"phpstan, fallback":            PhpstanScript(module, "", ""),
+		"phpcs, module's own ruleset":  PhpcsScript(module, "phpcs.xml.dist", ""),
+		"phpcs, fallback":              PhpcsScript(module, "", ""),
 	}
 	for _, name := range PhpstanConfigs {
 		scripts["probe "+name] = ConfigProbe(module, name)
@@ -87,8 +87,8 @@ func TestEveryScriptIsOneLine(t *testing.T) {
 // fetched.
 func TestTheGuardedStepsAreBraced(t *testing.T) {
 	fallbacks := map[string]string{
-		"phpstan": PhpstanScript(QuoteShellArgument("/m"), ""),
-		"phpcs":   PhpcsScript(QuoteShellArgument("/m"), ""),
+		"phpstan": PhpstanScript(QuoteShellArgument("/m"), "", ""),
+		"phpcs":   PhpcsScript(QuoteShellArgument("/m"), "", ""),
 	}
 
 	for name, script := range fallbacks {
@@ -124,7 +124,7 @@ func TestEveryScriptParsesAsShell(t *testing.T) {
 func TestAModulesOwnConfigurationIsNamedRatherThanDiscovered(t *testing.T) {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
-	stan := PhpstanScript(module, "phpstan.neon")
+	stan := PhpstanScript(module, "phpstan.neon", "")
 	if !strings.Contains(stan, "-c "+module+"/phpstan.neon") {
 		t.Errorf("phpstan does not name the module's config:\n  %s", stan)
 	}
@@ -132,7 +132,7 @@ func TestAModulesOwnConfigurationIsNamedRatherThanDiscovered(t *testing.T) {
 		t.Errorf("phpstan downloaded the default over the module's own:\n  %s", stan)
 	}
 
-	cs := PhpcsScript(module, "phpcs.xml.dist")
+	cs := PhpcsScript(module, "phpcs.xml.dist", "")
 	if !strings.Contains(cs, "--standard="+module+"/phpcs.xml.dist") {
 		t.Errorf("phpcs does not name the module's ruleset:\n  %s", cs)
 	}
@@ -148,8 +148,8 @@ func TestTheFallbackConfigIsNeverWrittenIntoTheModule(t *testing.T) {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
 	for name, script := range map[string]string{
-		"phpstan": PhpstanScript(module, ""),
-		"phpcs":   PhpcsScript(module, ""),
+		"phpstan": PhpstanScript(module, "", ""),
+		"phpcs":   PhpcsScript(module, "", ""),
 	} {
 		// curl -O writes to the working directory, which is the project root.
 		if strings.Contains(script, "-o "+module) || strings.Contains(script, "> "+module) {
@@ -166,7 +166,7 @@ func TestTheFallbackConfigIsNeverWrittenIntoTheModule(t *testing.T) {
 func TestPhpcsReportsModuleRelativePaths(t *testing.T) {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
-	for _, script := range []string{PhpcsScript(module, ""), PhpcsScript(module, "phpcs.xml")} {
+	for _, script := range []string{PhpcsScript(module, "", ""), PhpcsScript(module, "phpcs.xml", "")} {
 		if !strings.Contains(script, "--basepath="+module) {
 			t.Errorf("no module basepath:\n  %s", script)
 		}
@@ -190,5 +190,52 @@ func TestTheProbesFollowTheToolsOwnPrecedence(t *testing.T) {
 	// Exit status is all that is read, so nothing is printed to parse.
 	if strings.ContainsAny(probe, "|>") {
 		t.Errorf("the probe produces output to parse: %q", probe)
+	}
+}
+
+// The module's own extra arguments reach the command, in both the shipped-
+// config and fallback shapes.
+func TestTheModulesExtraArgumentsReachTheTools(t *testing.T) {
+	module := QuoteShellArgument("/m")
+
+	for name, script := range map[string]string{
+		"phpcs with its own ruleset":  PhpcsScript(module, "phpcs.xml.dist", "--colors"),
+		"phpcs on the default":        PhpcsScript(module, "", "--colors"),
+		"phpstan with its own config": PhpstanScript(module, "phpstan.neon", "--level=1"),
+		"phpstan on the default":      PhpstanScript(module, "", "--level=1"),
+	} {
+		if !strings.Contains(script, "--colors") && !strings.Contains(script, "--level=1") {
+			t.Errorf("%s dropped the extra arguments: %s", name, script)
+		}
+	}
+
+	// And they go on the analysis, never on the fetch that precedes it — a
+	// curl given a phpcs flag fails, and the check would blame the module.
+	fallback := PhpcsScript(module, "", "--colors")
+	fetch, analyse, split := strings.Cut(fallback, "&&")
+	if !split {
+		t.Fatalf("the fallback is no longer two steps: %s", fallback)
+	}
+	if strings.Contains(fetch, "--colors") {
+		t.Errorf("the extra arguments were given to the download: %s", fetch)
+	}
+	if !strings.Contains(analyse, "--colors") {
+		t.Errorf("the analysis did not get them: %s", analyse)
+	}
+}
+
+// Nothing extra leaves the command exactly as it was, so a module that
+// configures nothing is checked the way it always was.
+func TestNoExtraArgumentsChangesNothing(t *testing.T) {
+	module := QuoteShellArgument("/m")
+
+	if PhpcsScript(module, "", "") == "" || strings.HasSuffix(PhpcsScript(module, "", ""), " ") {
+		t.Errorf("a trailing space was added: %q", PhpcsScript(module, "", ""))
+	}
+	if PhpstanScript(module, "x.neon", "") != PhpstanScript(module, "x.neon", "") {
+		t.Error("not deterministic")
+	}
+	if strings.HasSuffix(PhpstanScript(module, "x.neon", ""), " ") {
+		t.Errorf("a trailing space was added: %q", PhpstanScript(module, "x.neon", ""))
 	}
 }

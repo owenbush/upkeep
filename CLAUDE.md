@@ -77,6 +77,32 @@ and was learned the hard way — see `docs/go-port.md`.
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- **A check that disagrees with CI is worse than no check**, so the three
+  reasons it can are closed or stated. (1) **The standards are versioned and
+  the requested core picks them**: `--version=12` pulls `core-dev:^12` →
+  coder `^9` → PHPCS `^4`, while a branch declaring `^10.3 || ^11` has CI on
+  coder 8 / PHPCS 3. Both are right about their own core, so this is reported
+  rather than reconciled — `StandardsVersions` reads coder, php_codesniffer
+  and phpstan out of the project's `composer.lock` (on disk, no container
+  round trip) and names them once per run. Reported from a real mismatch where
+  upkeep found four auto-fixable errors that CI's green job did not.
+  (2) **CI's phpcs and phpstan jobs are `allow_failure: true` by default** —
+  `_PHPCS_ALLOW_FAILURE` is blank and the fallback rule inherits the job-level
+  default — so "CI is green" and "CI found nothing" differ. upkeep stays
+  blocking, deliberately, and the guide says why. (3) **`_PHPCS_EXTRA`,
+  `_PHPSTAN_EXTRA` and `_PHPUNIT_EXTRA` are honoured** from the module's
+  `.gitlab-ci.yml` (`ReadCiExtras`), because they are the documented way a
+  project tunes a check — **but treated as untrusted**: CI runs a project's own
+  pipeline, upkeep runs strangers' contributions, and these land in a `bash -c`.
+  A value carrying shell metacharacters is **refused and reported**, never
+  quoted (multi-token values are the point, so the string cannot be quoted
+  whole) and never silently stripped (that would be the same mismatch, quieter).
+  Also `ownConfig` now looks where CI's `get-file-via-curl.sh` looks —
+  `.gitlab-ci/assets/` then `.gitlab/assets/` — before falling back to the
+  fetched default, which a module keeping its ruleset there needed.
+  What was *checked and ruled out*: `--standard=<file>` versus CI's
+  working-directory discovery makes no difference, tested with real phpcs on a
+  ruleset carrying `<arg name="extensions">` — identical findings either way.
 - **phpstan and phpcs run from inside the module, as CI does.**
   `internal/adapter/ddev_checks.go`. Both discover their configuration from the *current
   working directory*, and upkeep ran them from the project root — where the

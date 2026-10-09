@@ -36,6 +36,19 @@ func (d *DdevContrib) RunChecks(environment Environment, checks []check.Type) (c
 		}
 	}
 
+	// Named once per run, because two tools reporting different things about
+	// the same code is a mystery until you know they are different tools.
+	if versions := StandardsVersions(environment.ProjectPath); len(versions) > 0 {
+		d.log("Checking with " + strings.Join(versions, ", ") + ".")
+	}
+
+	// Said once per run rather than per check: the verdict will differ from
+	// CI's by exactly these arguments, and a mismatch nobody mentioned is the
+	// thing honouring them is meant to stop.
+	if rejected := d.ciExtras(environment).Rejected; len(rejected) > 0 {
+		d.log(RejectedExtrasWarning(rejected))
+	}
+
 	results := make([]check.Result, 0, len(checks))
 	for _, one := range checks {
 		d.log(fmt.Sprintf("Running check: %s ...", one))
@@ -64,9 +77,14 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 		// The engine command as shipped: an existing path argument makes it
 		// run exactly that directory. Host-side path; the container's working
 		// directory is the project root.
-		return d.runCommandCheck(environment, one, []string{
+		phpunit := []string{
 			"ddev", "phpunit", fmt.Sprintf("web/%s/%s", EngineProjectsPath, environment.ModuleName),
-		})
+		}
+		if extra := d.ciExtras(environment).PhpUnit; extra != "" {
+			phpunit = append(phpunit, strings.Fields(extra)...)
+		}
+
+		return d.runCommandCheck(environment, one, phpunit)
 
 	case check.EsLint, check.StyleLint:
 		return d.runCommandCheck(environment, one, []string{"ddev", string(one)})
@@ -81,7 +99,8 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 		return d.runCommandCheck(environment, one, []string{
 			"ddev", "exec", "bash", "-c", PhpcsScript(
 				containerModulePath(environment),
-				d.ownConfig(environment, PhpcsConfigs, "PHPCS ruleset"),
+				d.ownConfig(environment, PhpcsConfigs, PhpcsTemplateOverrides, "PHPCS ruleset"),
+				d.ciExtras(environment).PhpCs,
 			),
 		})
 
@@ -89,7 +108,9 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 		return d.runCommandCheck(environment, one, []string{
 			"ddev", "exec", "bash", "-c", PhpstanScript(
 				containerModulePath(environment),
-				d.ownConfig(environment, PhpstanConfigs, "PHPStan configuration"),
+				d.ownConfig(
+					environment, PhpstanConfigs, PhpstanTemplateOverrides, "PHPStan configuration"),
+				d.ciExtras(environment).PhpStan,
 			),
 		})
 
@@ -117,22 +138,43 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 // command string before the container's shell runs it.
 //
 // names are in the tool's own precedence order.
-func (d *DdevContrib) ownConfig(environment Environment, names []string, what string) string {
+func (d *DdevContrib) ownConfig(
+	environment Environment, names, overrides []string, what string,
+) string {
 	for _, name := range names {
-		_, found := d.runner.TryRun([]string{
-			"ddev", "exec", "bash", "-c", ConfigProbe(containerModulePath(environment), name),
-		}, environment.ProjectPath, 0)
-
-		if found {
+		if d.moduleShips(environment, name) {
 			d.log(fmt.Sprintf("Using the module's own %s (%s), as CI does.", what, name))
 
 			return name
 		}
 	}
 
+	// Where CI's get-file-via-curl.sh looks before it fetches anything: a
+	// module keeping its copy of the default under .gitlab-ci/ or .gitlab/
+	// gets its own rules from CI, and used to get the generic default here.
+	for _, override := range overrides {
+		if d.moduleShips(environment, override) {
+			d.log(fmt.Sprintf(
+				"Using the module's %s in place of the gitlab_templates default, as CI does.",
+				override,
+			))
+
+			return override
+		}
+	}
+
 	d.log(fmt.Sprintf("Module ships no %s; using the gitlab_templates default.", what))
 
 	return ""
+}
+
+// moduleShips is one probe for a path inside the module working copy.
+func (d *DdevContrib) moduleShips(environment Environment, name string) bool {
+	_, found := d.runner.TryRun([]string{
+		"ddev", "exec", "bash", "-c", ConfigProbe(containerModulePath(environment), name),
+	}, environment.ProjectPath, 0)
+
+	return found
 }
 
 // containerModulePath is the in-container path of the module under
@@ -405,4 +447,13 @@ func (d *DdevContrib) InspectWorkingCopy(moduleName, coreMajor string) (WorkingC
 	}
 
 	return InspectWorkingCopy(moduleWorkingCopy(projectPath), d.runner), true
+}
+
+// ciExtras is the module's own _*_EXTRA pipeline variables.
+//
+// Read from the working copy on each call rather than carried around: it is
+// one file read against a branch switch that can change it, and a stale answer
+// would mean checking with the previous branch's configuration.
+func (d *DdevContrib) ciExtras(environment Environment) CiExtras {
+	return ReadCiExtras(moduleWorkingCopy(environment.ProjectPath))
 }

@@ -141,10 +141,10 @@ func everyCheckCommand() map[string]string {
 	return map[string]string{
 		"phpstan probe":                  adapter.ConfigProbe(modulePath, "phpstan.neon"),
 		"phpcs probe":                    adapter.ConfigProbe(modulePath, "phpcs.xml.dist"),
-		"phpstan with the module config": adapter.PhpstanScript(modulePath, "phpstan.neon"),
-		"phpcs with the module ruleset":  adapter.PhpcsScript(modulePath, "phpcs.xml.dist"),
-		"phpstan falling back":           adapter.PhpstanScript(modulePath, ""),
-		"phpcs falling back":             adapter.PhpcsScript(modulePath, ""),
+		"phpstan with the module config": adapter.PhpstanScript(modulePath, "phpstan.neon", ""),
+		"phpcs with the module ruleset":  adapter.PhpcsScript(modulePath, "phpcs.xml.dist", ""),
+		"phpstan falling back":           adapter.PhpstanScript(modulePath, "", ""),
+		"phpcs falling back":             adapter.PhpcsScript(modulePath, "", ""),
 	}
 }
 
@@ -186,7 +186,7 @@ func TestTheProbeSeesAConfigThatIsThereAndNotOneThatIsNot(t *testing.T) {
 func TestAVendorRelativeSniffPathResolvesFromWhereTheCheckRuns(t *testing.T) {
 	dir := project(t)
 
-	_, output := inContainer(t, dir, adapter.PhpcsScript(modulePath, "phpcs.xml.dist"))
+	_, output := inContainer(t, dir, adapter.PhpcsScript(modulePath, "phpcs.xml.dist", ""))
 
 	for _, known := range []string{
 		"Referenced sniff",
@@ -219,7 +219,7 @@ func TestAVendorRelativeSniffPathResolvesFromWhereTheCheckRuns(t *testing.T) {
 func TestTheModulesOwnRulesetIsWhatRuns(t *testing.T) {
 	dir := project(t)
 
-	_, output := inContainer(t, dir, adapter.PhpcsScript(modulePath, "phpcs.xml.dist"))
+	_, output := inContainer(t, dir, adapter.PhpcsScript(modulePath, "phpcs.xml.dist", ""))
 
 	if !strings.Contains(output, "(Drupal.") {
 		t.Errorf("no Drupal sniff fired, so the module's ruleset did not load:\n%s", output)
@@ -233,7 +233,7 @@ func TestTheModulesOwnRulesetIsWhatRuns(t *testing.T) {
 func TestPhpstanAnalysesTheModule(t *testing.T) {
 	dir := project(t)
 
-	code, output := inContainer(t, dir, adapter.PhpstanScript(modulePath, "phpstan.neon"))
+	code, output := inContainer(t, dir, adapter.PhpstanScript(modulePath, "phpstan.neon", ""))
 
 	if strings.Contains(output, "not found") || strings.Contains(output, "No files found") {
 		t.Errorf("phpstan analysed nothing:\n%s", output)

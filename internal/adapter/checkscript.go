@@ -42,8 +42,30 @@ var (
 	// PhpstanConfigs is PHPStan's own precedence, and the order CI tests them
 	// in.
 	PhpstanConfigs = []string{"phpstan.neon", "phpstan.neon.dist", "phpstan.dist.neon"}
-	// PhpcsConfigs is the four names phpcs looks for, in CI's order.
+	// PhpcsConfigs is the four names phpcs looks for.
+	//
+	// CI's own order is `ls {.,}phpcs.xml{.dist,} | head -1`, and `ls` sorts
+	// its arguments — so CI effectively prefers .phpcs.xml. Only a module
+	// shipping more than one can tell the difference, and phpcs's own
+	// documented precedence is the one worth matching.
 	PhpcsConfigs = []string{"phpcs.xml", "phpcs.xml.dist", ".phpcs.xml", ".phpcs.xml.dist"}
+
+	// PhpcsTemplateOverrides are where a module may keep its own copy of the
+	// gitlab_templates default, in place of the fetched one.
+	//
+	// CI's get-file-via-curl.sh looks in .gitlab-ci/ and then .gitlab/ before
+	// curling anything, so a module keeping its ruleset there gets its own
+	// rules from CI — and, until this existed, the generic default from
+	// upkeep. Checked only when the module ships no root-level ruleset, which
+	// is the same precedence CI has.
+	PhpcsTemplateOverrides = []string{
+		".gitlab-ci/assets/phpcs.xml.dist", ".gitlab/assets/phpcs.xml.dist",
+	}
+
+	// PhpstanTemplateOverrides is the same for PHPStan.
+	PhpstanTemplateOverrides = []string{
+		".gitlab-ci/assets/phpstan.neon", ".gitlab/assets/phpstan.neon",
+	}
 )
 
 // ConfigProbe is a single test for "does the module ship this one?".
@@ -64,9 +86,10 @@ func ConfigProbe(modulePath, name string) string {
 //
 // modulePath is the module's in-container path, already quoted. ownConfig is
 // the config the module ships, or "" when it ships none.
-func PhpstanScript(modulePath, ownConfig string) string {
+func PhpstanScript(modulePath, ownConfig, extra string) string {
 	if ownConfig != "" {
-		return fmt.Sprintf("phpstan analyze %s -c %s/%s", modulePath, modulePath, ownConfig)
+		return suffixed(
+			fmt.Sprintf("phpstan analyze %s -c %s/%s", modulePath, modulePath, ownConfig), extra)
 	}
 
 	return strings.Join([]string{
@@ -76,7 +99,7 @@ func PhpstanScript(modulePath, ownConfig string) string {
 		fmt.Sprintf("{ test -e phpstan.neon || curl -sSOL %s/phpstan.neon; }", templatesBase),
 		"sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
 		"{ test -e phpstan-baseline.neon || touch phpstan-baseline.neon; }",
-		fmt.Sprintf("phpstan analyze %s -c phpstan.neon", modulePath),
+		suffixed(fmt.Sprintf("phpstan analyze %s -c phpstan.neon", modulePath), extra),
 	}, " && ")
 }
 
@@ -87,18 +110,19 @@ func PhpstanScript(modulePath, ownConfig string) string {
 //
 // modulePath is the module's in-container path, already quoted. ownConfig is
 // the ruleset the module ships, or "" when it ships none.
-func PhpcsScript(modulePath, ownConfig string) string {
+func PhpcsScript(modulePath, ownConfig, extra string) string {
 	report := fmt.Sprintf(
 		"-s --report-full --report-summary --report-source --basepath=%s --ignore='*/.ddev/*'",
 		modulePath,
 	)
 
 	if ownConfig != "" {
-		return fmt.Sprintf("phpcs %s --standard=%s/%s %s", report, modulePath, ownConfig, modulePath)
+		return suffixed(fmt.Sprintf(
+			"phpcs %s --standard=%s/%s %s", report, modulePath, ownConfig, modulePath), extra)
 	}
 
 	return strings.Join([]string{
 		fmt.Sprintf("{ test -e phpcs.xml.dist || curl -sSOL %s/phpcs.xml.dist; }", templatesBase),
-		fmt.Sprintf("phpcs %s --standard=phpcs.xml.dist %s", report, modulePath),
+		suffixed(fmt.Sprintf("phpcs %s --standard=phpcs.xml.dist %s", report, modulePath), extra),
 	}, " && ")
 }

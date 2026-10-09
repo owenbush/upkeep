@@ -864,3 +864,108 @@ func TestAnEnvironmentAlreadyOnThePinnedAddOnIsNotReinstalled(t *testing.T) {
 		t.Errorf("the fixture was not loaded:\n%s", runner.transcript())
 	}
 }
+
+// writeInModule puts a file in the environment's module working copy.
+func writeInModule(t *testing.T, environment Environment, name, contents string) {
+	t.Helper()
+
+	path := filepath.Join(moduleWorkingCopy(environment.ProjectPath), name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+// A module keeping its ruleset where CI's fetcher looks gets its own rules
+// here too.
+//
+// get-file-via-curl.sh checks .gitlab-ci/ then .gitlab/ before curling
+// anything, so such a module got its own rules from CI and the generic
+// gitlab_templates default from upkeep — a disagreement with CI produced by
+// upkeep looking in fewer places.
+func TestARulesetWhereCisFetcherLooksIsUsed(t *testing.T) {
+	runner := newRunner()
+	// It ships none of the root-level names, but has the .gitlab-ci/ copy.
+	runner.answer(".gitlab-ci/assets/phpcs.xml.dist", "")
+
+	engine, said := logging(nil, runner)
+	if _, err := engine.RunChecks(
+		withToolchain(t, anEnvironment(t)), []check.Type{check.PhpCs},
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	log := strings.Join(*said, "\n")
+	if !strings.Contains(log, ".gitlab-ci/assets/phpcs.xml.dist") {
+		t.Errorf("it did not report using the module's own copy:\n%s", log)
+	}
+	if strings.Contains(log, "ships no PHPCS ruleset") {
+		t.Errorf("it fell back to the fetched default:\n%s", log)
+	}
+	// And it is named to the tool rather than fetched over it.
+	if !runner.didRun("--standard=", ".gitlab-ci/assets/phpcs.xml.dist") {
+		t.Errorf("the override did not reach phpcs:\n%s", runner.transcript())
+	}
+}
+
+// The standards versions are named once per run, because two tools reporting
+// different things about the same code is a mystery until you know they are
+// different tools.
+func TestTheStandardsVersionsAreNamedOnce(t *testing.T) {
+	environment := withToolchain(t, anEnvironment(t))
+	if err := os.WriteFile(
+		filepath.Join(environment.ProjectPath, "composer.lock"),
+		[]byte(`{"packages-dev":[{"name":"drupal/coder","version":"9.0.1"}]}`), 0o644,
+	); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	engine, said := logging(nil, newRunner())
+	if _, err := engine.RunChecks(
+		environment, []check.Type{check.PhpCs, check.PhpStan},
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	log := strings.Join(*said, "\n")
+	if !strings.Contains(log, "drupal/coder 9.0.1") {
+		t.Errorf("the standards were not named:\n%s", log)
+	}
+	if strings.Count(log, "drupal/coder 9.0.1") != 1 {
+		t.Errorf("named once per check rather than once per run:\n%s", log)
+	}
+}
+
+// A module's own check arguments reach the tools, and the ones that could run
+// something else are refused out loud.
+func TestTheModulesCheckArgumentsAreHonouredAndRefusalsAreSaid(t *testing.T) {
+	environment := withToolchain(t, anEnvironment(t))
+	writeInModule(t, environment, ".gitlab-ci.yml",
+		"variables:\n  _PHPCS_EXTRA: '--colors'\n  _PHPUNIT_EXTRA: '--testsuite=unit'\n"+
+			"  _PHPSTAN_EXTRA: '--colors; id'\n")
+
+	engine, said := logging(nil, newRunner())
+	if _, err := engine.RunChecks(
+		environment, []check.Type{check.PhpCs, check.PhpUnit, check.PhpStan},
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	runner, _ := engine.runner.(*recordingRunner)
+	if !runner.didRun("phpcs ", "--colors") {
+		t.Errorf("phpcs did not get the module's arguments:\n%s", runner.transcript())
+	}
+	if !runner.didRun("phpunit", "--testsuite=unit") {
+		t.Errorf("phpunit did not get the module's arguments:\n%s", runner.transcript())
+	}
+	// The dangerous one is refused, and said, because the verdict then differs
+	// from CI's by exactly that argument.
+	if runner.didRun("phpstan", "; id") {
+		t.Errorf("a shell metacharacter reached the command:\n%s", runner.transcript())
+	}
+	if !strings.Contains(strings.Join(*said, "\n"), "_PHPSTAN_EXTRA") {
+		t.Errorf("the refusal was not reported:\n%s", strings.Join(*said, "\n"))
+	}
+}

@@ -76,6 +76,44 @@ dev requirements. If any of them cannot be installed the run carries on with a
 warning — a version conflict in a linting dependency should not take down your
 tests.
 
+## When a check disagrees with CI
+
+Three things make upkeep's phpcs or phpstan report something CI does not, or
+the reverse. The first is the usual one.
+
+**The standards are versioned, and the core you ask for picks them.** Every
+run now names them:
+
+```
+Checking with drupal/coder 9.0.1, squizlabs/php_codesniffer 4.0.1.
+```
+
+`--version=12` installs `drupal/core-dev:^12`, which requires coder `^9`,
+which requires PHP_CodeSniffer `^4`. A module whose branch declares
+`^10.3 || ^11` has its own CI running coder 8 on PHPCS 3. Both are right about
+their own core, and the newer standard legitimately finds things the older one
+does not — which is the point of checking against a core you are preparing
+for. Compare that line with the versions CI prints in its own phpcs job before
+concluding anything is broken.
+
+**CI's phpcs and phpstan jobs are `allow_failure: true` by default.** Unless
+the project sets `_PHPCS_ALLOW_FAILURE=0`, a red phpcs job does not fail the
+pipeline — so "CI is green" and "CI found nothing" are different statements.
+upkeep treats a non-zero exit as a failure, because a maintainer deciding
+whether to merge wants to know.
+
+**Your `_PHPCS_EXTRA`, `_PHPSTAN_EXTRA` and `_PHPUNIT_EXTRA` are honoured**,
+read from your module's `.gitlab-ci.yml`, so a check tuned for CI is tuned
+here. One exception: a value containing shell metacharacters is refused and
+said so. They are spliced into a command line, and upkeep runs checks against
+other people's contributions — a bot branch, a patch from a stranger — so the
+file is not trusted to do that. The run names the variable it ignored, because
+the verdict then differs from CI's by exactly those arguments.
+
+A ruleset kept where CI's fetcher looks — `.gitlab-ci/assets/phpcs.xml.dist`
+or `.gitlab/assets/phpcs.xml.dist` — is used, as CI uses it, when your module
+ships no root-level `phpcs.xml`.
+
 ## An MR is checked the way CI checks it
 
 GitLab publishes two refs for every merge request:
