@@ -81,8 +81,8 @@ tests.
 Three things make upkeep's phpcs or phpstan report something CI does not, or
 the reverse. The first is the usual one.
 
-**The standards are versioned, and the core you ask for picks them.** Every
-run now names them:
+**The standards are versioned, and the core you ask for picks them — and the
+two can want opposite things.** Every run names them:
 
 ```
 Checking with drupal/coder 9.0.1, squizlabs/php_codesniffer 4.0.1.
@@ -92,9 +92,30 @@ Checking with drupal/coder 9.0.1, squizlabs/php_codesniffer 4.0.1.
 which requires PHP_CodeSniffer `^4`. A module whose branch declares
 `^10.3 || ^11` has its own CI running coder 8 on PHPCS 3. Both are right about
 their own core, and the newer standard legitimately finds things the older one
-does not — which is the point of checking against a core you are preparing
-for. Compare that line with the versions CI prints in its own phpcs job before
+does not — which is the point of checking against a core you are preparing for.
+Compare that line with the versions CI prints in its own phpcs job before
 concluding anything is broken.
+
+**Do not run phpcbf from a check against a core your module does not declare
+yet.** The standards are not merely stricter and laxer: on a real file coder 9
+and coder 8 wanted *opposite* formatting, so `phpcbf` under coder 9 produced a
+file coder 8 rejected and the fix had to be reverted. A file cannot satisfy
+both. While your branch declares `^10.3 || ^11`, coder 8 is the gate that
+decides whether your work merges, and the core-12 findings become real when
+your own CI starts running core 12.
+
+upkeep says so before the checks run, rather than leaving you to find out:
+
+```
+Warning: jumplinks declares core_version_requirement "^10.3 || ^11", which
+does not include core 12. The phpcs and phpstan findings below come from that
+core's coding standard, which the module's own CI does not use — treat them as
+a preview of the work, not as a defect list. Applying them, phpcbf included,
+can fail the CI that gates this branch.
+```
+
+They still fail the run. A maintainer wants to know, and a verdict that went
+green on a standard it could not satisfy would be its own kind of lie.
 
 **CI's phpcs and phpstan jobs are `allow_failure: true` by default.** Unless
 the project sets `_PHPCS_ALLOW_FAILURE=0`, a red phpcs job does not fail the

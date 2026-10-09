@@ -42,6 +42,18 @@ func (d *DdevContrib) RunChecks(environment Environment, checks []check.Type) (c
 		d.log("Checking with " + strings.Join(versions, ", ") + ".")
 	}
 
+	// Before the checks, not after: the point is to be read before somebody
+	// reaches for phpcbf. Only when a standards-sensitive check is running —
+	// module_install and the smoke test do not care which coder is installed.
+	if needsToolchain {
+		if preview := StandardsPreview(
+			environment.ModuleName, environment.CoreMajor,
+			DeclaredCoreConstraint(moduleWorkingCopy(environment.ProjectPath), environment.ModuleName),
+		); preview != "" {
+			d.log("Warning: " + preview)
+		}
+	}
+
 	// Said once per run rather than per check: the verdict will differ from
 	// CI's by exactly these arguments, and a mismatch nobody mentioned is the
 	// thing honouring them is meant to stop.

@@ -170,3 +170,76 @@ func TestAnUnreadableLockReportsNoVersions(t *testing.T) {
 		}
 	}
 }
+
+// A check against a core the module does not declare is a preview, and says
+// so before anybody reaches for phpcbf.
+//
+// The failure this exists for: a core-12 run uses coder 9 on PHPCS 4, a branch
+// declaring ^10.3 || ^11 has CI on coder 8 and PHPCS 3, and on a real file the
+// two wanted opposite formatting. phpcbf under coder 9 produced a file coder 8
+// rejected, so the fix had to be rolled back — upkeep's advice broke the gate.
+func TestACheckAgainstAnUndeclaredCoreSaysItIsAPreview(t *testing.T) {
+	preview := StandardsPreview("jumplinks", "12", "^10.3 || ^11")
+
+	if preview == "" {
+		t.Fatal("no warning for a core the module does not declare")
+	}
+	for _, want := range []string{
+		"jumplinks",    // which module
+		"^10.3 || ^11", // what it actually declares
+		"core 12",      // and what was checked
+		"preview",      // how to read the findings
+		"phpcbf",       // named, because that is the thing that breaks CI
+		"CI that",      // and what it breaks
+	} {
+		if !strings.Contains(preview, want) {
+			t.Errorf("%q missing from the warning: %s", want, preview)
+		}
+	}
+}
+
+// A declared core gets no warning: the standard is the one its CI uses, so the
+// findings are a defect list and should read as one.
+func TestADeclaredCoreGetsNoPreviewWarning(t *testing.T) {
+	for name, constraint := range map[string]string{
+		"exactly that core":   "^12",
+		"among several":       "^10.3 || ^11 || ^12",
+		"a range reaching it": ">=11.1",
+	} {
+		if got := StandardsPreview("jumplinks", "12", constraint); got != "" {
+			t.Errorf("%s warned anyway: %s", name, got)
+		}
+	}
+}
+
+// Silence on not-knowing, like every other constraint read: warning about a
+// mismatch that may not exist would train people to ignore the warning.
+func TestNothingUnreadableProducesAPreviewWarning(t *testing.T) {
+	for name, constraint := range map[string]string{
+		"no constraint":   "",
+		"unparseable":     "sometime after lunch",
+		"only whitespace": "   ",
+	} {
+		if got := StandardsPreview("jumplinks", "12", constraint); got != "" {
+			t.Errorf("%s warned: %s", name, got)
+		}
+	}
+}
+
+// The constraint comes off the working copy, because that is the code under
+// test — including uncommitted edits, which is what --working-copy exists for
+// and which no ref would carry.
+func TestTheDeclaredConstraintIsReadFromTheWorkingCopy(t *testing.T) {
+	dir := aModuleWith(t, map[string]string{
+		"jumplinks.info.yml": "name: JumpLinks\ncore_version_requirement: ^10.3 || ^11\n",
+	})
+
+	if got := DeclaredCoreConstraint(dir, "jumplinks"); got != "^10.3 || ^11" {
+		t.Errorf("got %q", got)
+	}
+	// A module with no info.yml at that name reads as nothing, not as a
+	// mismatch.
+	if got := DeclaredCoreConstraint(dir, "something_else"); got != "" {
+		t.Errorf("it invented a constraint: %q", got)
+	}
+}

@@ -969,3 +969,66 @@ func TestTheModulesCheckArgumentsAreHonouredAndRefusalsAreSaid(t *testing.T) {
 		t.Errorf("the refusal was not reported:\n%s", strings.Join(*said, "\n"))
 	}
 }
+
+// The preview warning reaches the run, before the checks rather than after.
+func TestTheRunWarnsBeforeCheckingAgainstAnUndeclaredCore(t *testing.T) {
+	environment := withToolchain(t, anEnvironment(t))
+	// Checked against 12, declared for 10 and 11 — which is the shape that
+	// produced the rolled-back phpcbf fix.
+	environment.CoreMajor = "12"
+	writeInModule(t, environment, "pathauto.info.yml",
+		"name: Pathauto\ncore_version_requirement: ^10.3 || ^11\n")
+
+	engine, said := logging(nil, newRunner())
+	if _, err := engine.RunChecks(environment, []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	log := strings.Join(*said, "\n")
+	if !strings.Contains(log, "preview") {
+		t.Errorf("it did not warn that the standard does not apply:\n%s", log)
+	}
+	// Before the checks, because the point is to be read before somebody
+	// reaches for phpcbf.
+	warning, running := strings.Index(log, "preview"), strings.Index(log, "Running check")
+	if warning < 0 || running < 0 || warning > running {
+		t.Errorf("the warning came after the checks:\n%s", log)
+	}
+}
+
+// A check that does not care which coder is installed draws no warning: the
+// install check and the smoke test are not coding-standards runs.
+func TestAStandardsAgnosticCheckDrawsNoPreviewWarning(t *testing.T) {
+	environment := withToolchain(t, anEnvironment(t))
+	environment.CoreMajor = "12"
+	writeInModule(t, environment, "pathauto.info.yml",
+		"name: Pathauto\ncore_version_requirement: ^10.3 || ^11\n")
+
+	engine, said := logging(nil, newRunner())
+	if _, err := engine.RunChecks(
+		environment, []check.Type{check.ModuleInstall, check.FunctionalSmoke},
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if strings.Contains(strings.Join(*said, "\n"), "preview") {
+		t.Errorf("it warned about standards for checks that use none:\n%s", strings.Join(*said, "\n"))
+	}
+}
+
+// A declared core draws no warning in a real run either: the standard is the
+// one its CI uses, so the findings are a defect list.
+func TestARunAgainstADeclaredCoreDrawsNoPreviewWarning(t *testing.T) {
+	environment := withToolchain(t, anEnvironment(t))
+	writeInModule(t, environment, "pathauto.info.yml",
+		"name: Pathauto\ncore_version_requirement: ^10.3 || ^11\n")
+
+	engine, said := logging(nil, newRunner())
+	if _, err := engine.RunChecks(environment, []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if strings.Contains(strings.Join(*said, "\n"), "preview") {
+		t.Errorf("it warned about a core the module declares:\n%s", strings.Join(*said, "\n"))
+	}
+}

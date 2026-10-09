@@ -85,7 +85,18 @@ and was learned the hard way — see `docs/go-port.md`.
   rather than reconciled — `StandardsVersions` reads coder, php_codesniffer
   and phpstan out of the project's `composer.lock` (on disk, no container
   round trip) and names them once per run. Reported from a real mismatch where
-  upkeep found four auto-fixable errors that CI's green job did not.
+  upkeep found four auto-fixable errors that CI's green job did not — **and the
+  standards want opposite things**, which is the part that made this urgent:
+  `phpcbf` under coder 9 produced a file coder 8 rejected, so upkeep's advice
+  broke CI and had to be reverted. A file cannot satisfy both. So
+  `StandardsPreview` warns, before the checks run, whenever the checked core is
+  not one the code under test declares — read from the working copy's own
+  info.yml, because `--working-copy` exists for uncommitted edits no ref
+  carries. The checks stay **blocking**: a maintainer wants to know, and a
+  verdict that went green on a standard it could not satisfy would be its own
+  lie. Silence when the module declares the core or declares nothing readable,
+  because a warning that fires when there is no mismatch trains people to
+  ignore it.
   (2) **CI's phpcs and phpstan jobs are `allow_failure: true` by default** —
   `_PHPCS_ALLOW_FAILURE` is blank and the fallback rule inherits the job-level
   default — so "CI is green" and "CI found nothing" differ. upkeep stays

@@ -2,12 +2,15 @@ package adapter
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/owenbush/upkeep/internal/drupal"
 )
 
 // The extra arguments a module's own .gitlab-ci.yml adds to a check.
@@ -190,4 +193,65 @@ func StandardsVersions(projectPath string) []string {
 type lockedPackage struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+// StandardsPreview is the warning for a check run against a core the module
+// does not declare.
+//
+// Reported from the worst kind of failure this tool can have: it gave advice
+// that broke CI. A core-12 run uses coder 9 on PHP_CodeSniffer 4; a branch
+// declaring ^10.3 || ^11 has its CI on coder 8 and PHPCS 3, and the two do not
+// merely differ in strictness — on a real file they wanted **opposite**
+// formatting. phpcbf under coder 9 produced a file coder 8 then rejected, so
+// the fix had to be rolled back. The standards cannot both be satisfied.
+//
+// Which means the findings are a preview, not a defect list: they become real
+// when the module's own CI starts running that core, and acting on them before
+// then breaks the gate that decides whether the work merges. The run says so,
+// and the checks still fail — "blocking is fine", because a maintainer wants
+// to know, and because a verdict that went green on a standard it could not
+// satisfy would be its own lie.
+//
+// Empty when the module declares the core, or declares nothing upkeep can
+// read. Silence on not-knowing, like every other constraint read here:
+// warning about a mismatch that may not exist would train people to ignore it.
+func StandardsPreview(moduleName, coreMajor, constraint string) string {
+	// Equivalent to letting CompatibilityFrom answer, which reports "not
+	// known" for an empty constraint — a mutation that removes this survives,
+	// deliberately. It stays because "nothing declared means no warning" is
+	// the rule here, and leaning on another package's handling of the empty
+	// string is how that rule stops holding without anything saying so.
+	if constraint == "" {
+		return ""
+	}
+
+	declared, known := drupal.CompatibilityFrom(constraint, []string{coreMajor})
+	if !known || declared.Declares(coreMajor) {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"%s declares core_version_requirement %q, which does not include core %s. "+
+			"The phpcs and phpstan findings below come from that core's coding standard, "+
+			"which the module's own CI does not use — treat them as a preview of the work, "+
+			"not as a defect list. Applying them, phpcbf included, can fail the CI that "+
+			"gates this branch.",
+		moduleName, constraint, coreMajor,
+	)
+}
+
+// DeclaredCoreConstraint is the module working copy's own core constraint, or
+// "" when there is none to read.
+//
+// From the file on disk rather than the API: this is about the code under
+// test, which is whatever the working copy currently holds — including the
+// uncommitted edits `check --working-copy` exists for, where no ref would have
+// the answer.
+func DeclaredCoreConstraint(moduleDir, moduleName string) string {
+	contents, err := os.ReadFile(filepath.Join(moduleDir, moduleName+".info.yml"))
+	if err != nil {
+		return ""
+	}
+
+	return drupal.ConstraintIn(string(contents))
 }
