@@ -129,6 +129,21 @@ and was learned the hard way — see `docs/go-port.md`.
   *existing* environment — which is every environment after the first. The
   packages are gated on their own absence from `vendor/` instead, so a reused
   environment costs a directory test rather than a composer round trip.
+- **`publish` locates the environment holding the branch; it never defaults
+  the core.** Every other subject command defaults to `core_versions[0]`, and
+  for publish that default is a guess about *where the work is* — wrong in the
+  case the tool most encourages, since `modules:track` appends so a module that
+  gained core 12 still defaults to 11. Benign when it misses (`PushWork`
+  refuses a branch the working copy is not on) and not benign when it hits: the
+  same branch checked out in two environments at different commits means the
+  wrong commits go to an already-open merge request. No `--force` bounds that
+  to a fast-forward, so remote history survives; the wrong work still lands.
+  `publishCore` asks each of the module's cores what its working copy is on —
+  local git calls, no round trip — and takes the one match, refusing on none
+  (listing what each is on) or on several (naming `--version`). An absent
+  environment is skipped rather than reported as detached, which a surviving
+  mutant caught: both carry no branch name. An explicit `--version` still wins
+  outright, having already been validated against the tracked cores.
 - **`mr:checkout` is the way in to *changing* a merge request**, as against
   reading one. `check` and `review` fetch the merge ref onto the managed
   `mr-<iid>` branch — force-updated on every apply, refused by `publish` — so a

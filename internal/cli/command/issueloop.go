@@ -249,6 +249,82 @@ func requireIssue(
 }
 
 // branchFor is the work branch this run acts on.
+// publishCore is the core whose environment actually holds the branch.
+//
+// **Defaulting this was dangerous and that is why it is gone.** An environment
+// is one per (module x core), and every other command defaults the core to
+// `core_versions[0]`. For publish that default is a guess about *where the
+// work is*, and the guess is wrong in the case the tool most encourages:
+// `modules:track` appends, deliberately, so a module that gained core 12
+// still defaults to 11 while the work happens against 12.
+//
+// Benign when it misses — PushWork refuses a branch the working copy is not
+// on. Not benign when it hits: the same branch checked out in two
+// environments at different commits means publish pushes the ones from the
+// environment nobody was looking at, to a merge request that is already open.
+// No `--force` bounds it to a fast-forward, so remote history survives; the
+// wrong work still lands on somebody's contribution.
+//
+// So the branch decides. It is the thing the operator named, it exists in at
+// most a few places, and asking each is a local git call — no round trip, no
+// guess. An explicit `--version` still wins outright: it was already validated
+// against the module's tracked cores, and overruling somebody who said which
+// core they meant would be its own surprise.
+func publishCore(
+	cmd *cobra.Command, engine adapter.Engine,
+	module cockpit.Module, requestedCore, branch string,
+) (string, error) {
+	if cli.Flag(cmd, cli.FlagVersion) != "" {
+		return requestedCore, nil
+	}
+
+	holding := []string{}
+	elsewhere := []string{}
+	for _, core := range module.CoreVersions {
+		status, exists := engine.InspectWorkingCopy(module.Name, core)
+		if !exists {
+			continue
+		}
+		if status.CurrentBranch == branch {
+			holding = append(holding, core)
+
+			continue
+		}
+		on := status.CurrentBranch
+		if on == "" {
+			on = "a detached HEAD"
+		}
+		elsewhere = append(elsewhere, fmt.Sprintf("    Drupal %s — on %s", core, on))
+	}
+
+	switch len(holding) {
+	case 1:
+		cli.Progressf(cmd, "Publishing from the Drupal %s environment, which is on %s.",
+			holding[0], branch)
+
+		return holding[0], nil
+
+	case 0:
+		where := "no environment for this module has one yet"
+		if len(elsewhere) > 0 {
+			where = "the environments there are:" + "\n" + strings.Join(elsewhere, "\n")
+		}
+
+		return "", fmt.Errorf(
+			"no environment for %q is on %q, so there is nothing to publish — %s\n"+
+				"Check the branch out where you want to work on it, or name the core with --version=N",
+			module.Name, branch, where,
+		)
+
+	default:
+		return "", fmt.Errorf(
+			"%q is checked out in more than one environment for %q (Drupal %s), and they may hold "+
+				"different commits.\nName the one to publish from: --version=%s",
+			branch, module.Name, strings.Join(holding, " and "), holding[0],
+		)
+	}
+}
+
 func branchFor(cmd *cobra.Command, issue drupal.Issue) adapter.IssueBranch {
 	if named := cli.Flag(cmd, "branch"); named != "" {
 		return adapter.NamedIssueBranch(issue.Nid, named)
@@ -345,6 +421,13 @@ func runPublish(
 	cli.Progressf(cmd, "Pushing to %s", fork.PathWithNamespace)
 
 	engine, err := cli.Engine(cmd, engines, where)
+	if err != nil {
+		return 0, err
+	}
+
+	// Which environment holds the branch, rather than whichever core happens
+	// to be first in the registry. See publishCore.
+	coreMajor, err = publishCore(cmd, engine, module, coreMajor, branch.Name)
 	if err != nil {
 		return 0, err
 	}

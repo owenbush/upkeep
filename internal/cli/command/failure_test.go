@@ -175,6 +175,19 @@ func TestNoEngineFailureIsSwallowed(t *testing.T) {
 			engine := &refusingEngine{patchingEngine: *aPatchingEngine(), refuse: call}
 			engine.statusOK = true
 			engine.status = adapter.WorkingCopyStatus{CurrentBranch: "2.0.x"}
+			if name == "publish" {
+				// publish locates the environment holding the branch rather
+				// than defaulting the core, so the working copy has to be on
+				// that branch for the run to reach EnsureEnv and PushWork at
+				// all — which is what this test is about.
+				engine.status = adapter.WorkingCopyStatus{
+					CurrentBranch: adapter.IssueBranchFor(anIssue().Nid, anIssue().Title).Name,
+				}
+				// One environment, not every tracked core: the same branch in
+				// two environments is an ambiguity publish refuses, which
+				// would stop the run before the calls under test.
+				engine.statusCore = "11"
+			}
 
 			var code int
 			var stdout, stderr string

@@ -50,13 +50,13 @@ will want next:
   Send the work back:    upkeep publish jumplinks 3628056 --branch project-update-bot-only --version=12
 ```
 
-**`--version` is not optional on any of these.** An environment is one per
-module *and core*, and every command defaults the core to the first entry in
-the module's `core_versions`. `modules:track jumplinks 12` appends, precisely
-so that adding a core does not silently retarget your bare `upkeep check` — so
-a module tracking `["11", "12"]` defaults to 11 while you are working in the 12
-environment. Omit it and the command goes looking in a different directory,
-and refuses on a branch that was never there.
+**`publish` works out which environment holds the branch**, so `--version` is
+optional there and only needed to break a tie. The others still default the
+core to the first entry in the module's `core_versions`, and `modules:track`
+appends — precisely so adding core 12 does not silently retarget your bare
+`upkeep check` — so a module tracking `["11", "12"]` defaults to 11 while you
+work in the 12 environment. Pass `--version` to `check` and `env:path` or they
+will look in the wrong directory.
 
 The issue node id and the branch name are printed because you have no reason to
 know either and every reason to mistype them.
@@ -79,8 +79,14 @@ When it passes, commit and push it back:
 cd "$(upkeep env:path jumplinks --version=12)/module"
 git commit -am "Declare Drupal 12 compatibility"
 cd -
-upkeep publish jumplinks 3628056 --branch project-update-bot-only --version=12
+upkeep publish jumplinks 3628056 --branch project-update-bot-only
 ```
+
+`publish` reports which environment it published from — it looks for the one
+whose working copy is on the branch rather than guessing a core. If the same
+branch is checked out in two of them it refuses and asks you to name one with
+`--version`, because they may hold different commits and the wrong ones would
+go to a live merge request.
 
 `publish` finds the merge request already open on that branch and reports
 *"Updated the open merge request for this branch: !1"*. It never opens a second

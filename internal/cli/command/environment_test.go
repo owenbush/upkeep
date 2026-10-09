@@ -32,6 +32,23 @@ type fakeEngine struct {
 	// fork, the anonymous fetch URL and the branch all reached the engine.
 	mrCheckouts []string
 	stage       adapter.Log
+	// onBranch is what each environment's working copy is on, keyed
+	// module/core. publish locates the environment holding the branch rather
+	// than defaulting the core, so a publish test has to say where it is.
+	onBranch map[string]string
+}
+
+// InspectWorkingCopy answers for an environment this fake was told exists,
+// which is how publish finds the one holding the branch.
+func (e *fakeEngine) InspectWorkingCopy(
+	moduleName, coreMajor string,
+) (adapter.WorkingCopyStatus, bool) {
+	branch, exists := e.onBranch[moduleName+"/"+coreMajor]
+	if !exists {
+		return adapter.WorkingCopyStatus{}, false
+	}
+
+	return adapter.WorkingCopyStatus{CurrentBranch: branch}, true
 }
 
 func (e *fakeEngine) ResolveEnvPath(moduleName, coreMajor string) string {

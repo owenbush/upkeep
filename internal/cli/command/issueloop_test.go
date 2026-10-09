@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -61,12 +62,22 @@ func (e *workingEngine) PushWork(
 func (e *workingEngine) RecordedBaseBranch(adapter.Environment) string { return e.recorded }
 
 // aWorkingEngine is one wired for a healthy run.
+//
+// Its pathauto/11 environment is on the branch the issue derives, because
+// publish locates the environment holding the branch rather than defaulting
+// the core. Taken from IssueBranchFor rather than spelled out, so the slug
+// cannot drift away from the one publish computes.
 func aWorkingEngine() *workingEngine {
 	return &workingEngine{
-		fakeEngine: fakeEngine{environment: adapter.Environment{
-			ModuleName: "pathauto", CoreMajor: "11",
-			ProjectName: "upkeep-pathauto-d11", ProjectPath: "/projects/upkeep-pathauto-d11",
-		}},
+		fakeEngine: fakeEngine{
+			environment: adapter.Environment{
+				ModuleName: "pathauto", CoreMajor: "11",
+				ProjectName: "upkeep-pathauto-d11", ProjectPath: "/projects/upkeep-pathauto-d11",
+			},
+			onBranch: map[string]string{
+				"pathauto/11": adapter.IssueBranchFor(anIssue().Nid, anIssue().Title).Name,
+			},
+		},
 		pushSHA: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 	}
 }
@@ -950,5 +961,117 @@ func TestTheIssueLoopReportsAnUnusableCockpit(t *testing.T) {
 		if stderr == "" {
 			t.Errorf("%s failed silently", command)
 		}
+	}
+}
+
+// publish publishes from the environment holding the branch, not from
+// whichever core the registry happens to list first.
+//
+// Defaulting the core was a guess about *where the work is*, and the guess is
+// wrong in the case upkeep most encourages: `modules:track` appends, so a
+// module that gained core 12 still defaults to 11 while the work happens
+// against 12. Reported from a real run, where publish went looking in the
+// Drupal 11 environment and refused on a branch only the 12 one had.
+func TestPublishPublishesFromTheEnvironmentHoldingTheBranch(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aWorkingEngine()
+	branch := adapter.IssueBranchFor(anIssue().Nid, anIssue().Title).Name
+	// Tracked first but on something else; the work is on the other one.
+	engine.onBranch = map[string]string{
+		"pathauto/11": "2.0.x",
+		"pathauto/10": branch,
+	}
+
+	code, _, stderr := runIssueLoop(t, engine, someIssues(),
+		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "Drupal 10 environment") {
+		t.Errorf("it did not say which environment it published from: %s", stderr)
+	}
+	if !slices.Contains(engine.ensured, "pathauto/10") {
+		t.Errorf("it provisioned the wrong environment: %v", engine.ensured)
+	}
+}
+
+// No environment on the branch is a refusal that says where it looked, rather
+// than provisioning one and failing inside the push.
+func TestPublishRefusesWhenNoEnvironmentIsOnTheBranch(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aWorkingEngine()
+	// One environment, detached: a detached HEAD has no branch name and must
+	// be described rather than printed as an empty string. The other tracked
+	// core has no environment at all, and must not be listed as though it
+	// did — an absent environment reads as a detached one otherwise, since
+	// both carry no branch name.
+	engine.onBranch = map[string]string{"pathauto/11": ""}
+
+	code, _, stderr := runIssueLoop(t, engine, someIssues(),
+		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
+	}
+	for _, want := range []string{"Drupal 11", "a detached HEAD", "--version=N"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the refusal does not mention %q: %s", want, stderr)
+		}
+	}
+	if strings.Contains(stderr, "Drupal 10") {
+		t.Errorf("it listed an environment that does not exist: %s", stderr)
+	}
+	if len(engine.pushed) != 0 {
+		t.Errorf("it pushed anyway: %v", engine.pushed)
+	}
+}
+
+// The same branch in two environments is refused, because they may hold
+// different commits and publishing the wrong ones updates a live merge
+// request. No --force bounds that to a fast-forward; it does not make it
+// right.
+func TestPublishRefusesWhenTwoEnvironmentsHoldTheBranch(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aWorkingEngine()
+	branch := adapter.IssueBranchFor(anIssue().Nid, anIssue().Title).Name
+	engine.onBranch = map[string]string{"pathauto/11": branch, "pathauto/10": branch}
+
+	code, _, stderr := runIssueLoop(t, engine, someIssues(),
+		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
+	}
+	if !strings.Contains(stderr, "more than one environment") {
+		t.Errorf("the refusal does not say what is ambiguous: %s", stderr)
+	}
+	if len(engine.pushed) != 0 {
+		t.Errorf("it pushed anyway: %v", engine.pushed)
+	}
+}
+
+// An explicit --version wins outright and nothing is searched: it was already
+// validated against the module's tracked cores, and overruling somebody who
+// said which core they meant would be its own surprise.
+func TestAnExplicitCoreWinsOverWhereTheBranchIs(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aWorkingEngine()
+	branch := adapter.IssueBranchFor(anIssue().Nid, anIssue().Title).Name
+	// The branch is on 10; 11 is named anyway.
+	engine.onBranch = map[string]string{"pathauto/10": branch}
+
+	code, _, stderr := runIssueLoop(t, engine, someIssues(),
+		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--version=11", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if !slices.Contains(engine.ensured, "pathauto/11") {
+		t.Errorf("it overruled the core that was asked for: %v", engine.ensured)
 	}
 }

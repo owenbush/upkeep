@@ -33,6 +33,7 @@ type checkingEngine struct {
 	serveErr   error
 	status     adapter.WorkingCopyStatus
 	statusOK   bool
+	statusCore string
 	checksRun  int
 }
 
@@ -58,7 +59,19 @@ func (e *checkingEngine) Serve(adapter.Environment) (adapter.ServeResult, error)
 	return e.served, e.serveErr
 }
 
-func (e *checkingEngine) InspectWorkingCopy(string, string) (adapter.WorkingCopyStatus, bool) {
+// InspectWorkingCopy answers for every core by default, and for one only when
+// statusCore says so.
+//
+// The filter exists because publish locates the environment holding a branch:
+// an engine that reports the same branch for every tracked core looks like the
+// same branch checked out twice, which publish is right to refuse.
+func (e *checkingEngine) InspectWorkingCopy(
+	_, coreMajor string,
+) (adapter.WorkingCopyStatus, bool) {
+	if e.statusCore != "" && e.statusCore != coreMajor {
+		return adapter.WorkingCopyStatus{}, false
+	}
+
 	return e.status, e.statusOK
 }
 
