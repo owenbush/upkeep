@@ -226,20 +226,26 @@ func TestADetachedHeadCountsAsLocalWork(t *testing.T) {
 // A base branch and an upkeep-managed one are both expected; anything else is
 // somebody's own.
 //
-// Note "8.x-1.x": the legacy Drupal contrib convention is NOT recognised as a
-// base branch, so a working copy on one always reads as carrying local work
-// and every guard that keys on that refuses. Faithful to the PHP, and
-// verified against it — pathauto's own branch is this shape, so it is not
-// hypothetical. Recorded here rather than quietly fixed, because changing it
-// loosens a guard on destructive operations and that is a decision to take
-// deliberately.
+// Note "8.x-1.x": the legacy Drupal contrib convention **is** a base branch
+// now. It was not, deliberately — the port kept the PHP's behaviour and this
+// comment recorded why, since recognising the shape loosens a guard on
+// destructive operations and that was a decision to take rather than a
+// detail to tidy. The PHP then took it, on the reasoning that the other three
+// local-work signals still catch anything genuinely unsaved, so this follows.
+//
+// Not hypothetical in either direction: pathauto's own branch is this shape,
+// so while it read as somebody's own branch, stale teardown, prune and the
+// pre-apply dirty check all refused on the module the tool is most used on.
 func TestWhichBranchesCountAsSomebodysOwn(t *testing.T) {
 	for branch, own := range map[string]bool{
 		"2.0.x": false,
 		"1.0.x": false,
-		// Legacy contrib convention, and deliberately not matched. See above.
-		"8.x-1.x":                         true,
-		"7.x-2.x":                         true,
+		// Legacy contrib convention: a base branch, like the others.
+		"8.x-1.x": false,
+		"7.x-2.x": false,
+		// A legacy *tag* is nobody's branch, and being on one means a
+		// detached HEAD anyway.
+		"8.x-1.4":                         true,
 		"2.x":                             false,
 		"11.x":                            false,
 		"mr-12":                           false,

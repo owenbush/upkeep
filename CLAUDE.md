@@ -385,6 +385,18 @@ and was learned the hard way — see `docs/go-port.md`.
   (`ModuleResolution::projectFailure()`, shared by the two places that report
   it). That hint lives at the *failure*, not at resolution: until drupal.org
   says there is nothing there, an unheard-of name is an ordinary request.
+- **A legacy contrib branch is a base branch.** `8.x-1.x` and `7.x-2.x` are
+  the pre-semver convention a great many modules are still on, pathauto and
+  token among them, and `WorkingCopyStatus.IsOnCustomBranch` did not recognise
+  them — so `HasLocalWork` was permanently true there and every guard keyed on
+  it refused: stale teardown, prune, and the dirty-copy check before an apply.
+  The tool declined to work on the modules it is most often pointed at. The
+  port knew: the test *recorded* the behaviour as faithful to the PHP and "a
+  decision to take deliberately", because recognising the shape loosens a
+  guard on destructive operations. The PHP then took that decision, on the
+  reasoning that the other three local-work signals still catch anything
+  genuinely unsaved — so this adopts it, at the moment the PHP is removed and
+  the two can no longer disagree.
 - **`modules:track` is how core_versions changes.** The one registry field
   that moves in the ordinary course of maintenance — a core major reaches
   alpha, an old one goes end of life — and the refusal that sends people to it

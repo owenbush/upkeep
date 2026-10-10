@@ -24,7 +24,11 @@ const gitStatusTimeout = time.Minute
 var (
 	releaseBranch = regexp.MustCompile(`^\d+\.\d+\.x$`)
 	majorBranch   = regexp.MustCompile(`^\d+\.x$`)
-	mrBranch      = regexp.MustCompile(`^mr-\d+$`)
+	// legacyContribBranch is drupal.org's pre-semver convention — "8.x-1.x",
+	// "7.x-2.x" — which a great many contributed modules are still on,
+	// pathauto and token among them.
+	legacyContribBranch = regexp.MustCompile(`^\d+\.x-\d+\.x$`)
+	mrBranch            = regexp.MustCompile(`^mr-\d+$`)
 )
 
 // WorkingCopyStatus is a snapshot of the git state of a module working copy:
@@ -49,8 +53,25 @@ func (s WorkingCopyStatus) IsDirty() bool {
 }
 
 // IsOnCustomBranch reports whether the working copy is on a developer branch —
-// not a base branch like "1.0.x" or "2.x", and not an upkeep-managed "mr-*"
-// one.
+// not a base branch like "1.0.x", "2.x" or "8.x-1.x", and not an
+// upkeep-managed "mr-*" one.
+//
+// **The legacy contrib shape counts, and that is a change from the port.**
+// Only "2.0.x" and "2.x" were recognised, so "8.x-1.x" — the convention
+// pathauto, token and a great many other modules are still on — read as
+// somebody's own branch. HasLocalWork was then permanently true for those
+// modules and every guard keyed on it refused: the stale-environment
+// teardown, prune, and the dirty-copy check before an apply. The tool
+// declined to work on exactly the modules it is most often pointed at.
+//
+// The port knew and left it alone on purpose — the test recorded it as
+// "faithful to the PHP… a decision to take deliberately", because
+// recognising the shape loosens a guard on destructive operations. That
+// decision has since been taken on the PHP side, which fixed it with the
+// reasoning that the other three local-work signals still catch anything
+// genuinely unsaved. So this is adopting a decision, not discovering a bug,
+// and it is adopted here as the PHP implementation is removed — the last
+// moment the two could disagree.
 func (s WorkingCopyStatus) IsOnCustomBranch() bool {
 	if s.CurrentBranch == "" {
 		return true
@@ -59,7 +80,9 @@ func (s WorkingCopyStatus) IsOnCustomBranch() bool {
 		return false
 	}
 
-	return !releaseBranch.MatchString(s.CurrentBranch) && !majorBranch.MatchString(s.CurrentBranch)
+	return !releaseBranch.MatchString(s.CurrentBranch) &&
+		!majorBranch.MatchString(s.CurrentBranch) &&
+		!legacyContribBranch.MatchString(s.CurrentBranch)
 }
 
 // HasLocalWork is any signal that suggests local work: dirty files, unpushed
