@@ -1,17 +1,22 @@
 # CLAUDE.md — upkeep
 
-Maintenance orchestrator CLI for contributed Drupal modules (PHP >= 8.2,
-Symfony Console). User-facing docs: `README.md`; architecture and rationale:
-`docs/contrib-maintainer-design.md`.
+Maintenance orchestrator CLI for contributed Drupal modules. One static Go
+binary (Go >= 1.24, cobra). User-facing docs: `README.md`; architecture and
+rationale: `docs/contrib-maintainer-design.md`.
+
+This was a PHP application until it was rewritten in Go; the PHP was the
+specification for that port and is now only in git history. Where this file
+says why something is the way it is, the reason usually predates the rewrite
+and was learned the hard way — see `docs/go-port.md`.
 
 ## Layout
 
-- `bin/upkeep` — the console entry point **and the composition root**: it
-  registers every command and is the only file outside `src/Adapter/` allowed
-  to name a concrete engine. It builds one `Adapter\DdevContribAdapterFactory`
+- `cmd/upkeep` — the console entry point **and the composition root**: it
+  registers every command and is the only file outside `internal/adapter/` allowed
+  to name a concrete engine. It builds one `adapter.DdevContribFactory`
   and injects it into the commands that need an environment.
 - **The fixture add-on's command names are one constant, checked against the
-  add-on itself.** `Adapter\FixtureAddOn::LOAD_COMMAND` is
+  add-on itself.** `adapter.FixtureAddOn*::LOAD_COMMAND` is
   `upkeep-fixture-load`, and `MARKER` is derived from it (ddev names a host command after the file it came
   from). They used to be two independent strings and they disagreed: the
   adapter ran `ddev upkeep-fixture-load` while owenbush/ddev-upkeep has always
@@ -23,7 +28,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   could not have been otherwise — the engine fake records whatever string it is
   handed, and the marker fixture is built from the same constant under test, so
   both halves agreed with each other and with nothing real.
-  `tests/Integration/FixtureAddOnContractTest` reads the add-on's own
+  `internal/adapter/fixtureaddon_test.go` reads the add-on's own
   `install.yaml` and compares. It takes a local checkout via
   `UPKEEP_ADDON_SOURCE` first and an API read otherwise; the read needs no
   credential now the add-on is public, so its CI step is unconditional and a
@@ -42,14 +47,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   this add-on has no business claiming. That rename lands in the add-on first:
   the probe looks for the command *file*, so upkeep expecting a name the
   installed add-on does not publish reinstalls it on every call and then fails.
-- `src/Adapter/` — the engine adapter: everything ddev / ddev-drupal-contrib
+- `internal/adapter/` — the engine adapter: everything ddev / ddev-drupal-contrib
   specific (provisioning, MR checkout, patch application, check execution,
   teardown, the ddev-upkeep fixture add-on). Engine pinned:
-  ddev-drupal-contrib 1.1.5 (`Adapter\EngineAddOn`). Commands receive
-  `Adapter\EngineAdapterFactory` and never construct an engine themselves.
+  ddev-drupal-contrib 1.1.5 (`internal/adapter/addon.go`). Commands receive
+  `adapter.Factory` and never construct an engine themselves.
   Two operations put the working copy on a branch of upkeep's own —
   `applyMr` (`mr-<iid>`) and `applyPatch` (`patch-<nid>`) — and
-  `Adapter\ProjectRegistration` guards the one collision the layout makes
+  `adapter.ProjectRegistration` guards the one collision the layout makes
   structural: engine project names are global to the machine while the projects
   root is configurable, so a moved root collides with whatever the old one
   registered. Checked *before* provisioning does any work (the engine only
@@ -57,7 +62,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   the engine's own refusal is translated for the case `describe` cannot see —
   the record survives, the directory it names is gone. Both messages name the
   recovery command and say that it deregisters rather than deletes.
-  `Adapter\ManagedBranch` names both prefixes so base-branch resolution
+  `adapter.IsManagedBranch` names both prefixes so base-branch resolution
   rejects either as a base. A managed branch used as a base would silently
   stack one contribution on another. `applyPatch` commits what it applies
   (checks must run against a clean tree) and resets the branch from the base
@@ -72,8 +77,45 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   fail is it an `AdapterException`, built from `git apply --stat` and
   `--check -v` so the message names which files are stale and what context git
   could not find.
+- **A check that disagrees with CI is worse than no check**, so the three
+  reasons it can are closed or stated. (1) **The standards are versioned and
+  the requested core picks them**: `--version=12` pulls `core-dev:^12` →
+  coder `^9` → PHPCS `^4`, while a branch declaring `^10.3 || ^11` has CI on
+  coder 8 / PHPCS 3. Both are right about their own core, so this is reported
+  rather than reconciled — `StandardsVersions` reads coder, php_codesniffer
+  and phpstan out of the project's `composer.lock` (on disk, no container
+  round trip) and names them once per run. Reported from a real mismatch where
+  upkeep found four auto-fixable errors that CI's green job did not — **and the
+  standards want opposite things**, which is the part that made this urgent:
+  `phpcbf` under coder 9 produced a file coder 8 rejected, so upkeep's advice
+  broke CI and had to be reverted. A file cannot satisfy both. So
+  `StandardsPreview` warns, before the checks run, whenever the checked core is
+  not one the code under test declares — read from the working copy's own
+  info.yml, because `--working-copy` exists for uncommitted edits no ref
+  carries. The checks stay **blocking**: a maintainer wants to know, and a
+  verdict that went green on a standard it could not satisfy would be its own
+  lie. Silence when the module declares the core or declares nothing readable,
+  because a warning that fires when there is no mismatch trains people to
+  ignore it.
+  (2) **CI's phpcs and phpstan jobs are `allow_failure: true` by default** —
+  `_PHPCS_ALLOW_FAILURE` is blank and the fallback rule inherits the job-level
+  default — so "CI is green" and "CI found nothing" differ. upkeep stays
+  blocking, deliberately, and the guide says why. (3) **`_PHPCS_EXTRA`,
+  `_PHPSTAN_EXTRA` and `_PHPUNIT_EXTRA` are honoured** from the module's
+  `.gitlab-ci.yml` (`ReadCiExtras`), because they are the documented way a
+  project tunes a check — **but treated as untrusted**: CI runs a project's own
+  pipeline, upkeep runs strangers' contributions, and these land in a `bash -c`.
+  A value carrying shell metacharacters is **refused and reported**, never
+  quoted (multi-token values are the point, so the string cannot be quoted
+  whole) and never silently stripped (that would be the same mismatch, quieter).
+  Also `ownConfig` now looks where CI's `get-file-via-curl.sh` looks —
+  `.gitlab-ci/assets/` then `.gitlab/assets/` — before falling back to the
+  fetched default, which a module keeping its ruleset there needed.
+  What was *checked and ruled out*: `--standard=<file>` versus CI's
+  working-directory discovery makes no difference, tested with real phpcs on a
+  ruleset carrying `<arg name="extensions">` — identical findings either way.
 - **phpstan and phpcs run from inside the module, as CI does.**
-  `Adapter\CheckScript`. Both discover their configuration from the *current
+  `internal/adapter/ddev_checks.go`. Both discover their configuration from the *current
   working directory*, and upkeep ran them from the project root — where the
   only config is the gitlab_templates default it had just downloaded. A module
   shipping its own `phpstan.neon` or `phpcs.xml.dist` had its level, baseline,
@@ -107,22 +149,86 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   equally left-to-right. Two tests hold the invariants, because nothing in the
   suite executes what these build: no variable outside the container's
   environment, and no `cd`. **And using a module's configuration means
-  installing what it references**: `Adapter\ModuleDevRequirements` reads the
+  installing what it references**: `adapter.ModuleDevRequirements` reads the
   module's own `require-dev` and provisions it alongside the toolchain,
   because those configurations point at the *module's* packages —
   field_visibility_conditions' ruleset references
   `./vendor/phpcompatibility/php-compatibility/…`, which its composer.json
   requires and the site does not. CI has it because `composer install` runs in
-  the module repository; here the module is a path repository, and **composer
-  never installs a path dependency's require-dev**. A failed install warns
+  the module repository; here the module is linked in rather than installed,
+  so nothing installs its require-dev for it. A failed install warns
   rather than refusing: a version conflict in a linting dependency must not
   take down phpunit, the install check and the smoke test, and phpcs names a
   missing sniff itself. **It runs whether or not the toolchain is already
   there.** The toolchain gate returns early once phpunit/phpstan/phpcs are in
-  vendor/bin, and putting this inside that block made it do nothing on every
+  the module's `vendor/bin`, and putting this inside that block made it do
+  nothing on every
   *existing* environment — which is every environment after the first. The
   packages are gated on their own absence from `vendor/` instead, so a reused
   environment costs a directory test rather than a composer round trip.
+- **`publish` locates the environment holding the branch; it never defaults
+  the core.** Every other subject command defaults to `core_versions[0]`, and
+  for publish that default is a guess about *where the work is* — wrong in the
+  case the tool most encourages, since `modules:track` appends so a module that
+  gained core 12 still defaults to 11. Benign when it misses (`PushWork`
+  refuses a branch the working copy is not on) and not benign when it hits: the
+  same branch checked out in two environments at different commits means the
+  wrong commits go to an already-open merge request. No `--force` bounds that
+  to a fast-forward, so remote history survives; the wrong work still lands.
+  `publishCore` asks each of the module's cores what its working copy is on —
+  local git calls, no round trip — and takes the one match, refusing on none
+  (listing what each is on) or on several (naming `--version`). An absent
+  environment is skipped rather than reported as detached, which a surviving
+  mutant caught: both carry no branch name. An explicit `--version` still wins
+  outright, having already been validated against the tracked cores.
+- **`mr:checkout` is the way in to *changing* a merge request**, as against
+  reading one. `check` and `review` fetch the merge ref onto the managed
+  `mr-<iid>` branch — force-updated on every apply, refused by `publish` — so a
+  commit there is a commit waiting to be destroyed, and the merge tree is a
+  tree that exists on neither side and can be pushed nowhere. This fetches the
+  merge request's **own source branch** from the fork it lives on, adds the
+  SSH remote `publish` already uses, and prints the `publish` line with the
+  issue nid and branch filled in. Resolution is `SourceProjectID` →
+  `IssueForkNids` → `IssueFork`, all existing API: the source project id alone
+  does not say which issue it belongs to, and the issue is what names the
+  remote. **It deliberately does not check the declared core** — the reason to
+  take over a merge request is often that it does not support the core yet, and
+  refusing the checkout because the branch lacks what you are about to add
+  would be the tool declining its own purpose; `check` asks that, where a
+  verdict is produced. Fetch is anonymous HTTPS and push is SSH, the same split
+  as everywhere else, so taking over somebody's work needs no credential until
+  it goes back. An existing local branch is **resumed, never reset**. Two
+  refusals, two messages, because one in the other's words would be a lie: a
+  zero `SourceProjectID` means GitLab did not say where the branch is, which is
+  not "it is on the project itself" — a distinction a surviving mutant found.
+  `docs/guide/taking-over-an-mr.md` is the worked example.
+- **The module is linked in, never installed as a package.** It used to be a
+  Composer path repository plus `composer require drupal/<module>:<branch>-dev`,
+  and that cost two things. It **enforced the module's declared `drupal/core`
+  against the seeded core**, so an environment for the core whose support you
+  are adding could not be built — `drupal/jumplinks 1.0.x-dev requires
+  drupal/core ^10.3 || ^11 -> ... fixed to 12.0.0-beta1`, on the exact work
+  upkeep exists for. And it **put a composer resolve on every branch switch**,
+  because the pin named `<branch>-dev` and `applyMr`, `applyPatch`,
+  `startWork` and plain checkout each had to re-sync it. Now
+  `linkWorkingCopy` makes the symlink itself (relative, so the tree stays
+  relocatable under a moved `--projects-root`) and `syncModuleDependencies`
+  installs only what the module's own `require` names — `ModuleRequirements`,
+  the sibling of `ModuleDevRequirements`, **with `drupal/core` dropped**. Which
+  is the point: a module declares the cores it *supports*, and whether this
+  core should be tested is one decision made once at the orchestrator, in
+  `assertBranchDeclares`, where it can be reasoned about and overridden rather
+  than enforced a second time inside composer with no diagnosis. The
+  dependency sync is the half of the pin worth keeping — an MR can add a
+  dependency, and without it the checks fail on a missing class rather than on
+  the contribution. **The ownership check runs whether or not anything was
+  installed**: composer puts those dependencies into the same
+  `modules/contrib`, and `composer/installers` will write over a path it thinks
+  it owns — a real directory there is a copy git does not own, so an apply
+  would mutate one tree while the checks read the other. `internal/adapter/wiring.go`
+  keeps the removed path-repository code's rationale as a note, because "wire
+  it through a path repository" is the obvious design and will be proposed
+  again.
 - **An MR is checked as CI checks it: the merge, not the branch.** GitLab
   publishes two refs per merge request — `/head` is the contributor's branch,
   `/merge` is that branch merged into the **current** tip of the target — and
@@ -139,7 +245,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   falls back to `/head` **loudly**: GitLab computes no merge ref for a merge
   request that conflicts with its target, so the fallback is a diagnosis, not
   a detail. **Evidence is keyed on the merge ref's SHA**
-  (`Gitlab\MergeRevision`, `ModuleSnapshot::$mergeRefShas`, one
+  (`gitlab.MergeRevision`, `ModuleSnapshot::$mergeRefShas`, one
   `/merge_ref` call per open MR at refresh), because the merge tree moves when
   *either* side does: keyed on the head SHA a result would still read as
   current after the **target** gained a commit, which is the same
@@ -153,8 +259,8 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   before this describe the branch, not the merge** — clear
   `<cockpit>/results/` once after upgrading.
 - **The base branch is fetched before anything is cut from it.**
-  `Adapter\BaseRefresh` (Update by default, Skip only via `--no-update`) and
-  `Adapter\BaseBranchUpdate`. A module working copy is cloned once and was
+  `adapter.BaseRefresh` (Update by default, Skip only via `--no-update`) and
+  `adapter.DescribeBaseUpdate`. A module working copy is cloned once and was
   then never fetched again on any path that cuts a branch, so its `2.0.x`
   stayed frozen at the day of the clone. That alone would only make a verdict
   old; what makes it *wrong* is that drupal.org's CI does not check your
@@ -181,7 +287,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   projects into the canonical one — measured on pathauto, 100 of 100 open MRs
   come from a fork and none from the project. So `GitlabClient::issueFork()`
   resolves it (**null when absent, not a failure** — an unstarted issue is a
-  state, not an error), `pushWork()` takes an `Adapter\GitRemote` naming where
+  state, not an error), `pushWork()` takes an `adapter.GitRemote` naming where
   to push, and `createMergeRequest(..., into: $project)` sets
   `target_project_id`. The remote is `issue-<nid>`, named per issue because one
   environment serves every issue for a (module x core) and a generic `fork`
@@ -192,7 +298,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   like the issue status and the credit; publish refuses before pushing
   anything. Origin is never pushed to or altered, so fetch stays anonymous and
   read-only work needs no key.
-- **Two refusals, opposite answers.** `Adapter\PushRefusal` tells
+- **Two refusals, opposite answers.** `adapter.PushAuthorizationHelp` tells
   *authentication* (GitLab does not know you — SSH key) from *authorization*
   (it knows you and says no). On drupal.org the second is the ordinary state of
   a fresh issue fork: creating one does not grant push access, which is a
@@ -203,7 +309,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   question *before* pushing — **null is unknown, never "no"**, since an
   unauthenticated read omits `permissions` entirely and refusing on that would
   block pushes that would work.
-- `Adapter\DrupalCodeRemote` holds the clone URL and the SSH host. Push URLs
+- `internal/adapter/remote.go` holds the clone URL and the SSH host. Push URLs
   are **never assembled** — they are GitLab's own `ssh_url_to_repo`, because
   git.drupalcode.org serves the web and the API while the SSH remote it
   advertises is git.drupal.org; a URL built by swapping the scheme points at a
@@ -214,7 +320,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   names the SSH-key recovery, against the host actually in the remote, because
   git's own message suggests a password and GitLab will never accept one.
 - **Child-process output is progress, not payload.** ddev, composer and git
-  print through `Command\LiveStatus`: on a terminal, the latest line sits on
+  print through `cli.LiveStatus`: on a terminal, the latest line sits on
   one line that overwrites itself and is erased when the child exits; under
   `-v` every line is kept; anywhere that is not a terminal nothing extra is
   written, because overwriting a line in a CI log produces escape codes, not
@@ -233,27 +339,44 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   silent on purpose**: the first prints a path meant to be captured
   (`cd $(upkeep env:path …)`) and the second passes through your own command's
   output, so a status line in either would end up inside what you asked for.
-- `src/Command/` — one class per CLI command; thin, delegating to the
-  namespaces below. All extend `Command\UpkeepCommand`, which owns the shared
+  **A child's escape codes never reach the terminal.** `cli.plainText` strips
+  ANSI sequences and control characters from every relayed line, and the
+  truncation counts runes. The status line is one line upkeep erases and
+  rewrites, so a child's colours and cursor moves are instructions about a line
+  it does not own — and one of them was actively breaking: a coloured composer
+  line longer than `statusWidth` lost its `\x1b[0m` to a *byte* truncation,
+  `\x1b[2K` erases characters rather than attributes, so nothing reset and every
+  line after it came out red. Including the results table, which goes to stdout
+  and never came through here — a run that passed every check said "All checks
+  green" in the colour of failure. Stripping rather than balancing the
+  sequences also makes `statusWidth` mean a hundred visible columns rather than
+  a hundred bytes of which forty were escape codes.
+- `internal/cli/command/` — one class per CLI command; thin, delegating to the
+  namespaces below. All extend `internal/cli`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
-- `src/Cockpit/` — cockpit directory + `registry.yml` module registry.
+- `internal/cockpit/` — cockpit directory + `registry.yml` module registry.
   **The registry is a watchlist, not a gate** (`docs/any-module.md`). It was
   doing two jobs — how to find a module and which cores to test it on, *and*
   which modules the surveys cover — and the first is now derivable:
   `project/<name>` is drupal.org's convention (`PruneExecutor` already assumed
   it) and the usable cores are the ones `ArtifactLayout::versionsOnDisk()`
-  finds. So `Cockpit\ModuleResolution` gives **subject** commands (`check`,
+  finds. So `cockpit.ResolveModule` gives **subject** commands (`check`,
   `review`, `dev`, `exec`, `env:path`, `issue`, `issues`, `needs-work`,
-  `patch:*`, `start`, `publish`) any module, registered or not, while
-  **survey** commands (`dashboard`, `patches`, `notes`, `modules`, `status`,
-  `prune`, the UI) keep iterating the watchlist and `requireModule()` stays
-  strict for narrowing into it. A registry entry always wins where there is
+  `notes`, `patch:*`, `start`, `publish`, `api:probe`) any module, registered
+  or not, while **survey** commands (`dashboard`, `patches`, `modules`,
+  `status`, `prune`) keep iterating the watchlist and `requireModule()` stays
+  strict for narrowing into it. `notes` and `api:probe` read as survey
+  commands in older prose and are neither: nothing iterates, and
+  `NotesCommand::resolveProjectPath()` falls back to treating the argument as
+  a project path — the one place a missing registry is deliberately not an
+  error. A registry entry always wins where there is
   one: a maintainer's `core_versions` is a deliberate statement and outranks
   anything inferred. `Module::$watched` carries that provenance, because it
-  changes what a refusal can honestly say — an unavailable core is "add it to
-  core_versions in registry.yml" for a watched module and "no base artifacts
-  for core N, build one" for a derived one, and telling somebody to edit a
-  file that does not mention their module is worse than not answering. A derived module's cores are **newest first**, because
+  changes what a refusal can honestly say, and now *which command it names* —
+  an unavailable core is `upkeep modules:track <module> <core>` for a watched
+  module and `upkeep base-artifacts:build --version=N` for a derived one, and
+  sending somebody to a command that would refuse them (there is no entry to
+  edit) is worse than not answering. A derived module's cores are **newest first**, because
   `selectCoreVersion()` documents `core_versions[0]` as the default and
   `versionsOnDisk()` sorts ascending — passed through unchanged, asking about
   an unregistered module answered for the *oldest* core built on the machine. What is **not** dropped is the refusal — a name that
@@ -262,6 +385,64 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   (`ModuleResolution::projectFailure()`, shared by the two places that report
   it). That hint lives at the *failure*, not at resolution: until drupal.org
   says there is nothing there, an unheard-of name is an ordinary request.
+- **A legacy contrib branch is a base branch.** `8.x-1.x` and `7.x-2.x` are
+  the pre-semver convention a great many modules are still on, pathauto and
+  token among them, and `WorkingCopyStatus.IsOnCustomBranch` did not recognise
+  them — so `HasLocalWork` was permanently true there and every guard keyed on
+  it refused: stale teardown, prune, and the dirty-copy check before an apply.
+  The tool declined to work on the modules it is most often pointed at. The
+  port knew: the test *recorded* the behaviour as faithful to the PHP and "a
+  decision to take deliberately", because recognising the shape loosens a
+  guard on destructive operations. The PHP then took that decision, on the
+  reasoning that the other three local-work signals still catch anything
+  genuinely unsaved — so this adopts it, at the moment the PHP is removed and
+  the two can no longer disagree.
+- **`modules:track` is how core_versions changes.** The one registry field
+  that moves in the ordinary course of maintenance — a core major reaches
+  alpha, an old one goes end of life — and the refusal that sends people to it
+  used to end "Add it to core_versions in registry.yml", which is a tool
+  describing a file edit rather than offering to make it; it now names
+  `upkeep modules:track <module> <core>`, with the module and core filled in
+  so the line can be pasted. **The suggestion is tested by being run**, not by
+  being compared — `TestTheCommandAnUntrackedCoreNamesIsOneThatWorks` scrapes
+  the command out of the refusal, executes it, and asserts the original
+  command then fails for some other reason. A renamed command or an argument
+  in the wrong order fails there, where a string comparison would still pass. Cores named as
+  arguments are **appended, never sorted or inserted**, because
+  `core_versions[0]` is what `SelectCoreVersion` targets when `--version` is
+  omitted: sorting the list would silently retarget every bare `upkeep check`
+  of that module, so moving the default is `--set`'s job and nothing else's.
+  Deliberately **not** folded into `modules:add --core-versions`: that command
+  skips a name already registered on the stance that an existing definition is
+  a maintainer's deliberate statement, and it reads GitLab for your
+  memberships — needing a credential to change a local YAML list would be
+  absurd. `cockpit.Editor` grew `SetCoreVersions` beside `Add`, both through
+  one `publish` (render, temp file, re-validate *from that file*, rename), and
+  an unregistered name is a refusal rather than an insert — inventing an entry
+  would hand every survey command a project path nobody chose. A newly tracked
+  core with no base artifacts **warns and names the build** rather than
+  refusing: tracking a core before building for it is an ordinary order to do
+  these in, and the check that needs the artifacts is the next command anyway.
+  Its stdout is empty on every path; `upkeep modules` is the reader.
+- **`modules:untrack` is the last hand-edit on this surface**, and with it no
+  message in the tool sends anybody to `registry.yml` with an editor.
+  `modules:track`'s refusal for emptying a core list now names it, and
+  `upkeep modules` on an empty registry names `modules:add` rather than a
+  path — the command is what knows how to find what you maintain, and it
+  reports a missing credential properly, which is the reason somebody would
+  have been editing the file. Untracking **writes without asking**: nothing on
+  disk is touched, because the registry is a watchlist and not a gate, so the
+  module drops out of the surveys and every subject command still takes it by
+  name. The environments and cached results are `prune`'s business and that
+  one does ask. What the report carries is the **core list**, in the shape of
+  the `modules:add` that restores it: that list is a judgement somebody made
+  and this file was the only place it lived, while the project path comes back
+  from GitLab, which is its authority. Emptying the registry is allowed —
+  `modules: {}` is what `init` scaffolds, so unwatching the last module leaves
+  a first-run cockpit rather than a broken one. Completion is narrower than
+  every subject command's (`AddWatchedModuleCompletion`): those also offer a
+  module an environment exists for, which is right for them and wrong here,
+  since a module with no entry has nothing to edit.
 - **Reading needs no credential.** git.drupalcode.org serves a public
   project's merge requests, refs, forks and raw files anonymously — measured
   across upkeep's whole read surface — so requiring a token to *look* was a
@@ -278,14 +459,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `AbstractMrCommand::readsOnly()` defaults to false and `check`/`review`
   override it, pinned by `CommandSurfaceTest` — a future write command that
   forgets gets the strict path.
-- `src/Gitlab/` — git.drupalcode.org API client, token resolution
+- `internal/gitlab/` — git.drupalcode.org API client, token resolution
   (`UPKEEP_GITLAB_TOKEN` env, else `~/.config/upkeep/drupal-pat`), MR/pipeline
-  models, and the sealed `Gitlab\ApiFailure` taxonomy (`Unauthorized` 401,
+  models, and the sealed `gitlab.Failure` taxonomy (`Unauthorized` 401,
   `EndpointClosed` 403, `NotFound` 404, `RateLimited` 429, `RequestRejected`
   other 4xx/5xx, `MalformedResponse`, `TransportError`, `ResourceMissing`).
   Client methods return an `ApiFailure` rather than throwing, so callers
   `match` on the condition. Never log or print a token.
-- `src/Drupal/` — drupal.org API client and issue models (status, priority,
+- `internal/drupal/` — drupal.org API client and issue models (status, priority,
   file attachments, MR ↔ issue references). Two api-d7 shapes are load-bearing
   and both cost an extra request: `field_project_machine_name` exists on
   *project* nodes only, so an issue listing is filtered by the project's node
@@ -305,12 +486,12 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   less data is indistinguishable at the call site from there *being* less data
   — the exact under-reporting the patch surface exists to prevent. Commands
   surface it through `UpkeepCommand::reportScanWarnings()`. Both clients set
-  `max_duration` as well as `timeout`, because Symfony's `timeout` is the
-  *idle* timeout and bounds nothing on its own.
-- `src/Gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
+  a whole-request deadline as well as an idle one: an idle timeout bounds
+  nothing on its own.
+- `internal/gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
   **`BLOCKED` is set by red CI and by nothing else** — the gate never inspects
   mergeability, so it does not mean merge conflicts whatever older docs said.
-- `Dashboard\Guidance` turns a row into a plain-English status and the command
+- `dashboard.Guidance` turns a row into a plain-English status and the command
   to run for it, which is what the dashboard renders by default; the gate's own
   reason tokens move behind `-v`. The *order* the reasons are considered is the
   design: several apply at once and only one phrase can show, so they rank by
@@ -318,7 +499,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   wrong, then missing evidence. **Every row yields a command** — red CI and
   draft are *modifiers* on the status, not reasons to suggest nothing, since
   both are exactly when a maintainer wants the branch locally; a property test
-  over every subset of gate reasons holds that. `Command\Glossary` +
+  over every subset of gate reasons holds that. `command.Glossary` +
   `upkeep explain` define every term the tool prints, which nothing did before:
   the patch arrow existed only in a source comment. The overview's columns use
   the same words as the rows they summarise — `PATCH ISSUES` (not `PATCHES`,
@@ -356,7 +537,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `ModuleSnapshot` carries `mergedMrData` and `forkNids`; a snapshot written
   before they existed reads as "nothing known to have merged", i.e. the old
   behaviour.
-- `Dashboard\LocalEvidence` is what a row knows locally **across every core
+- `results.LocalEvidence` is what a row knows locally **across every core
   that applies**, now that core is evidence rather than identity. Several
   cores can disagree and the cell is one string, so **worst case wins and
   names its core** (`fail 10`, `stale 10`, `pass 11 · ? 10`); every core is
@@ -369,7 +550,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   `array<array-key, …>` deliberately — PHP stores `"10" => x` as `10 => x`, so
   no caller can supply string keys and declaring them would be a type false at
   every call site.
-- **A branch supports several cores at once.** `Drupal\CoreCompatibility`
+- **A branch supports several cores at once.** `drupal.CoreCompatibility`
   reads `core_version_requirement` from a branch's info.yml (fetched with
   `GitlabClient::fileContents()`, one request per branch a row could sit on)
   and answers which tracked cores apply. `ModuleSnapshot::$coreConstraints`
@@ -382,21 +563,31 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   Measured live: pathauto's *single* 8.x-1.x declares `^10.2 || ^11 || ^12`,
   so treating core as part of a row's identity multiplied every row by a test
   matrix while saying nothing new — see `docs/dashboard-row-model.md`. Matching
-  uses composer/semver by interval intersection, not a regex over majors:
+  is interval intersection, not a regex over majors — computed here rather than
+  by a library, and verified against 18,273 cases generated from
+  composer/semver with no divergence:
   `^10.2` does declare core 10, and only an interval gets that right. **Null is
   "cannot tell", never "supports nothing"**, and an empty intersection returns
   the tracked set unchanged — a module vanishing from the dashboard is the
-  worst failure mode this tool has. `MrContextResolver` also **refuses a core
-  the merge request's target branch does not declare** — checking a branch on
-  a core it never claimed fails at composer resolution and reads as though the
+  worst failure mode this tool has. `MrResolver` also **refuses a core
+  the merge request's own tree does not declare** — checking a tree on a core
+  it never claimed fails at composer resolution and reads as though the
   contribution is broken. That matters more now the core can be inferred from
   the disk for an unregistered module: without it upkeep would pick a core and
-  then blame the module for it. The suggestion names only cores that are both
+  then blame the module for it. **The merge ref, or the head ref when GitLab
+  publishes none — never the branch it targets.** It read the target branch
+  first and that was backwards for the commonest merge request upkeep sees: a
+  core-compatibility MR exists to add the new core to info.yml, so the target
+  branch cannot declare it until the work lands, and the guard refused the one
+  thing it existed to let somebody verify. Same ref question
+  `MrCheckout.preferredRef` answers and the same answer, because this has to
+  agree with the tree `applyMr` will check out. The merge ref SHA is read once
+  and shared with the context rather than fetched twice. The suggestion names only cores that are both
   declared *and* built here. Unreadable info.yml, unparseable constraint,
   closed endpoint: all silence, because refusing on not-knowing blocks work
   over a file that merely failed to fetch.
 - **A patch belongs to the branch its issue is filed against.**
-  `Drupal\IssueVersion` turns the issue's version into a base branch and
+  `drupal.BranchCandidates` turns the issue's version into a base branch and
   `PatchApplication::$baseBranch` carries it to the adapter, which prefers it
   over whatever the working copy sits on — without it a 2.0.0 issue's patch was
   applied to the default 1.0.x and read as needing a re-roll. **It never
@@ -418,11 +609,11 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   its issue. Any failure costs the CONTRIBUTION column, never the list.
 - **The issue loop** (`issues` / `start` / `publish`) is the entry point the
   tool lacked: every other verb begins at a contribution, so writing a fix
-  happened outside it. `Drupal\IssueStatus::open()` is the canonical scan —
+  happened outside it. `drupal.IssueStatus::open()` is the canonical scan —
   the old Needs Review + RTBC pair is `awaitingReview()` and saw 42 of
-  pathauto's 93 open issues. `Adapter\IssueBranch` names a maintainer's own
+  pathauto's 93 open issues. `adapter.IssueBranch` names a maintainer's own
   branch to drupal.org's `<nid>-<slug>` convention; it is **not** an
-  `Adapter\ManagedBranch`, and the distinction is load-bearing: `mr-<iid>` and
+  `adapter.IsManagedBranch`, and the distinction is load-bearing: `mr-<iid>` and
   `patch-<nid>` are reset with `checkout -B` on every apply, which against a
   work branch would destroy commits held nowhere else. The two are disjoint by
   construction (no managed prefix starts with a digit; a work branch always
@@ -432,24 +623,24 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   and report a verdict on the contribution alone. `publish` opens merge
   requests and never merges: proposing work for review is the opposite of the
   risk the one-approval-per-merge stance manages.
-- `src/Patches/` — the patch-contribution surface. `Patches\PatchSelector`
+- `internal/patches/` — the patch-contribution surface. `patches.Select`
   decides *which* patch on an issue was meant (`--file` pins, `--latest` takes
   the newest, one candidate settles itself, several are `ambiguous` so the
   command can prompt — an unmatched `--file` is a refusal, never a fallback);
-  `Patches\PatchFetcher` is the download boundary (http(s) only, name reduced
+  `patches.Fetcher` is the download boundary (http(s) only, name reduced
   to a safe basename, body sniffed for a diff header, size capped) and the only
   thing that writes a patch to disk. Also holds how an issue's work arrived
-  (`Patches\ContributionKind`:
+  (`patches.Kind`:
   patch-only / patch + MR / patch with an empty MR / MR-only / nothing) and the
   issue-plus-its-MRs pairing `patches` renders. An MR counts as covering an
   issue only when it claims authorship of it
-  (`Drupal\IssueReference::extractOwning`, which unlike `extract()` rejects a
+  (`drupal.ExtractIssue::extractOwning`, which unlike `extract()` rejects a
   bare "Relates to #NNN" mention) **and** carries changes
-  (`Gitlab\MergeRequest::carriesChanges()`, which keys on
+  (`gitlab.MergeRequest::carriesChanges()`, which keys on
   `diff_refs.base_sha != head_sha` — `changes_count` is null on an empty MR
   and `detailed_merge_status` reads `draft_status` for a draft, so both lie).
   Unknown emptiness always reads as real work; nothing may treat it as empty.
-  `Patches\PatchAttribution` is the commit message a *promoted* patch travels
+  `patches.Attribution` is the commit message a *promoted* patch travels
   under (`patch:promote`): promoting is the one operation here that moves
   another person's work into history under whoever pushes it, so the message
   names the account that posted the file, in drupal.org's own
@@ -479,13 +670,13 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   issue work branch and leaves the rest as `.rej` files — the work of
   re-rolling rather than a description of it. It **never commits**: a
   promotion's commit carries the patch author's name
-  (`Patches\PatchAttribution`), and half their patch plus a pile of rejects is
+  (`patches.Attribution`), and half their patch plus a pile of rejects is
   not what they wrote, which is the misattribution that rule exists to
   prevent. Exit 1, not 0, because the patch did not apply and a script reading
   success would publish half a contribution. Nothing fitting at all refuses as
   before — an empty working copy beside rejects is no head start. The apply
   reads `git apply --reject`'s *output*, never its status: it exits 1 even
-  when it applied most of the patch. `Adapter\PatchPromotion` carries which
+  when it applied most of the patch. `adapter.PatchPromotion` carries which
   outcome happened, because "committed at this SHA" and "partly applied,
   nothing committed" are different answers and a nullable string would not
   have said which.
@@ -501,9 +692,9 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   delegates to `startWork()` rather than reimplementing it: a work branch may
   hold the only copy of something, so it must never meet `applyPatch`'s
   `checkout -B`.
-- `src/Dashboard/`, `src/Results/` — dashboard row assembly, cached check
+- `internal/dashboard/`, `internal/results/` — dashboard row assembly, cached check
   results (`<cockpit>/results/`). The dashboard is two-tier: bare `dashboard`
-  renders `Dashboard\ModuleSummary` (one line per module), naming a module or
+  renders `dashboard.ModuleSummary` (one line per module), naming a module or
   passing `--all` renders the rows. The summary is aggregated from exactly the
   rows the drill-down would print, never recounted from the underlying data —
   two counts of the same thing that can disagree are worse than one. **A row is
@@ -530,14 +721,14 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   (`docs/dashboard-row-model.md` §7): 244 rows became 115, and of the 48
   merge requests left unpaired, 46 name an issue that is genuinely closed and
   2 name none — no pairing misses.
-  `Results\ResultKey` keeps MR and patch results in separate path namespaces
+  `results.MergeRequestKey` keeps MR and patch results in separate path namespaces
   (`<iid>` vs `patch-<nid>`) — both subjects are identified by a number and
   nothing keeps the ranges apart, and a patch verdict
   read as an MR verdict would put unmergeable evidence in front of the
-  fast-lane gate. Patch results are keyed by `Patches\PatchRevision` (a hash of
+  fast-lane gate. Patch results are keyed by `patches.Revision` (a hash of
   the patch's source URL, not its bytes — the dashboard must judge staleness
   from the attachment list without downloading anything).
-- `src/BaseArtifact/` — per-core base tree + clean-install dump build/scan.
+- `internal/baseartifact/` — per-core base tree + clean-install dump build/scan.
   Lifecycle in full (building, rebuilding, what propagates, sharp edges):
   `docs/base-artifacts.md`.
   **A core major in pre-release is built deliberately, and everything after
@@ -547,7 +738,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   That is not an edge case for this tool: a Drupal major spends months in
   alpha and beta, and *that is when compatibility work happens*, since the
   Project Update Bot merge requests the fast lane exists to merge are about
-  the unreleased core. `BaseArtifact\CoreConstraint` holds the whole answer.
+  the unreleased core. `baseartifact.AssertStability` holds the whole answer.
   `--stability` is a **flag, never a fallback**: substituting a pre-release
   when a stable constraint finds nothing would make every later verdict a
   statement about a tree nobody asked for, and a base artifact set is the one
@@ -557,13 +748,56 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   repeating advice already taken buries what composer said. Nothing downstream
   takes the flag — `drupal/core-dev:^12` fails to resolve for exactly the same
   reason, so `ensureCheckToolchain()` derives the stability from the artifact
-  meta's resolved `core_version` (`CoreConstraint::stabilityOf()`, which is
+  meta's resolved `core_version` (`baseartifact.StabilityOf`, which reproduces
   composer's own `VersionParser::parseStability`). Derived rather than asked
   for again: a second flag could disagree with the tree it is installing into,
   and this way 13 and everything after it need no change here. The suffix goes
   on core's constraint only — `drupal/coder@alpha` carries no version
   constraint at all and would admit an alpha of a package with nothing to do
   with the seeded core.
+  **A pre-release tree records its own stability, and without that nothing
+  installs into it.** `composer create-project drupal/recommended-project:^12@beta`
+  applies the stability to that one install and never writes it into the
+  composer.json it creates, so the tree declares `stable` while its lock holds
+  a beta core — and every later `composer require` is a partial update composer
+  refuses *over core*, whatever you were installing. Verified with a real
+  resolve: `composer require psr/log:^3`, entirely stable and unrelated, fails
+  that way. Wiring the module, its dev requirements, the check toolchain and
+  the drush install are all `composer require`, so **no environment seeded from
+  a pre-release tree could do anything at all** — `--drush` addressed a symptom
+  of this. `Builder.persistStability` runs `composer config minimum-stability
+  dev` and `prefer-stable true` after the resolve and before anything copies
+  the tree. `dev` rather than the stability asked for, because `beta` fixes the
+  above and still cannot install a dev toolchain; `prefer-stable` is what makes
+  `dev` safe and is not optional — measured, core 12.0.0-beta1 plus drush
+  `^14@dev` moved no already-locked package and left exactly three at dev.
+  Nothing is written for a released core, whose tree must stay byte-identical
+  to what the previous version produced.
+  **`--drush` is still needed on top of it.** Core `12.0.0-beta1` pins guzzle
+  `^8.0.1` and symfony `^8.1`; drush 13.8.0 wants guzzle `^7.0`, `13.x-dev`
+  wants symfony `^6 || ^7`, and only `14.x-dev` (guzzle `^7.8.2 || ^8.0`,
+  symfony `^7 || ^8`) fits — so `--with-all-dependencies` cannot help, nothing
+  satisfies both sides. **The hint said `^13@dev` first and that was wrong**:
+  13.x-dev clears guzzle, which is the constraint composer names first, then
+  fails on symfony. Checking the one dependency in the error message is how
+  that happened, and a test now pins `^13@dev` out of the hint. A flag rather
+  than a fallback for the same reason `--stability` is one, with the added one
+  that an unpinned dev branch can break overnight. **The constraint is persisted and the stability is not**, an
+  asymmetry that is the point: `meta.yml` takes `tool_require`, because
+  `check`/`review`/`dev` do not take the flag and should not, so a set built
+  with a constraint provisioning then ignored would be a working artifact set
+  no command could use — while the stability is *derivable* from the recorded
+  `core_version` via `StabilityOf`. The key is `omitempty` and optional on
+  read, so every set built before it existed still reads.
+  **The adapter boundary shaped this, and the invariant caught the first
+  attempt.** `drush` is one of the forbidden words, so none of it could live
+  where it was first written (`baseartifact`, and a `--drush` string in the
+  command): `internal/adapter/drush.go` holds the package, the hint, *and the
+  flag's own name*, and `base-artifacts:build` declares a flag whose name it
+  asks the adapter for. The orchestrator genuinely does not know which tool it
+  selects; `baseartifact.Meta` calls the field `ToolRequire` and treats it as
+  opaque. An engine driving something other than drush answers differently in
+  one file and no command changes.
   **A rebuild is staged beside the live set, never over it.** `--force` used to
   `rm -rf` the version directory and *then* resolve into the empty space, so a
   routine "pick up the newer alpha" rebuild that hit a network blip left the
@@ -587,26 +821,25 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   permission on the same two directories, so it cannot be reached once the
   first has succeeded, and the message reports the staging directory as a
   whole instead of branching on a state that cannot occur.
-- `src/Maintenance/` — prune/status inventory and selection.
-- `src/Workflow/` — shared MR- and patch-flow context and the exit-code contract
+- `internal/maintenance/` — prune/status inventory and selection.
+- `internal/workflow/` — shared MR- and patch-flow context and the exit-code contract
   (0 did what was asked / 1 the supervised work failed / 2 upkeep could not do
   the job).
-- `src/Filesystem/` — the single write path (`FileWriter`: atomic
-  temp-file + `rename()`, explicit modes, raises on a write that does not
-  land) and `PathGuard` canonicalisation/containment. `FileWriter` holds the
-  only `file_put_contents` in `src/`.
-- `src/Security/` — `SecretRedactor` (scrubs credential material out of
-  process output before it is logged, rendered, or cached) and
-  `CredentialEnvironment` (removes `UPKEEP_GITLAB_TOKEN` from every child
-  process environment).
-- `src/Notes/`, `src/Config/` — release-notes drafting; config resolution.
+- `internal/filesystem/` — the single write path (`FileWriter`: atomic
+  temp-file + `rename()`, explicit modes, reports a write that does not land)
+  and `Canonicalize`/`IsWithin` containment. `Commit` holds the only direct
+  file write in `internal/`.
+- `internal/security/` — `Redactor` (scrubs credential material out of process
+  output before it is logged, rendered, or cached) and `ScrubbedEnvironment`
+  (removes `UPKEEP_GITLAB_TOKEN` from every child process environment).
+- `internal/notes/`, `internal/config/` — release-notes drafting; config resolution.
 - **There is no browser UI, and that is a decision.** `upkeep ui` served the
   cockpit as a local web page: a second renderer over the same core, actions
-  shelling out to `bin/upkeep` so exit codes and redaction were inherited
+  shelling out to `cmd/upkeep` so exit codes and redaction were inherited
   rather than reimplemented. It was removed. Nothing forced it to track the
   core it rendered, and it fell behind twice — the row-model rework, and then
   the change that made `issues` read merge requests live when there is no
-  snapshot, which `Ui\StateBuilder` never got. The result was a page showing
+  snapshot, which its state builder never got. The result was a page showing
   no issues for every module while the CLI showed them, which is worse than
   having no page. The structural problem underneath: every action handed you
   back to the terminal the moment it failed, so it was a read-mostly view
@@ -614,7 +847,7 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   merging — is deliberately absent under the DA one-approval stance. It is in
   git history if it is ever worth reviving; reviving it means solving "what
   makes this stay in step with the core", not porting the code.
-- **Shell completion** — `upkeep completion <shell>` is Symfony Console's own,
+- **Shell completion** — `upkeep completion <shell>` is cobra's own,
   and command names complete for free. What does not is *values*, so
   `UpkeepCommand::complete()` suggests the registry's module machine names for
   the `module` argument and the named module's tracked cores for `--version`.
@@ -624,153 +857,177 @@ Symfony Console). User-facing docs: `README.md`; architecture and rationale:
   moment later reports it properly. Values nothing local can enumerate (MR
   IIDs, issue nids) are deliberately not completed: that would be a network
   round trip per keystroke.
-- `tests/` — PHPUnit, mirroring `src/`.
+- Tests sit beside the code they cover, as `_test.go` files.
 
 ## Quality gates
 
-Four gates, all blocking in CI (`.github/workflows/ci.yml`, on PHP 8.2, 8.3
-and 8.4). Run all four before calling a change done:
+Four, matching the PHP's, and all blocking in CI
+(`.github/workflows/go.yml`, on Go 1.24 and 1.25):
 
 ```bash
-composer lint      # phpcs — PSR-12 over src/, bin/, tests/
-composer analyse   # phpstan analyse --no-progress — level max
-vendor/bin/phpunit # the unit suite, with the 100% line-coverage floor enforced
-./bin/upkeep list  # the binary still boots
+gofmt -l cmd internal   # must print nothing
+go vet ./...
+./coverage.sh           # the suite, and the per-package coverage floor
+go run ./cmd/upkeep --help
 ```
 
-**There is a fifth suite, and it is not one of the gates.**
-`vendor/bin/phpunit` runs the `unit` suite only (`defaultTestSuite`); the
-`integration` suite crosses the container boundary and needs docker, so it
-runs explicitly:
+**`composer install` breaks the Go build**, and that is not a bug in either.
+Go switches to vendor mode whenever a `vendor/` directory sits next to
+`go.mod`, and Composer's is exactly that. `vendor/` is gitignored and CI never
+sees both — the Go jobs run no `composer install` and the PHP jobs run no Go —
+so it bites only a working copy that has done both. `rm -rf vendor` puts the
+Go side right; `composer install` puts the PHP side back. It resolves for good
+when `internal/` goes.
+
+CI also runs `go test -race ./...`, the invariant tests named separately so a
+red build is legible, and a `go mod tidy` job — which earned its place
+immediately by catching cobra and yaml.v3 marked `// indirect` when both are
+direct dependencies, something no amount of local testing would notice with a
+warm module cache.
+
+**The coverage floor is per package, not one number** (`coverage.sh`). This
+is the port of the PHP's 100%-line coverage threshold, and being
+per-package is the point: statement coverage is not line coverage, and one
+overall figure lets a well-covered package pay for a bare one. Each floor is
+where that package actually stands, so the only direction it moves is up — the
+script fails a package that drops below its floor **and** one that rises above
+it without the floor being raised, because a floor left behind stops being a
+gate. Lowering one is a decision, written in that file where a reviewer sees
+it. Three packages are excluded, each with a written reason. **Never lower a
+floor to make a change pass**; that is the exact move the gate exists to
+prevent.
+
+**Mutation testing is the verification discipline.** After each package, break
+the behaviours it claims one at a time and confirm the suite catches each. A
+survivor is either a missing test — write it — or a genuinely equivalent
+mutant, documented at the code. This is not ceremony: it has caught assertions
+that could never fail (a table row searched for `"keep"` when every path in it
+contains "up**keep**"; column offsets measured in bytes while the table pads in
+runes; a whole coloriser unexercised because a test's output is not a
+terminal), and each of those was invisible to reading.
+
+## The fifth suite, and it is not one of the gates
+
+`internal/contract` crosses the container boundary: real ddev, real commands,
+reading what comes back. It needs docker and a started fixture project, so it
+skips itself without one and the four gates stay fast and offline.
 
 ```bash
-tests/Integration/fixture/setup.sh /tmp/contract        # a bare ddev project
-UPKEEP_DDEV_PROJECT=/tmp/contract \
-  vendor/bin/phpunit --testsuite=integration --no-coverage
+internal/contract/fixture/setup.sh ~/contract-fixture
+UPKEEP_DDEV_PROJECT=~/contract-fixture go test ./internal/contract/ -v
 ```
 
-It exists because the four gates are structurally blind to a whole class of
-failure: **three bugs shipped past a fully green suite in two days**, all of
-them at the point where a built string meets a real container — a command that
+It exists because the rest of the suite is structurally blind to a whole class
+of failure. **Three bugs shipped past a fully green PHP suite in two days**,
+all at the point where a built string meets a real container: a command that
 could not survive `ddev exec`, a `cd` copied from CI whose precondition
 ddev-drupal-contrib does not meet, and a dependency the path-repository layout
-never installs. Unit tests inspect what the adapter builds; nothing in them
-executes it. These do. The fixture is deliberately *not* a Drupal site: every
-fact under test is about the layout, and a bare ddev project starts in about a
-minute where installing Drupal takes fifteen — which is the half that makes
-container CI flaky and then ignored. `.github/workflows/integration.yml` runs
-the docker and no-docker jobs per PR, and fails if the contract tests skip
-themselves, because a job that goes green having executed nothing is the hole
-this closes.
+never installs. Every adapter test in this repository drives a *fake* runner,
+which records what it was handed and cannot tell you whether a container would
+accept it.
 
-**`.github/workflows/full-check.yml` is the nightly tier**: it provisions a
-real Drupal site and runs `check --working-copy` twice (the second run is the
-reused-environment path, which is where the toolchain gate silently skipped
-work) and `patch:check` against a real patch. It needs **no credential and
-writes nothing** — `check --working-copy` touches no GitLab client at all, and
-the patch surface is GitLab-free by design and degrades to null without a
-token, so no merge request is opened and no branch pushed. `publish` is the
-only command that writes, and its git half is covered offline in
-`tests/Integration/PublishPushTest.php` against a `file://` bare repository —
-including the `pre-receive hook declined` a fresh issue fork gives you, which
-a hook reproduces on demand and the real thing does not. What the nightly
-asserts is the **exit-code contract, not the verdict**: 0 and 1 both mean
-upkeep worked, and only 2 fails the job. Pinning an outcome would turn a
-re-rolled patch into a red build.
-Integration tests are excluded from the coverage floor: they exercise a
-fraction of `src/` by design, and running them under the threshold extension
-would either fail the build or force the floor down.
+The fixture is deliberately **not** a Drupal site. Everything under test is a
+fact about the layout, and a bare ddev project starts in about a minute where
+installing Drupal takes fifteen — which is the half that makes container CI
+flaky and then ignored.
 
-**Run `composer install` after pulling.** Adding a dependency is a one-line
-change to composer.json that leaves every existing checkout broken until it
-reinstalls. That is not hypothetical: `composer/semver` was added, and the
-next `dashboard --refresh` on a stale checkout died with an uncaught
-`Class "Composer\Semver\VersionParser" not found`. No gate caught it —
-`./bin/upkeep list` boots the application and reaches no dependency-using
-path, so it exited 0 with the package gone, and the suite runs where every
-package is present by construction. `Workflow\RuntimeRequirements` now
-compares composer.json's `require` against `Composer\InstalledVersions` at the
-top of `bin/upkeep` and refuses with exit 2 and the recovery command, so the
-boot gate does catch it — and reads composer.json rather than a hand-kept
-list, since a hand-kept list is what the offending commit would have forgotten
-to update.
+**Half of it needs no container.** `publish`'s git half is plain git against
+whatever URL it is handed, so a `file://` bare repository exercises it
+completely — including the `pre-receive hook declined` a fresh issue fork gives
+you, which a hook reproduces on demand and the real thing does not. Those run
+in the ordinary Go workflow; only the ddev half waits for the contract one.
+**No credential, no network, and no merge request is opened anywhere.**
 
-**`composer.lock` is committed, and `config.platform.php` is pinned to
-`8.2.0`.** Upkeep is cloned and run, not required as a library, so the lock is
-the artefact that says what a checkout should hold. The platform pin is what
-makes that safe: without it, resolution follows whatever PHP the resolver
-happens to be on, and a lock built on 8.4 pulled in Symfony 8.1 — which
-requires `php >=8.4.1` and would have failed `composer install` outright on
-the 8.2 and 8.3 CI legs. It was already causing quieter trouble: local runs
-were on Symfony 8.1 while CI's 8.2 leg resolved 7.x, so the four gates were
-being run against a dependency tree no user had. Pinned to the lowest
-supported version, everyone installs the same tree. The `|| ^8.0` half of the
-Symfony constraints is therefore never exercised by `composer install`; only
-an explicit `composer update` on PHP 8.4 reaches it — **which is what a
-Packagist user gets**, since a consumer resolves against their own platform and
-ignores both this lock and this `config.platform`. So CI has a second job,
-`resolved`, that unsets the platform pin, deletes the lock and resolves on 8.2
-and 8.4 before running the same gates. It is blocking: a red build there means
-users are getting a tree that does not work, and the escape hatch is narrowing
-the constraint to what is supported rather than keeping a warning nobody reads.
-Measured when it was added: PHP 8.4 resolves Symfony 8.1.6, and every gate
-passes on it.
+`.github/workflows/contract.yml` runs it per push, **and fails if the tests
+skip themselves**: a job that goes green having executed nothing is the hole
+this suite exists to close. `internal/contract` is excluded from the coverage
+floor with that reason written in `coverage.sh` — measuring it would report
+whatever the local machine could run.
 
-`composer lint:fix` (phpcbf) fixes what phpcs can fix automatically. CI also
-runs `composer validate --strict` before installing, so touching
-`composer.json` means re-running that too.
+**Assert positively here.** Reintroducing the `cd` bug on purpose showed why:
+it moved the failure earlier, to a `--basepath` error, so a test watching for
+the historical "Referenced sniff" text passed while the check was
+comprehensively broken. What holds is "a Drupal sniff fired" and "phpcs
+produced a report" — the negative strings are kept to explain a failure, not
+to detect one.
 
-### Running tests
+One guard is weaker than it was, and the comment says so: the original
+`unbound variable` shape no longer reproduces on ddev 1.24, where an
+assignment and its use in one `ddev exec` argument survive. That test now
+refuses the whole class of command-level failure rather than one symptom.
 
-```bash
-vendor/bin/phpunit
-```
+## Ported from PHP
 
-Fast (seconds), no network, no docker: engine interactions are tested against
-fakes of `Adapter\EngineAdapterInterface` and `Adapter\EngineAdapterFactory`,
-GitLab via mocked HTTP.
+This was a PHP application, rewritten command for command in Go.
+`docs/go-port.md` is the document for that: how it was done, what it found,
+and the eight defects it found in the PHP on the way. Do not restate it here —
+a second copy of the truth loses, which is why `docs/commands.md` is generated
+rather than written.
 
-**The 100% line-coverage floor is enforced.** A run below it prints
-`FAILURE: line coverage …% (…) is below the required minimum of 100.00%` and
-exits 1. PHPUnit 11.5 has no built-in minimum-coverage option, so the gate is
-a PHPUnit extension — `tests/Support/CoverageThresholdExtension.php`,
-registered in `phpunit.xml.dist` rather than passed as a CI flag, so a bare
-`vendor/bin/phpunit` enforces it exactly as CI does. Current state: 100.00%
-lines (7390/7390), methods (849/849) and classes (162/162), 1556 tests.
+**The corpora are the PHP's answers, and they are still the specification.**
+`registry.yml`, `meta.yml`, the dashboard snapshot's raw api-d7 payloads, the
+patch cache's safe filenames, the "did you mean" edit distance, and the
+`core_version_requirement` semantics are each held to a committed corpus that
+the PHP generated — `corpus.json` and `testdata/`. The generators went with
+the implementation they drove and are in git history; the answers stay,
+because a cockpit written by the old binary is still a cockpit this one has to
+read.
 
-Coverage requires a driver — PCOV (preferred; faster, line-coverage only) or
-Xdebug (accepted; also supports branch coverage). Check with
-`php -m | grep pcov`; if PCOV isn't auto-enabled in your `php.ini`, pass
-`-d pcov.enabled=1`. For the per-namespace table plus the overall summary:
+Where the port deliberately differs from what the PHP did, the reason is **in
+a comment at the code** rather than here: the stage lines that go to stderr
+rather than stdout, the `--draft` prefix that is not doubled, the merge-ref
+keying that the PHP got wrong in three places. Each says why where it happens.
 
-```bash
-vendor/bin/phpunit --coverage-text
-```
+### Structural invariants
 
-An HTML report is written to `build/coverage-html/` on every coverage-enabled
-run. **Known limitation:** with `--no-coverage`, or with no driver installed,
-there is nothing to measure — the extension warns loudly on stderr
-(`WARNING: the 100.00% line-coverage threshold was NOT enforced`) and exits 0
-rather than making the suite unrunnable. Never take a green run at face value
-without checking that warning is absent.
+`internal/invariant/` holds checks over the source itself, for properties no
+single code path shows. They are ordinary tests, and they are stricter than the
+PHP greps they replace:
+
+- **Only `internal/proc` may start a child process.** Stricter than the PHP
+  invariant, which only requires each construction to scrub the environment.
+- **Engine specifics stay inside `internal/adapter`.** An AST scan for
+  `{ddev, docker, colima, mutagen, drush, podman}` case-insensitively outside
+  that package, skipping comments. It earns its keep: it refused a
+  `--scratch-dir` help string that named Docker.
+
+### Shapes Go forced
+
+- **Package cycles.** PHP tolerates `Adapter ↔ Maintenance` and
+  `Adapter ↔ BaseArtifact`; Go does not. Broken with neutral types
+  (`adapter.ProjectVolume`) and consumer-declared interfaces
+  (`baseartifact.InstallSite`, `maintenance.Teardown`, `dashboard.Reader`).
+  Declare the interface where it is *used*, not where it is implemented.
+- **No base class.** The PHP has twenty-one commands extending
+  `internal/cli`. `internal/cli` does those jobs instead, which is the
+  better shape for them: what they share is behaviour applied to a command, not
+  identity.
+- **One composition root.** `cmd/upkeep/main.go` builds a
+  `command.Surface` and hands it to `command.NewRoot`. It and
+  `adapter.DdevContribFactory` are the only places engine selection happens.
 
 ## Hard rule: the adapter boundary
 
 Engine specifics (ddev, ddev-drupal-contrib, docker, container/volume names)
-live **only** in `src/Adapter/`. The rest of the orchestrator talks to
+live **only** in `internal/adapter/`. The rest of the orchestrator talks to
 `EngineAdapterInterface`, obtained from an injected `EngineAdapterFactory`,
 and must stay engine-agnostic. Guard:
 
 ```bash
-grep -ri "ddev" src/ --exclude-dir=Adapter
+grep -ri "ddev" internal/ --exclude-dir=Adapter
 ```
 
 must return nothing. **The `-i` is load-bearing.** The guard was previously
 written case-sensitively, and passed only because five command classes
 constructed `DdevContribAdapter` with a capital D — nominally satisfied,
-substantively breached. Engine selection now happens once, in `bin/upkeep`.
-If a change needs engine knowledge outside `src/Adapter/`, grow the adapter
+substantively breached. Engine selection now happens once, in `cmd/upkeep`.
+If a change needs engine knowledge outside `internal/adapter/`, grow the adapter
 interface instead.
+
+The same rule holds on the Go side, where it is a test rather than a grep
+(`internal/invariant/adapter_boundary_test.go`) — an AST scan, so a comment
+mentioning ddev is fine and a string literal is not. Growing
+`adapter.Engine` is the answer there too.
 
 ## Conventions
 
@@ -782,46 +1039,42 @@ interface instead.
   This is functional, not just hardening: the tree is bind-mounted into the
   Docker VM and macOS providers only share the home directory, so an
   environment outside it can never start. Containment is checked on the
-  canonical path (`Filesystem\PathGuard`), so `..` and symlink escapes are
+  canonical path (`filesystem.Canonicalize`), so `..` and symlink escapes are
   caught. **There is no escape hatch**; adding one is a decision, not a patch.
 - `--version` is *always* the target-core selector, never an app-version flag
   — on check/review/dev/exec/env:path/needs-work, as a filter over assembled
   rows on dashboard, and on `base-artifacts:build` (which used to spell it
   `--core`). The application-level `-V/--version` is deliberately removed in
-  `bin/upkeep`.
-- The one MR-IID rule lives in `UpkeepCommand::mrIid()`: a positive integer,
+  `cmd/upkeep`.
+- The one MR-IID rule lives in `cli.MrIID`: a positive integer,
   or exit 2. `!0` is not a merge request, so it is refused rather than turned
   into a confusing 404.
-- Exit codes are a CLI-wide contract, mapped once in
-  `Command\UpkeepCommand::execute()` and expressed by `Workflow\ExitCode`:
-  **0** the command did what was asked, **1** the work it supervised failed,
-  **2** upkeep could not do the job. Commands return `ExitCode::*` and never
-  Symfony's `Command::SUCCESS`/`FAILURE`/`INVALID`, whose numbers collide with
-  the contract while meaning something else. Throwing a domain exception
-  (`WorkflowException`, `AdapterException`, `RegistryException`,
-  `FilesystemException`, `BuildException`, `MetaException`) is the documented
-  way to report a 2.
-- Every write goes through `Filesystem\FileWriter` — atomic, checked, explicit
-  mode. Do not add a raw `file_put_contents`; a discarded return value is how
-  `init` used to report "Cockpit created" over a registry that never landed.
-  Caches holding token-scoped remote data or raw check output are `0600` in
-  `0700` directories (`FileWriter::MODE_PRIVATE`/`MODE_PRIVATE_DIR`).
+- Exit codes are a CLI-wide contract, mapped once in `cli.Run` and expressed
+  by the `workflow` constants: **0** the command did what was asked, **1** the
+  work it supervised failed, **2** upkeep could not do the job. A command
+  returns `workflow.OK` or `workflow.Failed`; returning an `error` is the
+  documented way to report a 2, so no command has to remember the number.
+- Every write goes through `filesystem.Commit` — atomic, checked, explicit
+  mode. Do not add a raw `os.WriteFile`; an ignored error is how `init` used
+  to report "Cockpit created" over a registry that never landed. Caches holding
+  token-scoped remote data or raw check output are `0600` in `0700`
+  directories (`filesystem.ModePrivate` / `ModePrivateDir`).
 - `UPKEEP_GITLAB_TOKEN` is never forwarded to a child process
-  (`Security\CredentialEnvironment::scrubbed()`), and process output is passed
-  through `Security\SecretRedactor` before it is logged, rendered or cached.
-- **Every suppression annotation requires a written justification** — a
-  comment on the line above saying what is being suppressed and why it cannot
-  be fixed. That applies to `@codeCoverageIgnore`, `@phpstan-ignore`,
-  `phpcs:ignore`, `phpcs:disable` and a `phpstan-baseline.neon`. The repository
-  currently has **zero** of them, and no baseline file; that is the state to
-  preserve. Verify with:
+  (`security.ScrubbedEnvironment`), and process output is passed
+  through `security.Redactor` before it is logged, rendered or cached.
+- **Every suppression requires a written justification** — a comment on the
+  line above saying what is being suppressed and why it cannot be fixed. That
+  applies to `//nolint`, a `t.Skip` that is not conditional on the environment,
+  and lowering a floor in `coverage.sh`. The repository currently has **zero**
+  `//nolint`; that is the state to preserve. Verify with:
 
   ```bash
-  grep -rn "codeCoverageIgnore\|phpstan-ignore\|phpcs:ignore\|phpcs:disable" src/ tests/ bin/
+  grep -rn "nolint" cmd/ internal/
   ```
 
   Prefer restructuring the code over suppressing the tool. An untested error
   path is exactly the kind that reports success over a failure.
 - Merges are one-human-approval-per-MR by DA policy; never add a batch or
-  unattended merge path (see README "Policy stance"). Asserted structurally by
-  `tests/Command/CommandSurfaceTest.php`.
+  unattended merge path (see README "Policy stance"). Held by
+  `internal/cli/command/merge_test.go`, which asserts a second merge request
+  needs its own answer.

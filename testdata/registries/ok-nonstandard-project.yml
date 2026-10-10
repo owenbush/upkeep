@@ -1,0 +1,4 @@
+modules:
+  pathauto:
+    project: someone/fork-of-pathauto
+    core_versions: ['11']

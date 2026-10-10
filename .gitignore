@@ -1,8 +1,19 @@
-/vendor/
-.phpunit.cache/
-.phpunit.result.cache
-/build/coverage-html/
-*.phar
+# The Go build's output.
+dist/
+
+# A `go build` in the root, which is what you do to try a change. One entry
+# per main package under cmd/, and **each is anchored with a leading slash**:
+# unanchored, `upkeep` would also match the cmd/upkeep *directory* and hide
+# the main package from git.
+/upkeep
+/docgen
+/livecheck
+
+# Generated corpora, kept out of the tree: the committed corpus.json and
+# testdata/ are the answers, and these are scratch.
+corpus-fuzz.json
+corpus-hard.json
+
 .DS_Store
 .idea/
 .vscode/

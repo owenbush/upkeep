@@ -1,0 +1,14 @@
+{
+  "id": 11,
+  "path": "pathauto",
+  "path_with_namespace": "project/pathauto",
+  "name": "Pathauto",
+  "web_url": "https://git.drupalcode.org/project/pathauto",
+  "ssh_url_to_repo": "git@git.drupal.org:project/pathauto.git",
+  "default_branch": "2.0.x",
+  "permissions": {
+    "project_access": {
+      "access_level": 40
+    }
+  }
+}

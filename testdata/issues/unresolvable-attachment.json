@@ -1,0 +1,19 @@
+{
+  "nid": 1,
+  "title": "t",
+  "field_issue_status": 1,
+  "field_issue_files": [
+    {
+      "file": {
+        "filename": "a.patch",
+        "url": "https://x/a.patch"
+      }
+    },
+    {
+      "file": {
+        "uri": "https://www.drupal.org/api-d7/file/99.json",
+        "id": "99"
+      }
+    }
+  ]
+}

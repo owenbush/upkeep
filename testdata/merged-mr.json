@@ -1,0 +1,16 @@
+{
+  "iid": 9,
+  "title": "Issue #3597808 by somebody: Drupal 11 compatibility",
+  "state": "merged",
+  "author": {
+    "username": "somebody",
+    "id": 12345
+  },
+  "source_branch": "3597808-fix",
+  "target_branch": "2.0.x",
+  "sha": "def5678",
+  "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/9",
+  "updated_at": "2026-06-12T10:00:00Z",
+  "merged_at": "2026-06-12T10:00:00Z",
+  "source_project_id": 502
+}

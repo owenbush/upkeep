@@ -1,0 +1,722 @@
+{
+    "bare-references.json": {
+        "parsed": true,
+        "nid": 3603341,
+        "title": "Automated Drupal 12 compatibility fixes",
+        "status": 8,
+        "url": "https://www.drupal.org/node/3603341",
+        "project": "static_setting_contexts",
+        "priority": 200,
+        "priority_label": "Normal",
+        "version": "1.0.x-dev",
+        "component": "Code",
+        "category": "Bug report",
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 3603341,
+            "title": "Automated Drupal 12 compatibility fixes",
+            "field_issue_status": "8",
+            "url": "https://www.drupal.org/node/3603341",
+            "field_project": {
+                "machine_name": "static_setting_contexts"
+            },
+            "field_issue_priority": 200,
+            "field_issue_version": "1.0.x-dev",
+            "field_issue_component": "Code",
+            "field_issue_category": 1,
+            "field_issue_files": []
+        }
+    },
+    "category-1.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "Bug report",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": "Bug report",
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "Bug report",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": 1,
+            "field_issue_files": []
+        }
+    },
+    "category-2.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "Task",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": "Task",
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "Task",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": 2,
+            "field_issue_files": []
+        }
+    },
+    "category-3.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "Feature request",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": "Feature request",
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "Feature request",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": 3,
+            "field_issue_files": []
+        }
+    },
+    "category-4.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "Support request",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": "Support request",
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "Support request",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": 4,
+            "field_issue_files": []
+        }
+    },
+    "category-5.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "Plan",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": "Plan",
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "Plan",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": 5,
+            "field_issue_files": []
+        }
+    },
+    "category-99.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "unknown",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "unknown",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "empty.json": {
+        "parsed": false
+    },
+    "flat-attachments.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 2,
+        "latest_patch": "b.diff",
+        "files": [
+            {
+                "name": "a.patch",
+                "url": "https://x/a.patch",
+                "size": 10,
+                "timestamp": 5,
+                "owner_uid": 3,
+                "is_patch": true,
+                "comment_number": null
+            },
+            {
+                "name": "b.diff",
+                "url": "https://x/b.diff",
+                "size": 20,
+                "timestamp": 6,
+                "owner_uid": null,
+                "is_patch": true,
+                "comment_number": null
+            }
+        ],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": [
+                {
+                    "file": {
+                        "filename": "a.patch",
+                        "url": "https://x/a.patch",
+                        "filesize": "10",
+                        "timestamp": "5",
+                        "uid": 3
+                    }
+                },
+                {
+                    "file": {
+                        "filename": "b.diff",
+                        "url": "https://x/b.diff",
+                        "filesize": "20",
+                        "timestamp": "6",
+                        "uid": null
+                    }
+                }
+            ]
+        }
+    },
+    "no-nid.json": {
+        "parsed": false
+    },
+    "no-status.json": {
+        "parsed": false
+    },
+    "no-url.json": {
+        "parsed": true,
+        "nid": 3597808,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/3597808",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 3597808,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/3597808",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "non-file-attachments.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "out-of-order-patches.json": {
+        "parsed": true,
+        "nid": 3597808,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/3597808",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 2,
+        "latest_patch": "3597808-14-d11.patch",
+        "files": [
+            {
+                "name": "3597808-14-d11.patch",
+                "url": "https://x/14.patch",
+                "size": 10,
+                "timestamp": 100,
+                "owner_uid": null,
+                "is_patch": true,
+                "comment_number": 14
+            },
+            {
+                "name": "3597808-9-d11.patch",
+                "url": "https://x/9.patch",
+                "size": 10,
+                "timestamp": 900,
+                "owner_uid": null,
+                "is_patch": true,
+                "comment_number": 9
+            },
+            {
+                "name": "interdiff.txt",
+                "url": "https://x/i.txt",
+                "size": 10,
+                "timestamp": 950,
+                "owner_uid": null,
+                "is_patch": false,
+                "comment_number": null
+            }
+        ],
+        "round_tripped": {
+            "nid": 3597808,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/3597808",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": [
+                {
+                    "file": {
+                        "filename": "3597808-14-d11.patch",
+                        "url": "https://x/14.patch",
+                        "filesize": "10",
+                        "timestamp": "100",
+                        "uid": null
+                    }
+                },
+                {
+                    "file": {
+                        "filename": "3597808-9-d11.patch",
+                        "url": "https://x/9.patch",
+                        "filesize": "10",
+                        "timestamp": "900",
+                        "uid": null
+                    }
+                },
+                {
+                    "file": {
+                        "filename": "interdiff.txt",
+                        "url": "https://x/i.txt",
+                        "filesize": "10",
+                        "timestamp": "950",
+                        "uid": null
+                    }
+                }
+            ]
+        }
+    },
+    "priority-100.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": 100,
+        "priority_label": "Minor",
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": 100,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "priority-200.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": 200,
+        "priority_label": "Normal",
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": 200,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "priority-300.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": 300,
+        "priority_label": "Major",
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": 300,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "priority-400.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": 400,
+        "priority_label": "Critical",
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": 400,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "priority-42.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": 42,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 0,
+        "latest_patch": null,
+        "files": [],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": 42,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": []
+        }
+    },
+    "resolved-attachments.json": {
+        "parsed": true,
+        "nid": 3603341,
+        "title": "Automated Drupal 12 compatibility fixes",
+        "status": 8,
+        "url": "https://www.drupal.org/node/3603341",
+        "project": "static_setting_contexts",
+        "priority": 200,
+        "priority_label": "Normal",
+        "version": "1.0.x-dev",
+        "component": "Code",
+        "category": "Bug report",
+        "patch_count": 2,
+        "latest_patch": "3603341-9-d12.patch",
+        "files": [
+            {
+                "name": "3603341-3-d12.patch",
+                "url": "https://www.drupal.org/files/issues/3603341-3-d12.patch",
+                "size": 4321,
+                "timestamp": 1780000000,
+                "owner_uid": 66574,
+                "is_patch": true,
+                "comment_number": 3
+            },
+            {
+                "name": "3603341-9-d12.patch",
+                "url": "https://www.drupal.org/files/issues/3603341-9-d12.patch",
+                "size": 5000,
+                "timestamp": 1781000000,
+                "owner_uid": 12345,
+                "is_patch": true,
+                "comment_number": 9
+            }
+        ],
+        "round_tripped": {
+            "nid": 3603341,
+            "title": "Automated Drupal 12 compatibility fixes",
+            "field_issue_status": "8",
+            "url": "https://www.drupal.org/node/3603341",
+            "field_project": {
+                "machine_name": "static_setting_contexts"
+            },
+            "field_issue_priority": 200,
+            "field_issue_version": "1.0.x-dev",
+            "field_issue_component": "Code",
+            "field_issue_category": 1,
+            "field_issue_files": [
+                {
+                    "file": {
+                        "filename": "3603341-3-d12.patch",
+                        "url": "https://www.drupal.org/files/issues/3603341-3-d12.patch",
+                        "filesize": "4321",
+                        "timestamp": "1780000000",
+                        "uid": 66574
+                    }
+                },
+                {
+                    "file": {
+                        "filename": "3603341-9-d12.patch",
+                        "url": "https://www.drupal.org/files/issues/3603341-9-d12.patch",
+                        "filesize": "5000",
+                        "timestamp": "1781000000",
+                        "uid": 12345
+                    }
+                }
+            ]
+        }
+    },
+    "und-envelope.json": {
+        "parsed": true,
+        "nid": 3597808,
+        "title": "Drupal 11 compatibility",
+        "status": 13,
+        "url": "https://www.drupal.org/node/3597808",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": "Feature request",
+        "patch_count": 1,
+        "latest_patch": "3597808-4.patch",
+        "files": [
+            {
+                "name": "3597808-4.patch",
+                "url": "https://x/3597808-4.patch",
+                "size": 100,
+                "timestamp": 1700000000,
+                "owner_uid": 7,
+                "is_patch": true,
+                "comment_number": 4
+            }
+        ],
+        "round_tripped": {
+            "nid": 3597808,
+            "title": "Drupal 11 compatibility",
+            "field_issue_status": "13",
+            "url": "https://www.drupal.org/node/3597808",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": 3,
+            "field_issue_files": [
+                {
+                    "file": {
+                        "filename": "3597808-4.patch",
+                        "url": "https://x/3597808-4.patch",
+                        "filesize": "100",
+                        "timestamp": "1700000000",
+                        "uid": 7
+                    }
+                }
+            ]
+        }
+    },
+    "unknown-status.json": {
+        "parsed": false
+    },
+    "unresolvable-attachment.json": {
+        "parsed": true,
+        "nid": 1,
+        "title": "t",
+        "status": 1,
+        "url": "https://www.drupal.org/node/1",
+        "project": null,
+        "priority": null,
+        "priority_label": null,
+        "version": null,
+        "component": null,
+        "category": null,
+        "patch_count": 1,
+        "latest_patch": "a.patch",
+        "files": [
+            {
+                "name": "a.patch",
+                "url": "https://x/a.patch",
+                "size": 0,
+                "timestamp": 0,
+                "owner_uid": null,
+                "is_patch": true,
+                "comment_number": null
+            }
+        ],
+        "round_tripped": {
+            "nid": 1,
+            "title": "t",
+            "field_issue_status": "1",
+            "url": "https://www.drupal.org/node/1",
+            "field_project": null,
+            "field_issue_priority": null,
+            "field_issue_version": null,
+            "field_issue_component": null,
+            "field_issue_category": null,
+            "field_issue_files": [
+                {
+                    "file": {
+                        "filename": "a.patch",
+                        "url": "https://x/a.patch",
+                        "filesize": "0",
+                        "timestamp": "0",
+                        "uid": null
+                    }
+                }
+            ]
+        }
+    }
+}

@@ -83,6 +83,46 @@ Already-registered modules are never offered twice, existing entries are never
 overwritten, and the command is read-only against GitLab. Note: writing
 regenerates `registry.yml`, so hand-written comments in it do not survive.
 
+## Change which cores a module tracks
+
+`core_versions` is the one registry field that moves in the ordinary course of
+maintenance — a new core major reaches alpha, an old one goes end of life — so
+it is a command rather than a file edit:
+
+```bash
+upkeep modules:track jumplinks              # what it tracks today
+upkeep modules:track jumplinks 12           # track core 12 as well
+upkeep modules:track jumplinks --remove=10
+upkeep modules:track jumplinks --set=12,11  # replace the list, in this order
+```
+
+Cores named as arguments are **appended**, which matters: the first entry is
+the core a command targets when you omit `--version`, so adding next year's
+core does not quietly retarget every bare `upkeep check`. Moving that default
+is `--set`'s job, and nothing else's.
+
+`modules:add --core-versions` does not do this — it applies to new entries
+only, and deliberately never overwrites one you already have.
+
+If a core you start tracking has no base artifacts yet, the command says so
+and names the build; see [Base artifacts](../base-artifacts.md).
+
+## Stop watching a module
+
+```bash
+upkeep modules:untrack jumplinks
+```
+
+The entry goes, so `dashboard`, `patches`, `modules`, `status` and `prune` stop
+covering it. **Nothing on disk is removed and nothing stops working**: the
+registry is a watchlist rather than a gate, so `check`, `review` and `dev`
+still take the module by name. To reclaim its environments and cached results,
+run [`prune`](../reference/disk.md).
+
+The report prints the cores it removed, as the `modules:add` that puts them
+back — that list is a judgement you made, and the registry was the only place
+it lived.
+
 Check what is registered:
 
 ```bash

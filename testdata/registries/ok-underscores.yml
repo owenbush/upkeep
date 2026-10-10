@@ -1,0 +1,4 @@
+modules:
+  field_visibility_conditions:
+    project: project/field_visibility_conditions
+    core_versions: ['11']

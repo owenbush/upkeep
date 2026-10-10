@@ -1,0 +1,4 @@
+core_version: 11.4.6
+core_major: '11'
+php_version: 8.3.14
+db_engine: mariadb:10.11

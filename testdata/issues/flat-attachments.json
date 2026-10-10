@@ -1,0 +1,20 @@
+{
+  "nid": 1,
+  "title": "t",
+  "field_issue_status": 1,
+  "field_issue_files": [
+    {
+      "filename": "a.patch",
+      "url": "https://x/a.patch",
+      "filesize": "10",
+      "timestamp": "5",
+      "uid": "3"
+    },
+    {
+      "name": "b.diff",
+      "url": "https://x/b.diff",
+      "filesize": "20",
+      "timestamp": "6"
+    }
+  ]
+}

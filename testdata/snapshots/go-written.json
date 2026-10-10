@@ -1,0 +1,120 @@
+{
+    "core_constraints": {
+        "1.0.x": "^10",
+        "2.0.x": "^10.2 || ^11 || ^12"
+    },
+    "fetched_at": "2026-06-12T10:00:00Z",
+    "fork_nids": {
+        "501": 3603341,
+        "502": 3597808
+    },
+    "merge_ref_shas": {
+        "12": "deadbeefcafe",
+        "9": "abc1234"
+    },
+    "merge_requests": [
+        {
+            "author": {
+                "id": 66574,
+                "username": "Project-Update-Bot"
+            },
+            "description": "Relates to #3603341",
+            "detailed_merge_status": "draft_status",
+            "diff_refs": {
+                "base_sha": "base111",
+                "head_sha": "head222"
+            },
+            "draft": true,
+            "head_pipeline": {
+                "id": 99,
+                "sha": "abc1234",
+                "status": "success",
+                "web_url": "https://ci/99"
+            },
+            "iid": 12,
+            "sha": "abc1234",
+            "source_branch": "project-update-bot-only",
+            "source_project_id": 501,
+            "state": "opened",
+            "target_branch": "2.0.x",
+            "title": "Automated Drupal 12 compatibility fixes",
+            "updated_at": "2026-06-11T09:00:00Z",
+            "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/12"
+        }
+    ],
+    "merged_merge_requests": [
+        {
+            "author": {
+                "id": 12345,
+                "username": "somebody"
+            },
+            "iid": 9,
+            "merged_at": "2026-06-12T10:00:00Z",
+            "sha": "def5678",
+            "source_branch": "3597808-fix",
+            "source_project_id": 502,
+            "state": "merged",
+            "target_branch": "2.0.x",
+            "title": "Issue #3597808 by somebody: Drupal 11 compatibility",
+            "updated_at": "2026-06-12T10:00:00Z",
+            "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/9"
+        }
+    ],
+    "patch_issues": [
+        {
+            "field_issue_category": 1,
+            "field_issue_component": "Code",
+            "field_issue_files": [
+                {
+                    "file": {
+                        "filename": "3603341-3-d12.patch",
+                        "filesize": "4321",
+                        "id": "1",
+                        "owner": {
+                            "id": "66574",
+                            "name": "Project-Update-Bot"
+                        },
+                        "timestamp": "1780000000",
+                        "url": "https://www.drupal.org/files/issues/3603341-3-d12.patch"
+                    }
+                },
+                {
+                    "file": {
+                        "filename": "3603341-9-d12.patch",
+                        "filesize": "5000",
+                        "id": "2",
+                        "owner": {
+                            "id": "12345",
+                            "name": "somebody"
+                        },
+                        "timestamp": "1781000000",
+                        "url": "https://www.drupal.org/files/issues/3603341-9-d12.patch"
+                    }
+                }
+            ],
+            "field_issue_priority": 200,
+            "field_issue_status": 8,
+            "field_issue_version": "1.0.x-dev",
+            "field_project": {
+                "machine_name": "static_setting_contexts"
+            },
+            "nid": 3603341,
+            "title": "Automated Drupal 12 compatibility fixes",
+            "url": "https://www.drupal.org/node/3603341"
+        }
+    ],
+    "project": {
+        "default_branch": "2.0.x",
+        "id": 11,
+        "name": "Pathauto",
+        "path": "pathauto",
+        "path_with_namespace": "project/pathauto",
+        "permissions": {
+            "project_access": {
+                "access_level": 40
+            }
+        },
+        "ssh_url_to_repo": "git@git.drupal.org:project/pathauto.git",
+        "web_url": "https://git.drupalcode.org/project/pathauto"
+    }
+}

@@ -1,0 +1,179 @@
+{
+    "bad-core-nested.yml": {
+        "accepted": false
+    },
+    "bad-core-not-numeric.yml": {
+        "accepted": false
+    },
+    "bad-core-traversal.yml": {
+        "accepted": false
+    },
+    "bad-cores-mapping.yml": {
+        "accepted": false
+    },
+    "bad-cores-scalar.yml": {
+        "accepted": false
+    },
+    "bad-definition-scalar.yml": {
+        "accepted": false
+    },
+    "bad-empty-cores.yml": {
+        "accepted": false
+    },
+    "bad-empty-project.yml": {
+        "accepted": false
+    },
+    "bad-modules-is-list.yml": {
+        "accepted": false
+    },
+    "bad-modules-is-scalar.yml": {
+        "accepted": false
+    },
+    "bad-name-hyphen.yml": {
+        "accepted": false
+    },
+    "bad-name-leading-digit.yml": {
+        "accepted": false
+    },
+    "bad-name-numeric.yml": {
+        "accepted": false
+    },
+    "bad-name-traversal.yml": {
+        "accepted": false
+    },
+    "bad-name-uppercase.yml": {
+        "accepted": false
+    },
+    "bad-no-cores.yml": {
+        "accepted": false
+    },
+    "bad-no-modules-key.yml": {
+        "accepted": false
+    },
+    "bad-no-project.yml": {
+        "accepted": false
+    },
+    "bad-not-yaml.yml": {
+        "accepted": false
+    },
+    "ok-block-list.yml": {
+        "accepted": true,
+        "modules": {
+            "token": {
+                "name": "token",
+                "project": "project/token",
+                "core_versions": [
+                    "11",
+                    "12"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-comment.yml": {
+        "accepted": true,
+        "modules": {
+            "pathauto": {
+                "name": "pathauto",
+                "project": "project/pathauto",
+                "core_versions": [
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-empty-modules-null.yml": {
+        "accepted": true,
+        "modules": {}
+    },
+    "ok-extra-keys.yml": {
+        "accepted": true,
+        "modules": {
+            "pathauto": {
+                "name": "pathauto",
+                "project": "project/pathauto",
+                "core_versions": [
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-nonstandard-project.yml": {
+        "accepted": true,
+        "modules": {
+            "pathauto": {
+                "name": "pathauto",
+                "project": "someone/fork-of-pathauto",
+                "core_versions": [
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-simple.yml": {
+        "accepted": true,
+        "modules": {
+            "pathauto": {
+                "name": "pathauto",
+                "project": "project/pathauto",
+                "core_versions": [
+                    "10",
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-two-modules.yml": {
+        "accepted": true,
+        "modules": {
+            "pathauto": {
+                "name": "pathauto",
+                "project": "project/pathauto",
+                "core_versions": [
+                    "11"
+                ],
+                "watched": true
+            },
+            "token": {
+                "name": "token",
+                "project": "project/token",
+                "core_versions": [
+                    "10",
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-underscores.yml": {
+        "accepted": true,
+        "modules": {
+            "field_visibility_conditions": {
+                "name": "field_visibility_conditions",
+                "project": "project/field_visibility_conditions",
+                "core_versions": [
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    },
+    "ok-unquoted-numbers.yml": {
+        "accepted": true,
+        "modules": {
+            "pathauto": {
+                "name": "pathauto",
+                "project": "project/pathauto",
+                "core_versions": [
+                    "10",
+                    "11"
+                ],
+                "watched": true
+            }
+        }
+    }
+}

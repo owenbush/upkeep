@@ -1,0 +1,41 @@
+{
+  "nid": 3603341,
+  "title": "Automated Drupal 12 compatibility fixes",
+  "field_issue_status": 8,
+  "url": "https://www.drupal.org/node/3603341",
+  "field_project": {
+    "machine_name": "static_setting_contexts"
+  },
+  "field_issue_priority": 200,
+  "field_issue_version": "1.0.x-dev",
+  "field_issue_component": "Code",
+  "field_issue_category": 1,
+  "field_issue_files": [
+    {
+      "file": {
+        "id": "1",
+        "filename": "3603341-3-d12.patch",
+        "url": "https://www.drupal.org/files/issues/3603341-3-d12.patch",
+        "filesize": "4321",
+        "timestamp": "1780000000",
+        "owner": {
+          "id": "66574",
+          "name": "Project-Update-Bot"
+        }
+      }
+    },
+    {
+      "file": {
+        "id": "2",
+        "filename": "3603341-9-d12.patch",
+        "url": "https://www.drupal.org/files/issues/3603341-9-d12.patch",
+        "filesize": "5000",
+        "timestamp": "1781000000",
+        "owner": {
+          "id": "12345",
+          "name": "somebody"
+        }
+      }
+    }
+  ]
+}

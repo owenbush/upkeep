@@ -1,0 +1,166 @@
+{
+    "bad-built-at-garbage.yml": {
+        "accepted": false
+    },
+    "bad-empty.yml": {
+        "accepted": false
+    },
+    "bad-list.yml": {
+        "accepted": false
+    },
+    "bad-missing-built-at.yml": {
+        "accepted": false
+    },
+    "bad-missing-core-version.yml": {
+        "accepted": false
+    },
+    "bad-not-yaml.yml": {
+        "accepted": false
+    },
+    "bad-null-value.yml": {
+        "accepted": false
+    },
+    "bad-scalar.yml": {
+        "accepted": false
+    },
+    "bad-structured-value.yml": {
+        "accepted": false
+    },
+    "ok-alpha.yml": {
+        "accepted": true,
+        "core_version": "12.0.0-alpha1",
+        "core_major": "12",
+        "php_version": "8.3",
+        "db_engine": "mariadb:10.11",
+        "built_at": "2026-09-01T08:30:00+02:00",
+        "yaml": "core_version: 12.0.0-alpha1\ncore_major: '12'\nphp_version: '8.3'\ndb_engine: 'mariadb:10.11'\nbuilt_at: '2026-09-01T08:30:00+02:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [
+                "PHP version skew: artifact built on 8.3, environment runs 8.99."
+            ],
+            "minor": [
+                "PHP version skew: artifact built on 8.3, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on mariadb:10.11, environment runs sqlite."
+            ]
+        }
+    },
+    "ok-dev.yml": {
+        "accepted": true,
+        "core_version": "12.x-dev",
+        "core_major": "12",
+        "php_version": "8.4.1",
+        "db_engine": "postgres:16",
+        "built_at": "2026-01-02T03:04:05+00:00",
+        "yaml": "core_version: 12.x-dev\ncore_major: '12'\nphp_version: 8.4.1\ndb_engine: 'postgres:16'\nbuilt_at: '2026-01-02T03:04:05+00:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [],
+            "minor": [
+                "PHP version skew: artifact built on 8.4, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on postgres:16, environment runs sqlite."
+            ]
+        }
+    },
+    "ok-extra-key.yml": {
+        "accepted": true,
+        "core_version": "11.4.6",
+        "core_major": "11",
+        "php_version": "8.3.14",
+        "db_engine": "mariadb:10.11",
+        "built_at": "2026-06-12T10:00:00+00:00",
+        "yaml": "core_version: 11.4.6\ncore_major: '11'\nphp_version: 8.3.14\ndb_engine: 'mariadb:10.11'\nbuilt_at: '2026-06-12T10:00:00+00:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [],
+            "minor": [
+                "PHP version skew: artifact built on 8.3, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on mariadb:10.11, environment runs sqlite."
+            ]
+        }
+    },
+    "ok-go-rendered-alpha.yml": {
+        "accepted": true,
+        "core_version": "12.0.0-alpha1",
+        "core_major": "12",
+        "php_version": "8.4",
+        "db_engine": "postgres:16",
+        "built_at": "2026-09-01T08:30:00+02:00",
+        "yaml": "core_version: 12.0.0-alpha1\ncore_major: '12'\nphp_version: '8.4'\ndb_engine: 'postgres:16'\nbuilt_at: '2026-09-01T08:30:00+02:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [
+                "PHP version skew: artifact built on 8.4, environment runs 8.99."
+            ],
+            "minor": [
+                "PHP version skew: artifact built on 8.4, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on postgres:16, environment runs sqlite."
+            ]
+        }
+    },
+    "ok-go-rendered-release.yml": {
+        "accepted": true,
+        "core_version": "11.4.6",
+        "core_major": "11",
+        "php_version": "8.3.14",
+        "db_engine": "mariadb:10.11",
+        "built_at": "2026-06-12T10:00:00+00:00",
+        "yaml": "core_version: 11.4.6\ncore_major: '11'\nphp_version: 8.3.14\ndb_engine: 'mariadb:10.11'\nbuilt_at: '2026-06-12T10:00:00+00:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [],
+            "minor": [
+                "PHP version skew: artifact built on 8.3, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on mariadb:10.11, environment runs sqlite."
+            ]
+        }
+    },
+    "ok-release.yml": {
+        "accepted": true,
+        "core_version": "11.4.6",
+        "core_major": "11",
+        "php_version": "8.3.14",
+        "db_engine": "mariadb:10.11",
+        "built_at": "2026-06-12T10:00:00+00:00",
+        "yaml": "core_version: 11.4.6\ncore_major: '11'\nphp_version: 8.3.14\ndb_engine: 'mariadb:10.11'\nbuilt_at: '2026-06-12T10:00:00+00:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [],
+            "minor": [
+                "PHP version skew: artifact built on 8.3, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on mariadb:10.11, environment runs sqlite."
+            ]
+        }
+    },
+    "ok-unquoted-major.yml": {
+        "accepted": true,
+        "core_version": "11.4.6",
+        "core_major": "11",
+        "php_version": "8.3.14",
+        "db_engine": "mariadb:10.11",
+        "built_at": "2026-06-12T10:00:00+00:00",
+        "yaml": "core_version: 11.4.6\ncore_major: '11'\nphp_version: 8.3.14\ndb_engine: 'mariadb:10.11'\nbuilt_at: '2026-06-12T10:00:00+00:00'\n",
+        "skew": {
+            "same": [],
+            "patch_only": [],
+            "minor": [
+                "PHP version skew: artifact built on 8.3, environment runs 7.0."
+            ],
+            "engine": [
+                "DB engine skew: artifact built on mariadb:10.11, environment runs sqlite."
+            ]
+        }
+    }
+}

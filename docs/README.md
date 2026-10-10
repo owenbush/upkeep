@@ -23,6 +23,7 @@ module — registered or not.
 
 - [The dashboard](guide/dashboard.md) — everything open, and what a row represents
 - [Work on an issue](guide/issue-loop.md) — `issues` → `start` → `publish`
+- [Work on somebody else's MR](guide/taking-over-an-mr.md) — `mr:checkout` → `check --working-copy` → `publish`
 - [Patch contributions](guide/patches.md) — the work a merge-request view cannot see
 - [Running checks](guide/checks.md) — the isolated flow, and how it matches drupal.org CI
 - [Review, merge and release notes](guide/review-and-merge.md)
@@ -35,6 +36,16 @@ module — registered or not.
 - [Exit codes](reference/exit-codes.md) — the 0/1/2 contract
 - [Disk housekeeping](reference/disk.md) — where the space goes, and reclaiming it
 - [Upgrading a cockpit](reference/upgrading.md)
+
+## The Go rewrite
+
+A full rewrite in Go lives at the repository root, on the `go-port` branch,
+with every command ported. It is the same tool — same commands, same cockpit, same
+registry and base artifacts — so everything in this documentation applies to
+it, and the few places it deliberately differs are recorded in its own README
+rather than duplicated here.
+
+- [The Go port](go-port.md) — how it is being done, what it has found, and the defects it found in the PHP
 
 ## Design
 

@@ -1,0 +1,110 @@
+[
+    {
+        "name": "../../etc/passwd",
+        "safe": "passwd"
+    },
+    {
+        "name": "..%2F..%2Fpasswd",
+        "safe": "_2F.._2Fpasswd"
+    },
+    {
+        "name": "..\\..\\windows\\system32",
+        "safe": "system32"
+    },
+    {
+        "name": "/absolute/path.patch",
+        "safe": "path.patch"
+    },
+    {
+        "name": "...",
+        "safe": "patch.patch"
+    },
+    {
+        "name": "",
+        "safe": "patch.patch"
+    },
+    {
+        "name": "..",
+        "safe": "patch.patch"
+    },
+    {
+        "name": ".",
+        "safe": "patch.patch"
+    },
+    {
+        "name": ".hidden",
+        "safe": "hidden"
+    },
+    {
+        "name": "space and 'quotes'.patch",
+        "safe": "space_and__quotes_.patch"
+    },
+    {
+        "name": "3597808-9-d11.patch",
+        "safe": "3597808-9-d11.patch"
+    },
+    {
+        "name": "a/b/c.patch",
+        "safe": "c.patch"
+    },
+    {
+        "name": "....//x",
+        "safe": "x"
+    },
+    {
+        "name": "été.patch",
+        "safe": "__t__.patch"
+    },
+    {
+        "name": "ünïcödé.diff",
+        "safe": "__n__c__d__.diff"
+    },
+    {
+        "name": "日本語.patch",
+        "safe": "_________.patch"
+    },
+    {
+        "name": "x\ny.patch",
+        "safe": "x_y.patch"
+    },
+    {
+        "name": "tab\there.patch",
+        "safe": "tab_here.patch"
+    },
+    {
+        "name": "CON.patch",
+        "safe": "CON.patch"
+    },
+    {
+        "name": "-rf.patch",
+        "safe": "-rf.patch"
+    },
+    {
+        "name": "--upload-pack=evil.patch",
+        "safe": "--upload-pack_evil.patch"
+    },
+    {
+        "name": "xyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.patch",
+        "safe": "xyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.patch"
+    },
+    {
+        "name": "no-extension",
+        "safe": "no-extension"
+    },
+    {
+        "name": ".patch",
+        "safe": "patch"
+    },
+    {
+        "name": "£$%^&*().patch",
+        "safe": "_________.patch"
+    },
+    {
+        "name": "trailing.dots...",
+        "safe": "trailing.dots..."
+    },
+    {
+        "name": "nul\u0000byte.patch",
+        "safe": "nul_byte.patch"
+    }
+]

@@ -1,0 +1,22 @@
+{
+  "nid": 1,
+  "title": "t",
+  "field_issue_status": 1,
+  "field_issue_files": [
+    "just a string",
+    42,
+    null,
+    {
+      "file": {
+        "filename": "",
+        "url": "https://x/a.patch"
+      }
+    },
+    {
+      "file": {
+        "filename": "a.patch",
+        "url": ""
+      }
+    }
+  ]
+}

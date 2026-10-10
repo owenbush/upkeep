@@ -1,0 +1,78 @@
+name: Go release
+
+on:
+  push:
+    tags: ["v*"]
+  # Validates the release description without publishing anything, on any
+  # change to it. A release config is only ever exercised at the moment you
+  # least want to debug it, so it is exercised here instead.
+  pull_request:
+    paths:
+      - ".goreleaser.yaml"
+      - ".github/workflows/go-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: ${{ github.event_name == 'push' && 'Release' || 'Dry run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # GoReleaser builds the changelog from the log, and a shallow clone
+          # has no log to build it from.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: go.sum
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          # On a tag: build, publish the release, push the cask. On a pull
+          # request: build everything and publish none of it, so a broken
+          # config fails here rather than at a tag.
+          args: >-
+            release --clean
+            ${{ github.event_name == 'pull_request' && '--snapshot --skip=publish,notarize' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushes the cask to owenbush/homebrew-tap, a different repository
+          # than this one — which the default GITHUB_TOKEN cannot reach. A
+          # fine-grained PAT with contents:write on the tap, and nothing else.
+          #
+          # Absent, the tag still produces a release with working archives and
+          # only the brew route is missed, so this is not worth failing a
+          # release over.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+          # Developer ID signing and Apple notarization, done on this Linux
+          # runner — GoReleaser signs with `quill`, which needs no mac.
+          #
+          # The config enables the step only when the certificate is present,
+          # so a fork's pull request still builds; what it produces is
+          # unsigned, and the cask it generates strips the quarantine
+          # attribute instead. A tagged release with these set is signed,
+          # notarized, and needs no such hook.
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Keep the dry run's artifacts
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: upkeep-snapshot
+          path: |
+            dist/*.tar.gz
+            dist/checksums.txt
+            dist/homebrew/Casks/*.rb
+          retention-days: 7

@@ -20,7 +20,7 @@ add-on. You never interact with either directly unless you want to.
 
 ```bash
 # 1. Install
-composer global require owenbush/upkeep
+brew install owenbush/tap/upkeep       # macOS; Linux/WSL2: grab the release archive
 
 # 2. Scaffold a cockpit
 upkeep init ~/my-cockpit && cd ~/my-cockpit
@@ -77,13 +77,16 @@ publishing.
 | [Design document](docs/contrib-maintainer-design.md) | Why upkeep is shaped the way it is |
 | [The dashboard row model](docs/dashboard-row-model.md) | Why a row is `(module, issue, branch)` |
 | [Any module, not just yours](docs/any-module.md) | The registry as a watchlist rather than a gate |
+| [The Go port](docs/go-port.md) | A full rewrite in Go, on the `go-port` branch |
 
 ## Policy stance
 
 Merges are one human approval per merge request, by Drupal Association policy.
-There is deliberately no batch mode and no unattended merge path, and the
-browser UI deliberately has no merge button — a button that POSTs an action
-name is not the per-MR prompt that earns the approval. See
+There is deliberately no batch mode and no unattended merge path: `merge`
+prompts per merge request and takes an answer, and nothing else in the tool
+merges at all. A browser UI existed briefly and was removed, and the one action
+worth a button was the one it deliberately never had — a button that POSTs an
+action name is not the per-MR prompt that earns the approval. See
 [Review, merge and release notes](docs/guide/review-and-merge.md).
 
 ## License

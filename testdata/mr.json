@@ -1,0 +1,28 @@
+{
+  "iid": 12,
+  "title": "Automated Drupal 12 compatibility fixes",
+  "state": "opened",
+  "author": {
+    "username": "Project-Update-Bot",
+    "id": 66574
+  },
+  "source_branch": "project-update-bot-only",
+  "target_branch": "2.0.x",
+  "draft": true,
+  "detailed_merge_status": "draft_status",
+  "sha": "abc1234",
+  "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/12",
+  "description": "Relates to #3603341",
+  "head_pipeline": {
+    "id": 99,
+    "status": "success",
+    "sha": "abc1234",
+    "web_url": "https://ci/99"
+  },
+  "updated_at": "2026-06-11T09:00:00Z",
+  "source_project_id": 501,
+  "diff_refs": {
+    "base_sha": "base111",
+    "head_sha": "head222"
+  }
+}

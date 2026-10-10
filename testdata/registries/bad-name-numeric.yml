@@ -1,0 +1,4 @@
+modules:
+  123:
+    project: project/x
+    core_versions: ['11']

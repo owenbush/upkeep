@@ -1,0 +1,120 @@
+{
+    "fetched_at": "2026-06-12T10:00:00+00:00",
+    "project": {
+        "id": 11,
+        "path": "pathauto",
+        "path_with_namespace": "project\/pathauto",
+        "name": "Pathauto",
+        "web_url": "https:\/\/git.drupalcode.org\/project\/pathauto",
+        "ssh_url_to_repo": "git@git.drupal.org:project\/pathauto.git",
+        "default_branch": "2.0.x",
+        "permissions": {
+            "project_access": {
+                "access_level": 40
+            }
+        }
+    },
+    "merge_requests": [
+        {
+            "iid": 12,
+            "title": "Automated Drupal 12 compatibility fixes",
+            "state": "opened",
+            "author": {
+                "username": "Project-Update-Bot",
+                "id": 66574
+            },
+            "source_branch": "project-update-bot-only",
+            "target_branch": "2.0.x",
+            "draft": true,
+            "detailed_merge_status": "draft_status",
+            "sha": "abc1234",
+            "web_url": "https:\/\/git.drupalcode.org\/project\/pathauto\/-\/merge_requests\/12",
+            "description": "Relates to #3603341",
+            "head_pipeline": {
+                "id": 99,
+                "status": "success",
+                "sha": "abc1234",
+                "web_url": "https:\/\/ci\/99"
+            },
+            "updated_at": "2026-06-11T09:00:00Z",
+            "source_project_id": 501,
+            "diff_refs": {
+                "base_sha": "base111",
+                "head_sha": "head222"
+            }
+        }
+    ],
+    "patch_issues": [
+        {
+            "nid": 3603341,
+            "title": "Automated Drupal 12 compatibility fixes",
+            "field_issue_status": 8,
+            "url": "https:\/\/www.drupal.org\/node\/3603341",
+            "field_project": {
+                "machine_name": "static_setting_contexts"
+            },
+            "field_issue_priority": 200,
+            "field_issue_version": "1.0.x-dev",
+            "field_issue_component": "Code",
+            "field_issue_category": 1,
+            "field_issue_files": [
+                {
+                    "file": {
+                        "id": "1",
+                        "filename": "3603341-3-d12.patch",
+                        "url": "https:\/\/www.drupal.org\/files\/issues\/3603341-3-d12.patch",
+                        "filesize": "4321",
+                        "timestamp": "1780000000",
+                        "owner": {
+                            "id": "66574",
+                            "name": "Project-Update-Bot"
+                        }
+                    }
+                },
+                {
+                    "file": {
+                        "id": "2",
+                        "filename": "3603341-9-d12.patch",
+                        "url": "https:\/\/www.drupal.org\/files\/issues\/3603341-9-d12.patch",
+                        "filesize": "5000",
+                        "timestamp": "1781000000",
+                        "owner": {
+                            "id": "12345",
+                            "name": "somebody"
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "merged_merge_requests": [
+        {
+            "iid": 9,
+            "title": "Issue #3597808 by somebody: Drupal 11 compatibility",
+            "state": "merged",
+            "author": {
+                "username": "somebody",
+                "id": 12345
+            },
+            "source_branch": "3597808-fix",
+            "target_branch": "2.0.x",
+            "sha": "def5678",
+            "web_url": "https:\/\/git.drupalcode.org\/project\/pathauto\/-\/merge_requests\/9",
+            "updated_at": "2026-06-12T10:00:00Z",
+            "merged_at": "2026-06-12T10:00:00Z",
+            "source_project_id": 502
+        }
+    ],
+    "fork_nids": {
+        "501": 3603341,
+        "502": 3597808
+    },
+    "core_constraints": {
+        "2.0.x": "^10.2 || ^11 || ^12",
+        "1.0.x": "^10"
+    },
+    "merge_ref_shas": {
+        "12": "deadbeefcafe",
+        "9": "abc1234"
+    }
+}

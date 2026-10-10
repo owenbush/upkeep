@@ -1,0 +1,5 @@
+modules:
+  pathauto:
+    project: project/pathauto
+    core_versions: ['11']
+    notes: whatever

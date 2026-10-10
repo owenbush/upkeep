@@ -1,0 +1,31 @@
+{
+  "nid": 3597808,
+  "title": "t",
+  "field_issue_status": 1,
+  "field_issue_files": [
+    {
+      "file": {
+        "filename": "3597808-14-d11.patch",
+        "url": "https://x/14.patch",
+        "filesize": "10",
+        "timestamp": "100"
+      }
+    },
+    {
+      "file": {
+        "filename": "3597808-9-d11.patch",
+        "url": "https://x/9.patch",
+        "filesize": "10",
+        "timestamp": "900"
+      }
+    },
+    {
+      "file": {
+        "filename": "interdiff.txt",
+        "url": "https://x/i.txt",
+        "filesize": "10",
+        "timestamp": "950"
+      }
+    }
+  ]
+}

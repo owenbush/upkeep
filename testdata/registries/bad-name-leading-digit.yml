@@ -1,0 +1,4 @@
+modules:
+  '2fa':
+    project: project/2fa
+    core_versions: ['11']
