@@ -99,6 +99,14 @@ snapshot:
 changelog:
   # Grouped and filtered rather than a raw log: a release page is read by
   # somebody deciding whether to upgrade.
+  #
+  # The *first* release has no previous tag to diff against, so this is the
+  # whole history — 223 commits after these filters, most of them about a PHP
+  # implementation that release deletes. Deliberately not worked around in
+  # config: tagging a release candidate first puts that wall on a prerelease
+  # nobody reads, and the release after it diffs against the candidate and is
+  # short. A `changelog.disable` would have cost every later release the thing
+  # this is for.
   sort: asc
   filters:
     exclude:
@@ -169,6 +177,24 @@ release:
   # formula pointing at assets nobody can download yet.
   draft: false
   prerelease: auto
+  # What the thing is, above the commit list. A release page is the first page
+  # most people see, and a list of commit subjects does not say what they are
+  # looking at or whether they want it.
+  header: |
+    A maintenance orchestrator for contributed Drupal modules: every open
+    contribution checked in its own disposable environment, and merged one
+    deliberate approval at a time.
+
+    One static binary. No runtime to install — no PHP, no Composer — and it
+    drives [ddev](https://ddev.com/), which you will want.
+
+    ```bash
+    upkeep dashboard              # everything open, per module
+    upkeep check <module> <iid>   # one merge request, full suite, isolated
+    upkeep merge --fast-lane      # one prompt per ready contribution
+    ```
+
+    Documentation: <https://upkeep.owenbush.dev>
   footer: |
     ## Install
 
