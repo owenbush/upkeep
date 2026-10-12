@@ -118,6 +118,8 @@ type forkScene struct {
 	mrStatus      int
 	forkAccess    *int
 	forkSSHURL    string
+	projectSSHURL string
+	projectAccess *int
 	defaultBr     string
 	openMR        string
 	createdCode   int
@@ -167,10 +169,7 @@ func aForkScene(t *testing.T) *forkScene {
 
 				return
 			}
-			_, _ = fmt.Fprintf(w,
-				`{"id":1,"path":"pathauto","path_with_namespace":"project/pathauto",`+
-					`"web_url":"https://git.drupalcode.org/project/pathauto","default_branch":%q}`,
-				scene.defaultBr)
+			_, _ = w.Write([]byte(scene.projectJSON()))
 
 		case strings.HasSuffix(path, "/projects/1/merge_requests") && r.Method == http.MethodGet:
 			_, _ = w.Write([]byte(scene.openMR))
@@ -186,6 +185,14 @@ func aForkScene(t *testing.T) *forkScene {
 				`{"iid":9,"state":"opened","title":"Issue #3223746: Fix the alias cache",` +
 					`"source_branch":"3223746-fix-the-alias-cache","description":"",` +
 					`"web_url":"https://git.drupalcode.org/project/pathauto/-/merge_requests/9"}`))
+
+		case strings.HasSuffix(path, "/projects/1/merge_requests") && r.Method == http.MethodPost:
+			body, _ := decodeBody(r)
+			scene.mu.Lock()
+			scene.createdSeen = body
+			scene.mu.Unlock()
+			w.WriteHeader(scene.createdCode)
+			_, _ = w.Write([]byte(scene.createdBody))
 
 		case strings.HasSuffix(path, "/projects/2/merge_requests") && r.Method == http.MethodPost:
 			body, _ := decodeBody(r)
@@ -211,6 +218,23 @@ func decodeBody(r *http.Request) (map[string]any, error) {
 	err := json.NewDecoder(r.Body).Decode(&body)
 
 	return body, err
+}
+
+// projectJSON is the canonical project. Its SSH URL and permissions are empty
+// unless a test sets them, which is the shape every pre-existing test wants:
+// the canonical project is only ever a *target* there, never a push
+// destination.
+func (s *forkScene) projectJSON() string {
+	permissions := "null"
+	if s.projectAccess != nil {
+		permissions = fmt.Sprintf(`{"project_access":{"access_level":%d}}`, *s.projectAccess)
+	}
+
+	return fmt.Sprintf(
+		`{"id":1,"path":"pathauto","path_with_namespace":"project/pathauto",`+
+			`"web_url":"https://git.drupalcode.org/project/pathauto","default_branch":%q,`+
+			`"ssh_url_to_repo":%q,"permissions":%s}`,
+		s.defaultBr, s.projectSSHURL, permissions)
 }
 
 func (s *forkScene) forkJSON() string {
@@ -1073,5 +1097,192 @@ func TestAnExplicitCoreWinsOverWhereTheBranchIs(t *testing.T) {
 	}
 	if !slices.Contains(engine.ensured, "pathauto/11") {
 		t.Errorf("it overruled the core that was asked for: %v", engine.ensured)
+	}
+}
+
+// aMigratedIssueSource reads issues from GitLab, as a project whose queue has
+// moved does.
+func aMigratedIssueSource() *IssueQueues {
+	issue := drupal.Issue{
+		Nid:    3223746,
+		Title:  "Fix the alias cache",
+		Status: drupal.StatusActive,
+		URL:    "https://git.drupalcode.org/project/pathauto/-/work_items/3223746",
+	}
+
+	return queuesFor(
+		&fakeDrupalQueue{movedQueue: map[string]bool{"pathauto": true}},
+		&fakeGitlabQueue{issue: &issue, issues: []drupal.Issue{issue}},
+	)
+}
+
+// A GitLab-native issue has no issue fork and never can have one, so the
+// branch goes to the canonical project.
+//
+// The refusal this replaces could not be satisfied: it sent people to
+// drupal.org/node/<nid> to click "Create issue fork" on a page that is not
+// their issue — GitLab continues its iid sequence from the migrated node ids,
+// so that URL resolves to an unrelated node.
+func TestPublishUsesTheCanonicalProjectWhenNoForkCanExist(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+	scene.forkStatus = http.StatusNotFound
+	scene.projectSSHURL = "git@git.drupal.org:project/pathauto.git"
+	developer := 30
+	scene.projectAccess = &developer
+	engine := aWorkingEngine()
+
+	code, stdout, stderr := runIssueLoop(t, engine, aMigratedIssueSource(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if len(engine.pushed) != 1 || engine.pushed[0] != "3223746-fix-the-alias-cache" {
+		t.Fatalf("pushed %v", engine.pushed)
+	}
+	// The canonical project, at the URL GitLab advertises — never assembled.
+	if engine.remotes[0].URL != "git@git.drupal.org:project/pathauto.git" {
+		t.Errorf("pushed to %q", engine.remotes[0].URL)
+	}
+	if engine.remotes[0].Name != "canonical" {
+		t.Errorf("remote named %q", engine.remotes[0].Name)
+	}
+	// Opened from the project that holds the branch, which here is also the
+	// target — so no cross-project field.
+	if !scene.asked("POST /api/v4/projects/1/merge_requests") {
+		t.Errorf("the merge request was not posted to the canonical project: %v", scene.requests)
+	}
+	if _, crossProject := scene.createdSeen["target_project_id"]; crossProject {
+		t.Errorf("a same-project merge request named a target project: %+v", scene.createdSeen)
+	}
+	if !strings.Contains(stdout, "merge_requests/77") {
+		t.Errorf("stdout does not link the merge request: %q", stdout)
+	}
+}
+
+// The description says `Closes #N`, which is what makes the merge request find
+// its issue again — in GitLab and in upkeep.
+//
+// Asserted by round-tripping it through the pairing rule rather than by
+// matching the string, because the string is only right if that rule reads it.
+// The old description named the issue URL, and a work-items URL matches
+// neither of upkeep's URL patterns, so a merge request opened by publish would
+// have paired with nothing on the very dashboard that opened it.
+func TestTheCanonicalPublishDescriptionPairsWithItsIssue(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+	scene.forkStatus = http.StatusNotFound
+	scene.projectSSHURL = "git@git.drupal.org:project/pathauto.git"
+	developer := 30
+	scene.projectAccess = &developer
+
+	code, _, stderr := runIssueLoop(t, aWorkingEngine(), aMigratedIssueSource(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+
+	description, _ := scene.createdSeen["description"].(string)
+	if description == "" {
+		t.Fatalf("no description was posted: %+v", scene.createdSeen)
+	}
+
+	nid, paired := drupal.ExtractOwningIssue("", "", description)
+	if !paired {
+		t.Fatalf("the description does not claim an issue: %q", description)
+	}
+	if nid != 3223746 {
+		t.Errorf("it claims issue #%d: %q", nid, description)
+	}
+}
+
+// The issue fork still wins where there is one, including on a project whose
+// queue has moved.
+//
+// helper has 85 issue forks, every one for an issue that predates its
+// migration, and a merge request for one of those still belongs on its fork.
+func TestPublishPrefersTheForkEvenOnAMigratedProject(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+	scene.projectSSHURL = "git@git.drupal.org:project/pathauto.git"
+	developer := 30
+	scene.projectAccess = &developer
+	engine := aWorkingEngine()
+
+	code, _, stderr := runIssueLoop(t, engine, aMigratedIssueSource(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if engine.remotes[0].Name != "issue-3223746" {
+		t.Errorf("it bypassed the fork: remote %q", engine.remotes[0].Name)
+	}
+	if !scene.asked("POST /api/v4/projects/2/merge_requests") {
+		t.Errorf("the merge request was not posted to the fork: %v", scene.requests)
+	}
+}
+
+// No push access to the canonical project is refused before anything is
+// pushed or provisioned, as the fork case is.
+func TestPublishRefusesTheCanonicalProjectWithoutPushAccess(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+	scene.forkStatus = http.StatusNotFound
+	scene.projectSSHURL = "git@git.drupal.org:project/pathauto.git"
+	guest := 10
+	scene.projectAccess = &guest
+	engine := aWorkingEngine()
+
+	code, _, stderr := runIssueLoop(t, engine, aMigratedIssueSource(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d", code)
+	}
+	if len(engine.pushed) != 0 {
+		t.Errorf("it pushed %v without access", engine.pushed)
+	}
+	if len(engine.ensured) != 0 {
+		t.Errorf("it provisioned %v before checking it could push", engine.ensured)
+	}
+	if !strings.Contains(stderr, "project/pathauto") {
+		t.Errorf("the refusal does not name the destination: %q", stderr)
+	}
+}
+
+// A project that has NOT moved keeps the browser handoff, because there the
+// fork is genuinely missing and clicking the button is genuinely the fix.
+//
+// The pair with the canonical route above is the point: the same missing fork
+// means opposite things depending on where the project keeps its issues.
+func TestAMissingForkStillHandsOffForADrupalOrgProject(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+	scene.forkStatus = http.StatusNotFound
+	scene.projectSSHURL = "git@git.drupal.org:project/pathauto.git"
+	developer := 30
+	scene.projectAccess = &developer
+	engine := aWorkingEngine()
+
+	// someIssues() reads drupal.org, which is what a project that has not
+	// moved does.
+	code, _, stderr := runIssueLoop(t, engine, someIssues(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Fatalf("exit %d", code)
+	}
+	if len(engine.pushed) != 0 {
+		t.Errorf("it pushed %v to the canonical project of a drupal.org project", engine.pushed)
+	}
+	if !strings.Contains(stderr, "Create issue fork") {
+		t.Errorf("the handoff is gone: %q", stderr)
 	}
 }

@@ -114,6 +114,40 @@ to run a module hook" while drupal.org node 3619172 is an unrelated change
 notice. Reading the issue from the queue that owns the number is what keeps the
 two attached.
 
+### Publishing an issue that only exists in GitLab
+
+`publish` sends the branch to an **issue fork** wherever there is one, which is
+every drupal.org project and every issue that predates a migration — `helper`
+has 85 of them.
+
+A GitLab-native issue has none, and never can: issue forks are minted by
+drupal.org's issue page, and there is no drupal.org issue to mint from. So for
+a project whose queue has moved, `publish` pushes to the **canonical project**
+and opens the merge request there:
+
+```bash
+upkeep publish helper 3619173
+```
+
+```
+Destination
+Pushing to project/helper
+...
+Opened !104 against 2.x.
+```
+
+This needs push access to the project itself. If you do not have it, `publish`
+says so before pushing anything rather than after.
+
+The merge request is described as `Closes #3619173` — GitLab's own closing
+vocabulary, so GitLab links it to the issue and closes it on merge, and so
+upkeep's own pairing finds it again on the dashboard.
+
+A project that has **not** moved still gets the browser handoff for a missing
+fork, because there the fork is genuinely missing and clicking "Create issue
+fork" is genuinely the fix. The same missing fork means opposite things
+depending on where the project keeps its issues.
+
 ### When drupal.org will not say
 
 If the project node cannot be read, upkeep reads drupal.org's queue — the
