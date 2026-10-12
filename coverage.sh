@@ -30,7 +30,7 @@ internal/cli/command          97.8
 internal/cockpit              94.9
 internal/config              100.0
 internal/dashboard            97.0
-internal/drupal               78.5
+internal/drupal               78.8
 internal/filesystem           87.2
 internal/gate                 97.3
 internal/gitlab               88.5

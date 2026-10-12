@@ -19,6 +19,28 @@ var (
 	titleIssue  = regexp.MustCompile(`(?i)Issue\s*#(\d+)`)
 	branchIssue = regexp.MustCompile(`^(\d{4,})-`)
 	relatesTo   = regexp.MustCompile(`(?i)Relates to\s*#(\d+)`)
+	// closesIssue is GitLab's own closing vocabulary, which is how a merge
+	// request declares what it fixes when the issue queue is GitLab's rather
+	// than drupal.org's.
+	//
+	// The four verb families are GitLab's documented default closing pattern:
+	// clos(e|es|ed|ing), fix(|es|ed|ing), resolv(e|es|ed|ing) and
+	// implement(|s|ed|ing). Nothing else — "Relates to" stays rejected by the
+	// owning rule below, and the same reasoning applies here: a reference that
+	// does not claim to fix the issue must not be able to claim the issue.
+	//
+	// **Read from the description upkeep already has**, not from GitLab's
+	// /closes_issues endpoint, which would be one request per merge request.
+	// That cost is on record: the ISSUE cell used to make a per-merge-request
+	// lookup and it was 155 requests on a pathauto refresh. The endpoint is
+	// the authority, and the description is where the authority reads it from.
+	//
+	// Any number of digits, unlike branchIssue's four-or-more: a bare number
+	// in a branch name needs the length to be unambiguous, where "#12" after
+	// "Closes" does not — and a GitLab-native queue starts at #1.
+	closesIssue = regexp.MustCompile(
+		`(?i)\b(?:clos(?:e|es|ed|ing)|fix(?:es|ed|ing)?|resolv(?:e|es|ed|ing)|` +
+			`implement(?:s|ed|ing)?)\b:?\s+#(\d+)`)
 	issueURL    = regexp.MustCompile(`drupal\.org/project/[^/]+/issues/(\d+)`)
 	nodeURL     = regexp.MustCompile(`drupal\.org/node/(\d+)`)
 	forkPathNid = regexp.MustCompile(`^issue/.+-(\d{4,})$`)
@@ -79,6 +101,13 @@ func resolveIssue(title, sourceBranch, description string, owningOnly bool) (int
 
 func fromText(text string, owningOnly bool) (int, bool) {
 	if m := titleIssue.FindStringSubmatch(text); m != nil {
+		return atoi(m[1]), true
+	}
+	// Ranked with the owning signals rather than below them: "Closes #N" is a
+	// declaration that this merge request fixes that issue, which is a
+	// stronger claim than drupal.org's "Issue #N" title convention and far
+	// stronger than a mention. Applies in both modes for that reason.
+	if m := closesIssue.FindStringSubmatch(text); m != nil {
 		return atoi(m[1]), true
 	}
 	if !owningOnly {

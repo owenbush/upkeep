@@ -515,6 +515,25 @@ and was learned the hard way — see `docs/go-port.md`.
   which would collide with a row's file count) and `CI FAILED` (not `BLOCKED`,
   which is what that verdict is actually set by). There is no `REVIEW` column:
   it counted everything neither ready nor CI-failed, i.e. every row.
+- **GitLab's closing vocabulary pairs a merge request too.** A project whose
+  issue queue has moved to GitLab declares what a branch fixes the GitLab way:
+  `Closes #N`, and the four verb families of GitLab's documented default
+  closing pattern — clos(e|es|ed|ing), fix(|es|ed|ing), resolv(e|es|ed|ing),
+  implement(|s|ed|ing). Demonstrated on `helper`: MR !94 is on branch
+  `url-helper` with "Closes #3619171", so no title convention, no leading
+  digits in the branch and no drupal.org URL — it paired with nothing while
+  GitLab's own `/closes_issues` knew the answer. **Read from the description
+  upkeep already has, never from that endpoint**, which would be one request
+  per merge request — a cost already on record at 155 requests for a pathauto
+  refresh. The endpoint is the authority; the description is where the
+  authority reads it from. Ranked *above* `relatesTo` and applied in both
+  modes, because a declaration outranks a mention and the two do appear
+  together: a bot merge request says only "Relates to #NNN" and whoever takes
+  it over adds what it fixes. The owning rule is unchanged — a mention still
+  cannot claim an issue, or anybody could suppress its patches by referring to
+  it — and the drupal.org signals still win where they exist, so a project
+  that has not moved behaves exactly as before. The word boundary is
+  load-bearing: without it "prefixes #12" is "fixes #12".
 - **An MR belongs to the issue its fork was made for.**
   `IssueReference::fromForkPath()` reads the nid out of `issue/<module>-<nid>`,
   and `GitlabClient::issueForkNids()` maps every fork of a project in one

@@ -59,3 +59,105 @@ func TestNothingToFindIsNotAnError(t *testing.T) {
 		t.Error("found an issue where there is none")
 	}
 }
+
+// GitLab's closing vocabulary pairs a merge request to its issue, which is how
+// a project whose queue is GitLab's declares what a branch fixes.
+//
+// Demonstrated on helper, whose issues have moved: MR !94 is on branch
+// `url-helper` with description "Closes #3619171". No "Issue #" in the title,
+// no leading digits in the branch, no drupal.org URL — so it paired with
+// nothing, while GitLab's own /closes_issues endpoint knew the answer.
+func TestGitlabsClosingVocabularyPairsAMergeRequest(t *testing.T) {
+	for _, declaration := range []string{
+		"Closes #3619171", "closes #3619171", "Closed #3619171", "closing #3619171",
+		"Fix #3619171", "Fixes #3619171", "fixed #3619171", "Fixing #3619171",
+		"Resolve #3619171", "Resolves #3619171", "resolved #3619171", "Resolving #3619171",
+		"Implement #3619171", "Implements #3619171", "implemented #3619171",
+		// GitLab allows a colon, and prose either side.
+		"Closes: #3619171", "This one closes #3619171 at last.",
+	} {
+		nid, found := ExtractOwningIssue("Added URL helper", "url-helper", declaration)
+		if !found || nid != 3619171 {
+			t.Errorf("%q gave %d,%v", declaration, nid, found)
+		}
+	}
+}
+
+// A mention that does not claim to fix the issue still cannot claim it.
+//
+// The owning rule exists so nobody can suppress an issue's patches by
+// referring to it, and adding a second vocabulary must not open that door.
+func TestAMentionStillCannotClaimAnIssue(t *testing.T) {
+	for _, mention := range []string{
+		"Relates to #3619171",
+		"See #3619171",
+		"Follow-up to #3619171",
+		"Blocked by #3619171",
+	} {
+		if nid, found := ExtractOwningIssue("x", "b", mention); found {
+			t.Errorf("%q claimed issue %d", mention, nid)
+		}
+	}
+}
+
+// The verb has to be the whole word: "prefixes #12" is not "fixes #12", and a
+// word boundary is the only thing standing between the two.
+func TestAVerbInsideAnotherWordDoesNotPair(t *testing.T) {
+	for _, text := range []string{
+		"prefixes #123", "unclosed #123", "affixes #123", "irresolvable #123",
+	} {
+		if nid, found := ExtractOwningIssue("x", "b", text); found {
+			t.Errorf("%q paired to %d", text, nid)
+		}
+	}
+}
+
+// Any number of digits, unlike a bare number in a branch name: "#12" after a
+// closing verb is unambiguous, and a GitLab-native queue starts at #1.
+func TestAShortIssueNumberPairsWhenDeclared(t *testing.T) {
+	nid, found := ExtractOwningIssue("x", "some-branch", "Fixes #7")
+	if !found || nid != 7 {
+		t.Errorf("got %d,%v, want 7,true", nid, found)
+	}
+	// Where a bare short number in a branch name is still ignored, because
+	// there it could be anything.
+	if nid, found := ExtractOwningIssue("x", "7-whatever", ""); found {
+		t.Errorf("a two-digit branch prefix paired to %d", nid)
+	}
+}
+
+// The drupal.org signals still win where they exist, so nothing about a
+// project whose queue has not moved changes.
+func TestTheDrupalOrgSignalsStillTakePrecedence(t *testing.T) {
+	// Title convention beats a closing declaration in the description.
+	nid, found := ExtractOwningIssue("Issue #1111111: fix it", "b", "Closes #2222222")
+	if !found || nid != 1111111 {
+		t.Errorf("title lost: got %d,%v", nid, found)
+	}
+	// Branch convention likewise.
+	nid, found = ExtractOwningIssue("x", "3333333-fix-it", "Closes #2222222")
+	if !found || nid != 3333333 {
+		t.Errorf("branch lost: got %d,%v", nid, found)
+	}
+}
+
+// A closing declaration outranks a mention in the same description.
+//
+// Which is not hypothetical: a Project Update Bot merge request says only
+// "Relates to #NNN", and somebody taking it over adds what it actually fixes.
+// Reading the mention first would pair the merge request to the issue it
+// merely refers to and ignore the one it claims.
+func TestAClosingDeclarationOutranksAMentionBesideIt(t *testing.T) {
+	both := "Relates to #1111111\n\nCloses #2222222"
+
+	nid, found := ExtractIssue("Automated Project Update Bot fixes", "project-update-bot-only", both)
+	if !found || nid != 2222222 {
+		t.Errorf("got %d,%v — the mention won over the declaration", nid, found)
+	}
+
+	// And in owning mode the mention is not even a candidate.
+	nid, found = ExtractOwningIssue("Automated Project Update Bot fixes", "project-update-bot-only", both)
+	if !found || nid != 2222222 {
+		t.Errorf("owning: got %d,%v", nid, found)
+	}
+}
