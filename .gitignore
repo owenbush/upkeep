@@ -18,3 +18,7 @@ corpus-hard.json
 .idea/
 .vscode/
 .claude/
+
+# Planning scaffolding from an external tool: useful locally, not part of
+# upkeep. Untracked rather than deleted, so an existing checkout keeps it.
+.ai/

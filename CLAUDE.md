@@ -1,13 +1,19 @@
 # CLAUDE.md — upkeep
 
 Maintenance orchestrator CLI for contributed Drupal modules. One static Go
-binary (Go >= 1.24, cobra). User-facing docs: `README.md`; architecture and
-rationale: `docs/contrib-maintainer-design.md`.
+binary (Go >= 1.24, cobra). User-facing docs: `README.md` and `docs/`.
+
+**This file is the architecture and the rationale.** The separate design
+documents it used to point at — the design document, the dashboard row model,
+"any module, not just yours" and the Go-port record — were removed, on the
+grounds that `docs/` is for people using the tool and a second copy of the
+reasoning loses. What was load-bearing in them is stated here, at the code it
+governs; the rest is in git history.
 
 This was a PHP application until it was rewritten in Go; the PHP was the
 specification for that port and is now only in git history. Where this file
 says why something is the way it is, the reason usually predates the rewrite
-and was learned the hard way — see `docs/go-port.md`.
+and was learned the hard way.
 
 ## Layout
 
@@ -427,7 +433,7 @@ and was learned the hard way — see `docs/go-port.md`.
   namespaces below. All extend `internal/cli`, which owns the shared
   option surface, the resolution seam, and the exit-code mapping.
 - `internal/cockpit/` — cockpit directory + `registry.yml` module registry.
-  **The registry is a watchlist, not a gate** (`docs/any-module.md`). It was
+  **The registry is a watchlist, not a gate.** It was
   doing two jobs — how to find a module and which cores to test it on, *and*
   which modules the surveys cover — and the first is now derivable:
   `project/<name>` is drupal.org's convention (`PruneExecutor` already assumed
@@ -709,7 +715,7 @@ and was learned the hard way — see `docs/go-port.md`.
   claimed would deny a merge on its own.
   Measured live: pathauto's *single* 8.x-1.x declares `^10.2 || ^11 || ^12`,
   so treating core as part of a row's identity multiplied every row by a test
-  matrix while saying nothing new — see `docs/dashboard-row-model.md`. Matching
+  matrix while saying nothing new. Matching
   is interval intersection, not a regex over majors — computed here rather than
   by a library, and verified against 18,273 cases generated from
   composer/semver with no divergence:
@@ -846,7 +852,7 @@ and was learned the hard way — see `docs/go-port.md`.
   rows the drill-down would print, never recounted from the underlying data —
   two counts of the same thing that can disagree are worse than one. **A row is
   one issue's work on one module branch** — identity is `(module, issue,
-  branch)` and evidence is per core (`docs/dashboard-row-model.md`). That
+  branch)` and evidence is per core. That
   removed two multipliers which added rows without adding information: an issue
   appeared once per merge request *and* again as a patch row, which is why
   `RowFactory` carried a filter whose only job was suppressing the duplicate it
@@ -864,8 +870,8 @@ and was learned the hard way — see `docs/go-port.md`.
   **155 requests on a pathauto refresh**, plus an attachment lookup per file on
   each. A row *is* an issue now and takes it from the open-issue scan the
   snapshot already holds, so that fetch and `ModuleSnapshot::issue()` are gone.
-  Verified end to end against live pathauto data rather than fixtures
-  (`docs/dashboard-row-model.md` §7): 244 rows became 115, and of the 48
+  Verified end to end against live pathauto data rather than fixtures:
+  244 rows became 115, and of the 48
   merge requests left unpaired, 46 name an issue that is genuinely closed and
   2 name none — no pairing misses.
   `results.MergeRequestKey` keeps MR and patch results in separate path namespaces
@@ -1105,11 +1111,12 @@ refuses the whole class of command-level failure rather than one symptom.
 
 ## Ported from PHP
 
-This was a PHP application, rewritten command for command in Go.
-`docs/go-port.md` is the document for that: how it was done, what it found,
-and the eight defects it found in the PHP on the way. Do not restate it here —
-a second copy of the truth loses, which is why `docs/commands.md` is generated
-rather than written.
+This was a PHP application, rewritten command for command in Go. The record
+of how that was done — and of the eight defects the port found in the PHP on
+the way — was `docs/go-port.md`, removed with the other design documents; it
+is in git history, and its one operational half is `docs/reference/releasing.md`.
+Nothing here restates it: a second copy of the truth loses, which is why
+`docs/commands.md` is generated rather than written.
 
 **The corpora are the PHP's answers, and they are still the specification.**
 `registry.yml`, `meta.yml`, the dashboard snapshot's raw api-d7 payloads, the
