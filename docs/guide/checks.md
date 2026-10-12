@@ -209,3 +209,27 @@ a weaker guarantee than a merge request implies.
 opens the MR on the canonical project, which is the maintainer's flow.
 Contributors without push access need a drupal.org issue fork, which
 drupal.org's own UI creates.
+
+## When a failing check's output is cut
+
+The console echoes the tail of a failed check's output, and says so when it
+left anything out:
+
+```
+FAILED: phpstan
+(the first 140 line(s) of output are not shown — re-run with -v for all of it)
+```
+
+`-v` keeps every line of child output as it arrives, which is the whole thing
+rather than an excerpt. Nothing persists the full output, so that is the only
+way back to it once a run is over.
+
+The excerpt is cut **on a line boundary**. It used to be a raw byte slice, so
+it opened on the back half of whatever line the budget landed in — output
+starting `ssertSame() when expecting` or `tion extends to column 143`, which
+reads like a broken tool rather than a truncated report. It was also not
+UTF-8 safe, and phpstan labels every finding with an emoji identifier.
+
+The console shows more than a merge-request comment quotes, deliberately: a
+comment is a pointer for somebody who can open the pipeline, while the console
+output is what the person who just ran the check diagnoses from.

@@ -39,7 +39,7 @@ internal/naming              100.0
 internal/notes               100.0
 internal/patches              96.0
 internal/proc                 93.4
-internal/results              95.8
+internal/results              95.9
 internal/security             93.9
 internal/workflow            100.0
 EOF

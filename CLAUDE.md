@@ -366,6 +366,31 @@ and was learned the hard way — see `docs/go-port.md`.
   would be a second exception to the no-token-in-children rule. A refused push
   names the SSH-key recovery, against the host actually in the remote, because
   git's own message suggests a password and GitLab will never accept one.
+- **A truncated check report says it was truncated, and is cut on a line
+  boundary.** `check.Result.OutputTail` replaces a raw byte slice off the tail,
+  which opened the excerpt on the back half of whatever line the budget landed
+  in — reported from the wild as phpstan output beginning `ssertSame() when
+  expecting` and phpcs output beginning `tion extends to column 143`. A reader
+  cannot tell that from a check whose output is genuinely strange, so the first
+  thing they doubt is the tool. Byte slicing was also not UTF-8 safe and these
+  checks emit multi-byte characters (phpstan labels every finding with an emoji
+  identifier), so a cut inside one put a replacement character at the front of
+  the report; a newline is never part of a multi-byte rune, so cutting after
+  one lands on a boundary by construction, and a `utf8.RuneStart` loop covers
+  the single line too long to hold a newline at all. **The two budgets are now
+  separate**: `ExcerptBytes` (2000) is what a merge-request comment quotes,
+  `ConsoleExcerptBytes` (12000) what the console echoes. One number served
+  both and was far too small for a linter — phpstan's boxed layout for 32
+  findings, or phpcs's full report plus two summary tables, runs to several
+  times it — so the cut landed mid-findings and **said nothing about having
+  done so**, which is the part that cost an afternoon. The dropped-line count
+  is returned rather than rendered, so each surface words it for its own reader
+  and none can print a number it did not measure, and the note names `-v`
+  because nothing persists the full output: an excerpt is all there is once the
+  run is over. The results cache has the same rule applied to its *head*
+  (`headExcerpt`) — head rather than tail because what reads it is the
+  dashboard asking what happened, where the first lines are where a check says
+  what it was doing.
 - **Child-process output is progress, not payload.** ddev, composer and git
   print through `cli.LiveStatus`: on a terminal, the latest line sits on
   one line that overwrites itself and is erased when the child exits; under

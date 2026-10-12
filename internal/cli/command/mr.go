@@ -127,9 +127,19 @@ func renderCheckSummary(cmd *cobra.Command, run check.RunResult) {
 		// A failure with no output at all still gets a line, because a blank
 		// under a "FAILED" heading reads as the report being broken rather
 		// than as the check having said nothing.
-		excerpt := failure.OutputExcerpt(check.ExcerptBytes)
+		excerpt, dropped := failure.OutputTail(check.ConsoleExcerptBytes)
 		if excerpt == "" {
 			excerpt = "(no output captured)"
+		}
+		// Said *before* the excerpt, because the reason to say it at all is
+		// that somebody reading an excerpt which starts mid-report doubts the
+		// tool rather than the budget. Named with the command that produces
+		// the whole thing, since nothing persists it — an excerpt is all there
+		// is once the run is over.
+		if dropped > 0 {
+			cli.Printf(cmd,
+				"(the first %d line(s) of output are not shown — re-run with -v for all of it)\n",
+				dropped)
 		}
 		cli.Println(cmd, excerpt)
 	}
