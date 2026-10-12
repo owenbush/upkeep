@@ -3,9 +3,9 @@
 Every environment upkeep provisions starts from a **base artifact set** — one
 per Drupal core major, built once and copied from thereafter. This document is
 the lifecycle: how one is built, what happens when you rebuild it, what a
-rebuild propagates to, and the sharp edges. The design rationale for having
-them at all is `contrib-maintainer-design.md` §6 (fast cold starts); the
-user-facing quick start is the README.
+rebuild propagates to, and the sharp edges. They exist so a cold start is
+fast: provisioning an environment copies a resolved tree rather than running
+composer against the network. The user-facing quick start is the README.
 
 ## 1. What one is
 
