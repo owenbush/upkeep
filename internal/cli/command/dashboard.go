@@ -38,9 +38,12 @@ type IssueClients interface {
 type IssueSource interface {
 	dashboard.IssueReader
 
-	// Issue is one issue by node id, reporting false when it could not be
-	// read.
-	Issue(nid int) (drupal.Issue, bool)
+	// Issue is one issue by the number the project uses to name it, reporting
+	// false when it could not be read.
+	//
+	// The project is named because a GitLab read is scoped to one, where an
+	// api-d7 node id was global. Both callers always had the module in hand.
+	Issue(machineName string, nid int) (drupal.Issue, bool)
 
 	// User is the account that posted a file, which is what a promotion
 	// credits the work to.
@@ -603,20 +606,3 @@ func plural(count int, one, many string) string {
 
 	return many
 }
-
-// DrupalClients is the production drupal.org client source.
-//
-// One client for the whole run, so its warnings accumulate across every module
-// a refresh touches and the shortfall is reported once at the end.
-type DrupalClients struct{ client *drupal.Client }
-
-// NewDrupalClients builds it.
-func NewDrupalClients() *DrupalClients {
-	return &DrupalClients{client: drupal.NewClient(nil, "")}
-}
-
-// Issues is the reader a refresh scans with.
-func (c *DrupalClients) Issues() IssueSource { return c.client }
-
-// Warnings is what the scan could not read.
-func (c *DrupalClients) Warnings() []string { return c.client.Warnings() }

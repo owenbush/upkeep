@@ -78,7 +78,7 @@ func resolvePatchContext(
 		return nil, workflow.PatchContext{}, err
 	}
 
-	issue, err := requireIssue(cmd, surface.Issues, rawNid)
+	issue, err := requireIssue(cmd, surface.Issues, module.Name, rawNid)
 	if err != nil {
 		return nil, workflow.PatchContext{}, err
 	}

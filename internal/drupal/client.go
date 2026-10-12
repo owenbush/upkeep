@@ -48,7 +48,20 @@ type Client struct {
 	// resolved detail is written back into the *issue payload*, and the models
 	// are built from that in one place.
 	files    map[int]map[string]any
-	projects map[string]int
+	projects map[string]projectFacts
+}
+
+// projectFacts is what one read of a project node tells us.
+//
+// The node id and whether the project still keeps its issues here come from
+// the same request, so they are cached together rather than fetched twice.
+type projectFacts struct {
+	nid int
+	// hasIssueQueue is drupal.org's own field_project_has_issue_queue.
+	// knownQueue is false when the field was absent or not a bool, which is
+	// not the same as "the queue has moved" — see UsesDrupalIssueQueue.
+	hasIssueQueue bool
+	knownQueue    bool
 }
 
 // NewClient builds a client. A nil http.Client uses a sensible default.
@@ -68,7 +81,7 @@ func NewClient(httpClient *http.Client, apiBase string) *Client {
 		sleep:    time.Sleep,
 		issues:   map[int]*Issue{},
 		files:    map[int]map[string]any{},
-		projects: map[string]int{},
+		projects: map[string]projectFacts{},
 	}
 }
 
@@ -136,11 +149,40 @@ func (c *Client) fetchIssue(nid int) (Issue, bool) {
 // machine name matches nothing and reads exactly like "no issues", which is
 // why the nid is resolved once and the listing filtered by it instead.
 func (c *Client) ProjectNid(machineName string) (int, bool) {
+	facts := c.projectFacts(machineName)
+
+	return facts.nid, facts.nid != 0
+}
+
+// UsesDrupalIssueQueue reports whether the project still keeps its issues on
+// drupal.org, and whether drupal.org would say.
+//
+// `field_project_has_issue_queue` on the project node, which is drupal.org's
+// own statement that a queue has moved to GitLab: false for `helper`, true for
+// pathauto, token and jumplinks. Authoritative rather than inferred — a count
+// of GitLab issues cannot tell a migrated project with nothing open from one
+// that never moved, and this answers for both.
+//
+// It costs no request: ProjectNid already reads the project node, so the two
+// facts come from one fetch and one cache entry.
+//
+// known is false when the field is absent or not a bool. Then the caller keeps
+// reading drupal.org — the behaviour every release so far has had — rather
+// than guessing, because a wrong guess reads an empty queue and reports a
+// module as having no open issues at all.
+func (c *Client) UsesDrupalIssueQueue(machineName string) (uses, known bool) {
+	facts := c.projectFacts(machineName)
+
+	return facts.hasIssueQueue, facts.knownQueue
+}
+
+// projectFacts reads the project node once and remembers what it said.
+func (c *Client) projectFacts(machineName string) projectFacts {
 	c.mu.Lock()
 	cached, seen := c.projects[machineName]
 	c.mu.Unlock()
 	if seen {
-		return cached, cached != 0
+		return cached
 	}
 
 	data, ok := c.getJSON(
@@ -148,22 +190,30 @@ func (c *Client) ProjectNid(machineName string) (int, bool) {
 		fmt.Sprintf("the drupal.org project %q", machineName),
 	)
 
-	nid := 0
+	facts := projectFacts{}
 	if ok {
 		for _, entry := range listOf(data) {
-			if found, present := intField(entry, "nid"); present {
-				nid = found
-
-				break
+			found, present := intField(entry, "nid")
+			if !present {
+				continue
 			}
+			facts.nid = found
+			// Read from the same entry the nid came from, so the flag can
+			// never describe a different project than the one resolved.
+			if flag, isBool := entry["field_project_has_issue_queue"].(bool); isBool {
+				facts.hasIssueQueue = flag
+				facts.knownQueue = true
+			}
+
+			break
 		}
 	}
 
 	c.mu.Lock()
-	c.projects[machineName] = nid
+	c.projects[machineName] = facts
 	c.mu.Unlock()
 
-	return nid, nid != 0
+	return facts
 }
 
 // ProjectIssues lists a project's issues in the given statuses.

@@ -515,6 +515,62 @@ and was learned the hard way — see `docs/go-port.md`.
   which would collide with a row's file count) and `CI FAILED` (not `BLOCKED`,
   which is what that verdict is actually set by). There is no `REVIEW` column:
   it counted everything neither ready nor CI-failed, i.e. every row.
+- **Which issue queue a project uses is the project's property, and
+  drupal.org states it.** Issue queues are migrating into GitLab one project at
+  a time, so `IssueQueues` (`internal/cli/command/issuequeue.go`) routes per
+  project behind the existing `IssueClients`/`IssueSource` seam and every
+  consumer — dashboard, gate, patch surface, `issues`, `start`, `publish` — is
+  unchanged. The GitLab reader returns **`drupal.Issue`**, not a parallel type,
+  because each of them is about an issue rather than about where it was read
+  from; a second shape would have been a second code path through all of them.
+  **Detection is `field_project_has_issue_queue` on the project node** —
+  drupal.org's own statement, false for `helper` and true for pathauto, token
+  and jumplinks. It costs no request (`ProjectNid` already reads that node, so
+  the nid and the flag share one fetch and one cache entry) and it answers for
+  a migrated project with *nothing open*, which the first design — counting
+  GitLab issues — could not. `issues_enabled` and `open_issues_count` were the
+  obvious signals and are **absent from an anonymous project read**, so they
+  are unavailable to a tool whose reads need no credential. **Not knowing is
+  not "moved"**: an unreadable project node reads drupal.org, which is what
+  every release so far did, because guessing wrong scans an empty queue and
+  reports a module as having no open issues at all. A migrated project whose
+  GitLab side fails is a **reported shortfall, never a fall back** to the queue
+  drupal.org has just said is not the live one — that would list the migrated
+  issues as though they were all there were.
+  **The justification is not the one it looks like, and the first version of
+  this comment had it wrong.** api-d7 is *not* stale for a migrated project:
+  measured on `helper`, api-d7 lists 73 open issues against GitLab's 74 and the
+  statuses agree exactly (needs review 13, needs work 3, RTBC 1, to be ported
+  1), every migrated issue kept its node, and `drupal.org/node/<nid>` 301s to
+  the work item — which is why the six `drupal.IssueURL(nid)` call sites still
+  produce working links. What justifies reading GitLab is the **one issue in
+  that difference**: iid 3619172 was opened after the migration and has no
+  drupal.org node at all, so no api-d7 query can return it whatever it filters
+  on. That is 1 of 74 today and *every future issue* on that project. Worse
+  than the gap is the collision — GitLab continues its iid sequence from the
+  migrated nids, so a native issue's number is also some unrelated drupal.org
+  node's id (3619172 is a change notice there), and a lookup built from it
+  lands on that node. **`IssueSource.Issue` therefore takes the project**: it
+  was always implicit, both callers had the module in hand, and for a migrated
+  project the implicit version is actively wrong.
+  **The label vocabulary is read off helper, never derived from drupal.org's
+  names**, and the difference is load-bearing: drupal.org's "Active" is
+  `state::accepted`, so the migration renames rather than transliterating —
+  which is why `state::postponed` and `state::fixed` are *not* mapped (they
+  return no rows; "Fixed" is `state::closed` with no reason label, 92 of 100).
+  Closure is three passes so label order cannot decide the answer — structural
+  `state` field, then the open `state::` scope, then the `why::` scope that
+  carries drupal.org's several flavours of closed (`why::duplicate`,
+  `wontFix`, `worksAsDesigned`; 8 of 100 closed issues). An unrecognised label
+  is ignored and the issue still lists. `Files` is empty because a project that
+  has moved takes contributions as merge requests, so the patch surface finding
+  nothing is the truth rather than a gap, and `User` is **never routed** — a
+  uid is a drupal.org account id whatever queue the issue came from, and a
+  migrated project has no patch files to promote. The `issues` progress line
+  stopped saying "from drupal.org", which was a claim rather than a report;
+  where it read is said *afterwards*, by the reader that decided, and only when
+  that is not where it has always been — a line confirming the status quo on
+  every run is a line people stop reading.
 - **GitLab's closing vocabulary pairs a merge request too.** A project whose
   issue queue has moved to GitLab declares what a branch fixes the GitLab way:
   `Closes #N`, and the four verb families of GitLab's documented default

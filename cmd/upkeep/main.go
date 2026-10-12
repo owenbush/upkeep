@@ -38,11 +38,17 @@ func main() {
 	// "every child" is the rule and an exception is how a rule stops holding.
 	quiet := proc.New(nil, nil, redactor)
 
+	clients := cli.NewResolvedClients(
+		func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) })
+
 	os.Exit(cli.Execute(command.NewRoot(command.Surface{
 		Engines: adapter.NewDdevContribFactory(redactor),
-		Clients: cli.NewResolvedClients(
-			func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) }),
-		Issues:     command.NewDrupalClients(),
+		Clients: clients,
+		// Issues are read from drupal.org or from GitLab depending on where
+		// the project keeps them, which is the project's property and not the
+		// tool's. The GitLab half reads through the same client source every
+		// other command uses, so a token is resolved in one place.
+		Issues:     command.NewIssueQueues(clients.ReadOnly),
 		Prompts:    func(cmd *cobra.Command) cli.Prompt { return cli.NewTerminalPrompt(cmd) },
 		Volumes:    adapter.NewVolumeProbe(quiet),
 		Sizer:      maintenance.DiskSizer(quiet),

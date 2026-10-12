@@ -62,7 +62,7 @@ func (n noIssues) Warnings() []string { return n.warnings }
 
 func (noIssues) ProjectIssues(string, []drupal.IssueStatus) []drupal.Issue { return nil }
 
-func (noIssues) Issue(int) (drupal.Issue, bool) { return drupal.Issue{}, false }
+func (noIssues) Issue(string, int) (drupal.Issue, bool) { return drupal.Issue{}, false }
 
 func (noIssues) User(int) (drupal.User, bool) { return drupal.User{}, false }
 
