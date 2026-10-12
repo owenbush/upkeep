@@ -109,10 +109,27 @@ can return it however it filters — and today that is 1 issue of 74, while it i
 
 There is a sharper edge underneath. GitLab continues its issue numbering from
 the migrated node ids, so a post-migration issue's number is also some
-unrelated drupal.org node's id — on `helper`, issue 3619172 is "Drush command
-to run a module hook" while drupal.org node 3619172 is an unrelated change
-notice. Reading the issue from the queue that owns the number is what keeps the
-two attached.
+unrelated drupal.org node's id.
+
+**It does not fail loudly.** Reading `helper` issue 3619173 from drupal.org
+returns this:
+
+```
+$ upkeep start helper 3619173
+Resolving issue #3619173 via drupal.org ...
+Issue #3619173 "Mercury Editor" (closed)
+```
+
+That is a real, well-formed issue — node type `project_issue`, status Closed
+(fixed) — belonging to the German translation project. Nothing about it looks
+like an error, which is exactly what makes it dangerous: it is not a 404 you
+would notice, it is a plausible answer about somebody else's work. The actual
+issue is "Add timestamp date-only field widget". (If you see the `via
+drupal.org` line above, you are running a build from before this, which is the
+quickest way to tell.)
+
+Reading the issue from the queue that owns the number is what keeps the number
+attached to the thing it names.
 
 ### Publishing an issue that only exists in GitLab
 

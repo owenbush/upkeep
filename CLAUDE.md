@@ -328,8 +328,13 @@ and was learned the hard way — see `docs/go-port.md`.
   sequence continues from the migrated node ids — so that URL resolves to an
   unrelated node. Measured on the issue that prompted this: helper issue
   3619173 is "Add timestamp date-only field widget" while drupal.org node
-  3619173 is a German translation correction, HTTP 200. Confidently wrong is
-  worse than not answering. A project that has not moved keeps the handoff,
+  3619173 is a *different project's issue* — title "Mercury Editor", type
+  `project_issue`, status Closed (fixed), in the German translation project.
+  That is the sharp version of the hazard: api-d7 does not 404, it returns a
+  well-formed issue of the right node type with a real status, so nothing at
+  the call site distinguishes it from a correct answer. Observed in the wild,
+  as `start helper 3619173` printing `Issue #3619173 "Mercury Editor"
+  (closed)`. Confidently wrong is worse than not answering. A project that has not moved keeps the handoff,
   because there the fork is genuinely missing and the click genuinely fixes it.
   The canonical description is **`Closes #N`, not the issue URL**, for two
   reasons that both bite: it is GitLab's closing vocabulary, so GitLab links
