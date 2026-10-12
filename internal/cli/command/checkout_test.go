@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/gitlab"
@@ -116,9 +118,9 @@ func (s *aForkedMr) client() *gitlab.Client {
 	return gitlab.NewClient(nil, "", s.server.URL+"/api/v4", s.server.URL)
 }
 
-// runMrCheckoutCommand invokes the tree with a scripted GitLab and a fake
+// runCheckoutCommand invokes the tree with a scripted GitLab and a fake
 // engine, and hands back the engine so the checkout can be asserted.
-func runMrCheckoutCommand(
+func runCheckoutCommand(
 	t *testing.T, scene *aForkedMr, args ...string,
 ) (int, string, string, *fakeEngine) {
 	t.Helper()
@@ -162,8 +164,8 @@ func TestAMergeRequestsOwnBranchIsCheckedOutFromItsFork(t *testing.T) {
 	root := aJumplinksCockpit(t)
 	scene := mrOnAFork(t)
 
-	code, stdout, stderr, engine := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, stdout, stderr, engine := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -209,8 +211,8 @@ func TestCheckingOutAMergeRequestDoesNotRequireTheCoreToBeDeclared(t *testing.T)
 	root := aJumplinksCockpit(t)
 	scene := mrOnAFork(t)
 
-	code, _, stderr, engine := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--version=12", "--cockpit="+root)
+	code, _, stderr, engine := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--version=12", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d — it refused a core the merge request does not declare (%s)", code, stderr)
@@ -238,8 +240,8 @@ func TestABranchOnTheProjectItselfIsCheckedOut(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.sourceProject = 1
 
-	code, stdout, stderr, engine := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, stdout, stderr, engine := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -276,8 +278,8 @@ func TestAProjectWithNoSshUrlIsRefused(t *testing.T) {
 	scene.sourceProject = 1
 	scene.noSSH = true
 
-	code, _, stderr, engine := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, engine := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -297,8 +299,8 @@ func TestABranchOnAnUnrelatedProjectIsRefused(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.forks = `[]`
 
-	code, _, stderr, _ := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, _ := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -316,8 +318,8 @@ func TestAClosedMergeRequestWarnsAndStillChecksOut(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.state = "merged"
 
-	code, _, stderr, engine := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, engine := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -337,8 +339,8 @@ func TestANonMergeRequestIidIsRefusedBeforeAnyRequest(t *testing.T) {
 	scene := mrOnAFork(t)
 
 	for _, iid := range []string{"0", "-1", "two"} {
-		code, _, _, engine := runMrCheckoutCommand(t, scene,
-			"mr:checkout", "jumplinks", iid, "--cockpit="+root)
+		code, _, _, engine := runCheckoutCommand(t, scene,
+			"checkout", "jumplinks", iid, "--cockpit="+root)
 
 		if code != workflow.Infrastructure {
 			t.Errorf("%q: exit %d", iid, code)
@@ -350,8 +352,8 @@ func TestANonMergeRequestIidIsRefusedBeforeAnyRequest(t *testing.T) {
 }
 
 // completion is wired, like every other subject command.
-func TestMrCheckoutCompletesTheModule(t *testing.T) {
-	cmd := NewMrCheckout(&fakeFactory{engine: &fakeEngine{}}, noClients{})
+func TestCheckoutCompletesTheModule(t *testing.T) {
+	cmd := NewCheckout(&fakeFactory{engine: &fakeEngine{}}, noClients{})
 
 	if cmd.ValidArgsFunction == nil {
 		t.Error("the module argument does not complete")
@@ -373,8 +375,8 @@ func TestEveryReadAMergeRequestCheckoutMakesCanFail(t *testing.T) {
 		scene := mrOnAFork(t)
 		breaks(scene)
 
-		code, _, stderr, engine := runMrCheckoutCommand(t, scene,
-			"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+		code, _, stderr, engine := runCheckoutCommand(t, scene,
+			"checkout", "jumplinks", "1", "--cockpit="+root)
 
 		if code != workflow.Infrastructure {
 			t.Errorf("%s: exit %d, want %d", name, code, workflow.Infrastructure)
@@ -395,8 +397,8 @@ func TestAnIssueWithNoForkIsReported(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.forkMissing = true
 
-	code, _, stderr, _ := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, _ := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -420,7 +422,7 @@ func TestACheckoutTheEngineRefusesFailsTheCommand(t *testing.T) {
 		Volumes: noVolumes{}, Sizer: noSizer, Browser: cli.NoBrowser{},
 	})
 
-	code, stdout, _ := invokeWith(t, rootCmd, "mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, stdout, _ := invokeWith(t, rootCmd, "checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d, want %d", code, workflow.Infrastructure)
@@ -440,8 +442,8 @@ func TestAModuleWhoseProjectCannotBeResolvedIsReported(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.breakProject = true
 
-	code, _, stderr, _ := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, _ := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -464,7 +466,7 @@ func TestAnEnvironmentThatCannotBeProvisionedStopsTheCheckout(t *testing.T) {
 		Volumes: noVolumes{}, Sizer: noSizer, Browser: cli.NoBrowser{},
 	})
 
-	code, _, _ := invokeWith(t, rootCmd, "mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, _ := invokeWith(t, rootCmd, "checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d, want %d", code, workflow.Infrastructure)
@@ -493,8 +495,8 @@ func TestAMergeRequestWithNoSourceProjectIsRefused(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.sourceProject = 0
 
-	code, _, stderr, engine := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, engine := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -518,13 +520,61 @@ func TestAForkThatCannotBeReadIsReported(t *testing.T) {
 	scene := mrOnAFork(t)
 	scene.breakFork = true
 
-	code, _, stderr, _ := runMrCheckoutCommand(t, scene,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+	code, _, stderr, _ := runCheckoutCommand(t, scene,
+		"checkout", "jumplinks", "1", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
 	}
 	if !strings.Contains(stderr, "could not be read") {
 		t.Errorf("the failure does not say what could not be read: %s", stderr)
+	}
+}
+
+// The command is `checkout`, and `check` is still its own command.
+//
+// They differ by three characters and do very different things — one produces
+// a verdict on a disposable branch, the other puts your working copy on
+// somebody's source branch — so the pair is worth pinning. Cobra matches a
+// name exactly unless EnablePrefixMatching is set, and nothing here sets it.
+func TestCheckoutAndCheckAreDistinctCommands(t *testing.T) {
+	root := NewRootFor(noVolumes{}, noSizer)
+
+	byName := map[string]*cobra.Command{}
+	for _, command := range root.Commands() {
+		byName[command.Name()] = command
+	}
+
+	for _, name := range []string{"check", "checkout"} {
+		if byName[name] == nil {
+			t.Fatalf("there is no %q command", name)
+		}
+	}
+	if byName["check"] == byName["checkout"] {
+		t.Error("one command answers to both names")
+	}
+	if byName["mr:checkout"] != nil {
+		t.Error("the old namespaced name is still registered")
+	}
+}
+
+// The old name fails, and the failure names the command to run.
+//
+// Not an alias: `mr:checkout` is gone and exits 2. But it was the name while
+// this was being built, so it is in shell histories, and a bare "unknown
+// command" is the dead end every other refusal in this tool avoids. Cobra's
+// own suggestion would not fire — the edit distance is 3 against a minimum
+// of 2 — so SuggestFor carries it.
+func TestTheOldNameNamesTheNewOne(t *testing.T) {
+	code, _, stderr := invoke(t, "mr:checkout", "jumplinks", "1")
+
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d, want %d", code, workflow.Infrastructure)
+	}
+	if !strings.Contains(stderr, "checkout") {
+		t.Errorf("the failure does not name the command to run: %q", stderr)
+	}
+	if !strings.Contains(stderr, "Did you mean") {
+		t.Errorf("the failure does not offer it: %q", stderr)
 	}
 }

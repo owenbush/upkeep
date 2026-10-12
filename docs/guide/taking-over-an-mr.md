@@ -28,13 +28,13 @@ wrong for working:
   anywhere.
 
 What you want is the merge request's own **source branch**, which on
-drupal.org lives on an issue fork rather than on the project. `mr:checkout`
+drupal.org lives on an issue fork rather than on the project. `checkout`
 gets it.
 
 ## The loop
 
 ```bash
-upkeep mr:checkout jumplinks 1 --version=12
+upkeep checkout jumplinks 1 --version=12
 ```
 
 That resolves which fork the branch is on, adds the remote that pushes back to
@@ -101,13 +101,13 @@ upkeep check jumplinks 1 --version=12
 This works because the core check reads the merge request's **own** tree, not
 the branch it targets — so the `^12` you just added is what it sees.
 
-## Why `mr:checkout` does not check the core
+## Why `checkout` does not check the core
 
 Every other merge-request command refuses a core the code does not declare,
 because gathering evidence against an unsupported core produces failures that
 say nothing about the contribution.
 
-`mr:checkout` deliberately does not ask. The reason to take over a merge
+`checkout` deliberately does not ask. The reason to take over a merge
 request is frequently that it does *not* support the core yet — that is the
 work. Refusing to check out the branch because the branch lacks what you are
 about to add would be the tool declining its own purpose. `check` asks the
@@ -120,7 +120,7 @@ the site rather than installed as a composer package, so its own
 
 ## Nothing here resets anything
 
-`mr:checkout` is safe to re-run. An existing local branch of that name is
+`checkout` is safe to re-run. An existing local branch of that name is
 checked out **as it stands** — it may hold commits that exist nowhere else, and
 discarding those is precisely what the managed `mr-<iid>` branch does and this
 command does not. If you want the fork's version of it, move your own commits
@@ -160,7 +160,7 @@ came from a fork.
 
 A project whose issues live in **GitLab** has no such step, so a maintainer
 pushes branches straight to the canonical repository. On `helper`, four of five
-open merge requests are same-project. `mr:checkout` handles those too: it adds
+open merge requests are same-project. `checkout` handles those too: it adds
 a `canonical` remote carrying the SSH URL GitLab advertises, and the report
 tells you to push rather than naming `publish` — there is no issue fork to
 publish against, and the merge request is already open on the branch, so the

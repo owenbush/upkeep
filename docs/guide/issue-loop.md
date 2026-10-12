@@ -74,7 +74,7 @@ unchanged: the same `ISSUE`/`STATUS`/`PRIORITY` columns, the same `start` and
 `publish`, the same dashboard rows. An issue is an issue wherever it is filed.
 
 **Merge requests never moved.** They have always lived in GitLab, so `check`,
-`review`, `merge`, `mr:checkout` and `publish` behave identically on a migrated
+`review`, `merge`, `checkout` and `publish` behave identically on a migrated
 project. The one difference you will notice is that merge requests tend to come
 from the canonical project rather than an issue fork, because a maintainer with
 write access needs no fork — [taking over an

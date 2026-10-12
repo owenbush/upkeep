@@ -12,7 +12,21 @@ import (
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
-// NewMrCheckout builds the mr:checkout command.
+// NewCheckout builds the checkout command.
+//
+// Not `mr:checkout`, which is what this was called first. It was the only
+// namespaced command in an otherwise unnamespaced merge-request family —
+// `check`, `review`, `merge`, `publish` — and a namespace of one is a
+// namespace that says nothing. `checkout` is also the verb everybody already
+// has for "put this code in my working copy", which is exactly the job. It
+// has never shipped under the old name: there are no releases and no tags, so
+// no alias is carried for it. SuggestFor is **not** an alias — `mr:checkout`
+// still fails with exit 2 — it only makes the failure name the command to run,
+// which is the rule everywhere else in this tool. Cobra's own "did you mean"
+// would not: the edit distance is 3 and SuggestionsMinimumDistance is 2.
+//
+// It does not collide with `check`. Cobra matches a command name exactly
+// unless EnablePrefixMatching is set, and it is not set anywhere here.
 //
 // The gap between reading a merge request and working on one. `check` and
 // `review` exist to answer "is this contribution good", and both put the
@@ -35,15 +49,16 @@ import (
 // what you are about to add would be the tool declining its own purpose.
 // `check` asks that question, at the point a verdict is produced, where it
 // means something.
-func NewMrCheckout(engines adapter.Factory, clients cli.GitlabClients) *cobra.Command {
+func NewCheckout(engines adapter.Factory, clients cli.GitlabClients) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "mr:checkout <module> <iid>",
-		Short: "Check out a merge request's own branch to work on it, with the remote to push back",
+		Use:        "checkout <module> <iid>",
+		SuggestFor: []string{"mr:checkout"},
+		Short:      "Check out a merge request's own branch to work on it, with the remote to push back",
 		Long: `Puts the module working copy on a merge request's source branch — the branch a
 push can go back to — and adds the remote it came from.
 
-  upkeep mr:checkout jumplinks 1
-  upkeep mr:checkout jumplinks 1 --version=12
+  upkeep checkout jumplinks 1
+  upkeep checkout jumplinks 1 --version=12
 
 Unlike ` + "`check`" + ` and ` + "`review`" + `, which fetch the merge ref onto a disposable
 branch to produce a verdict, this is for changing the contribution: commit here
@@ -62,13 +77,13 @@ Nothing is reset: an existing local branch is resumed exactly as it stands.`,
 	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
-		return runMrCheckout(cmd, engines, clients, args[0], args[1])
+		return runCheckout(cmd, engines, clients, args[0], args[1])
 	})
 
 	return cmd
 }
 
-func runMrCheckout(
+func runCheckout(
 	cmd *cobra.Command, engines adapter.Factory, clients cli.GitlabClients,
 	moduleName, rawIID string,
 ) (int, error) {
@@ -134,7 +149,7 @@ func runMrCheckout(
 		return 0, err
 	}
 
-	reportMrCheckout(cmd, module.Name, coreMajor, environment, *mergeRequest, origin)
+	reportCheckout(cmd, module.Name, coreMajor, environment, *mergeRequest, origin)
 
 	return workflow.OK, nil
 }
@@ -234,7 +249,7 @@ func mergeRequestSource(
 	}, nil
 }
 
-// reportMrCheckout says where the work is and how to send it back.
+// reportCheckout says where the work is and how to send it back.
 //
 // The line is printed rather than described because it carries values the
 // operator has no reason to know and every reason to get wrong: the issue node
@@ -246,7 +261,7 @@ func mergeRequestSource(
 // project itself has no issue to publish against, and the merge request is
 // already open on it — so pushing the branch is the whole job, and naming a
 // command that would refuse would be worse than naming git.
-func reportMrCheckout(
+func reportCheckout(
 	cmd *cobra.Command, moduleName, coreMajor string,
 	environment adapter.Environment, mergeRequest gitlab.MergeRequest,
 	origin mergeRequestOrigin,

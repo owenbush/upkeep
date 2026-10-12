@@ -181,7 +181,7 @@ and was learned the hard way — see `docs/go-port.md`.
   environment is skipped rather than reported as detached, which a surviving
   mutant caught: both carry no branch name. An explicit `--version` still wins
   outright, having already been validated against the tracked cores.
-- **`mr:checkout` is the way in to *changing* a merge request**, as against
+- **`checkout` is the way in to *changing* a merge request**, as against
   reading one. `check` and `review` fetch the merge ref onto the managed
   `mr-<iid>` branch — force-updated on every apply, refused by `publish` — so a
   commit there is a commit waiting to be destroyed, and the merge tree is a
@@ -210,6 +210,15 @@ and was learned the hard way — see `docs/go-port.md`.
   refusals, two messages, because one in the other's words would be a lie: a
   zero `SourceProjectID` means GitLab did not say where the branch is, which is
   not "it is on the project itself" — a distinction a surviving mutant found.
+  **Named `checkout`, not `mr:checkout`.** It was namespaced first and that
+  was the wrong shape: it was the only namespaced command in an otherwise
+  unnamespaced merge-request family (`check`, `review`, `merge`, `publish`),
+  and a namespace of one says nothing. `checkout` is the verb everybody
+  already has for "put this code in my working copy", which is the job. No
+  alias is carried, because the old name never shipped — there were no tags
+  and no releases when it was renamed. It does not collide with `check`:
+  cobra matches a name exactly unless `EnablePrefixMatching` is set, and
+  nothing here sets it.
   `docs/guide/taking-over-an-mr.md` is the worked example.
 - **The module is linked in, never installed as a package.** It used to be a
   Composer path repository plus `composer require drupal/<module>:<branch>-dev`,
