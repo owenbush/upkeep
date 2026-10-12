@@ -29,6 +29,7 @@ type aForkedMr struct {
 	breakFork     bool
 	forkMissing   bool
 	breakProject  bool
+	noSSH         bool
 }
 
 func mrOnAFork(t *testing.T) *aForkedMr {
@@ -52,6 +53,7 @@ func mrOnAFork(t *testing.T) *aForkedMr {
 			}
 			_, _ = w.Write([]byte(
 				`{"id":1,"path":"jumplinks","path_with_namespace":"project/jumplinks",` +
+					sshOrNot(scene.noSSH) +
 					`"web_url":"https://git.drupalcode.org/project/jumplinks"}`))
 
 		case strings.HasSuffix(path, "/merge_requests/1"):
@@ -222,12 +224,57 @@ func TestCheckingOutAMergeRequestDoesNotRequireTheCoreToBeDeclared(t *testing.T)
 	}
 }
 
-// A branch on the canonical project is refused, naming what to do instead:
-// upkeep pushes to issue forks, which is where drupal.org puts contributions.
-func TestAMergeRequestFromTheProjectItselfIsRefused(t *testing.T) {
+// A branch on the project itself is checked out, not refused.
+//
+// This used to refuse, on the measurement that 100 of 100 open pathauto merge
+// requests came from an issue fork — which is what drupal.org's issue queue
+// produces, since the issue page mints the fork and a contributor has no write
+// access. A project whose issues live in GitLab has no such step: on `helper`,
+// four of five open merge requests are same-project, because the maintainer
+// pushes branches straight to the canonical repository. Generalising from one
+// project made the command useless on exactly those projects.
+func TestABranchOnTheProjectItselfIsCheckedOut(t *testing.T) {
 	root := aJumplinksCockpit(t)
 	scene := mrOnAFork(t)
 	scene.sourceProject = 1
+
+	code, stdout, stderr, engine := runMrCheckoutCommand(t, scene,
+		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if len(engine.mrCheckouts) != 1 {
+		t.Fatalf("it did not check the branch out: %v", engine.mrCheckouts)
+	}
+	did := engine.mrCheckouts[0]
+	// Pushed over SSH to the project GitLab advertises, under a name that is
+	// not origin — origin stays HTTPS and anonymous so the fetch needs no key.
+	if !strings.Contains(did, "canonical=git@git.drupal.org:project/jumplinks.git") {
+		t.Errorf("the push remote is wrong: %s", did)
+	}
+	if !strings.Contains(did, "https://git.drupalcode.org/project/jumplinks.git") {
+		t.Errorf("the fetch is not the anonymous URL: %s", did)
+	}
+	// No issue fork means no issue to publish against, so the report says to
+	// push rather than naming a command that would refuse.
+	if strings.Contains(stdout, "upkeep publish") {
+		t.Errorf("it offered publish for a branch with no issue:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "push canonical project-update-bot-only") {
+		t.Errorf("the report does not say how to send the work back:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "MR !1 is already open") {
+		t.Errorf("the report does not say the push updates the MR:\n%s", stdout)
+	}
+}
+
+// A project with no SSH URL advertised is refused: there is nowhere to push.
+func TestAProjectWithNoSshUrlIsRefused(t *testing.T) {
+	root := aJumplinksCockpit(t)
+	scene := mrOnAFork(t)
+	scene.sourceProject = 1
+	scene.noSSH = true
 
 	code, _, stderr, engine := runMrCheckoutCommand(t, scene,
 		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
@@ -235,29 +282,11 @@ func TestAMergeRequestFromTheProjectItselfIsRefused(t *testing.T) {
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
 	}
-	// A payload that does not carry source_project_id at all reads as zero,
-	// and zero must refuse too rather than be looked up as a fork id.
-	absent := mrOnAFork(t)
-	absent.sourceProject = 0
-	var absentErr string
-	code, _, absentErr, _ = runMrCheckoutCommand(t, absent,
-		"mr:checkout", "jumplinks", "1", "--cockpit="+aJumplinksCockpit(t))
-	if code != workflow.Infrastructure {
-		t.Errorf("a merge request with no source project was accepted: exit %d", code)
-	}
-	// Its own message: "on the project itself" would be a guess dressed as a
-	// fact, and the fork-listing fallback would blame the wrong thing.
-	if !strings.Contains(absentErr, "does not say which project") {
-		t.Errorf("the refusal invents a location: %s", absentErr)
-	}
-	// The specific diagnosis, not the generic one: with the same-project case
-	// removed, this falls through to "not an issue fork of", which also
-	// mentions a fork and would let the loss pass unnoticed.
-	if !strings.Contains(stderr, "itself rather than on an issue fork") {
+	if !strings.Contains(stderr, "no SSH URL") {
 		t.Errorf("the refusal does not say why: %s", stderr)
 	}
 	if len(engine.mrCheckouts) != 0 {
-		t.Errorf("it checked something out anyway: %v", engine.mrCheckouts)
+		t.Errorf("it checked out anyway: %v", engine.mrCheckouts)
 	}
 }
 
@@ -274,7 +303,7 @@ func TestABranchOnAnUnrelatedProjectIsRefused(t *testing.T) {
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
 	}
-	if !strings.Contains(stderr, "not an issue fork") {
+	if !strings.Contains(stderr, "nor one of its issue forks") {
 		t.Errorf("the refusal does not say why: %s", stderr)
 	}
 }
@@ -442,5 +471,60 @@ func TestAnEnvironmentThatCannotBeProvisionedStopsTheCheckout(t *testing.T) {
 	}
 	if len(engine.mrCheckouts) != 0 {
 		t.Errorf("it checked out into an environment that does not exist: %v", engine.mrCheckouts)
+	}
+}
+
+// sshOrNot omits the SSH URL, for the project GitLab advertises none for.
+func sshOrNot(absent bool) string {
+	if absent {
+		return ""
+	}
+
+	return `"ssh_url_to_repo":"git@git.drupal.org:project/jumplinks.git",`
+}
+
+// A merge request that does not say where its branch is gets its own refusal.
+//
+// Zero means GitLab did not tell us, which is not the same as "it is on the
+// project" — and saying the latter in the former's words would be a guess
+// dressed as a fact. Two conditions, two messages.
+func TestAMergeRequestWithNoSourceProjectIsRefused(t *testing.T) {
+	root := aJumplinksCockpit(t)
+	scene := mrOnAFork(t)
+	scene.sourceProject = 0
+
+	code, _, stderr, engine := runMrCheckoutCommand(t, scene,
+		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
+	}
+	if !strings.Contains(stderr, "does not say which project") {
+		t.Errorf("the refusal invents a location: %s", stderr)
+	}
+	// Not the same-project message, and not the fork-listing one either.
+	if strings.Contains(stderr, "itself") || strings.Contains(stderr, "issue forks") {
+		t.Errorf("it blamed the wrong thing: %s", stderr)
+	}
+	if len(engine.mrCheckouts) != 0 {
+		t.Errorf("it checked out anyway: %v", engine.mrCheckouts)
+	}
+}
+
+// A fork GitLab lists but will not serve is reported rather than
+// dereferenced.
+func TestAForkThatCannotBeReadIsReported(t *testing.T) {
+	root := aJumplinksCockpit(t)
+	scene := mrOnAFork(t)
+	scene.breakFork = true
+
+	code, _, stderr, _ := runMrCheckoutCommand(t, scene,
+		"mr:checkout", "jumplinks", "1", "--cockpit="+root)
+
+	if code != workflow.Infrastructure {
+		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
+	}
+	if !strings.Contains(stderr, "could not be read") {
+		t.Errorf("the failure does not say what could not be read: %s", stderr)
 	}
 }

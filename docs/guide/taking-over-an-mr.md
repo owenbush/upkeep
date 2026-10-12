@@ -151,13 +151,27 @@ Two push refusals need opposite answers, and upkeep tells them apart:
   issue page. If the fork is somebody else's and you are not a maintainer, the
   access is theirs to give.
 
-## When the branch is not on a fork
+## When the branch is on the project itself
 
-`mr:checkout` only handles a merge request whose branch is on an issue fork,
-which measured on pathauto is 100 of 100 open merge requests. If the branch is
-on the project itself, or the merge request does not say where it is, the
-command refuses and says so rather than guessing — check it out with git, or
-start the work as your own contribution:
+Both shapes work. A branch on an **issue fork** is what drupal.org's issue
+queue produces — the issue page mints the fork, and a contributor has no write
+access to the project. Measured on pathauto, 100 of 100 open merge requests
+came from a fork.
+
+A project whose issues live in **GitLab** has no such step, so a maintainer
+pushes branches straight to the canonical repository. On `helper`, four of five
+open merge requests are same-project. `mr:checkout` handles those too: it adds
+a `canonical` remote carrying the SSH URL GitLab advertises, and the report
+tells you to push rather than naming `publish` — there is no issue fork to
+publish against, and the merge request is already open on the branch, so the
+push updates it.
+
+`origin` is untouched in both cases: HTTPS and anonymous, so the fetch needs no
+key.
+
+If the merge request does not say where its branch is at all, the command
+refuses rather than guessing — check it out with git, or start the work as your
+own contribution:
 
 ```bash
 upkeep start <module> <issue>      # your own branch, cut from a fresh base

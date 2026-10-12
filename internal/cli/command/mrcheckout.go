@@ -110,13 +110,13 @@ func runMrCheckout(
 			"reopen the merge request.", mergeRequest.IID, mergeRequest.State)
 	}
 
-	fork, nid, err := mergeRequestSource(client, *project, *mergeRequest)
+	origin, err := mergeRequestSource(client, *project, *mergeRequest)
 	if err != nil {
 		return 0, err
 	}
 
 	cli.Progressf(cmd, "MR !%d %q (%s) lives on %s",
-		mergeRequest.IID, mergeRequest.Title, mergeRequest.SourceBranch, fork.PathWithNamespace)
+		mergeRequest.IID, mergeRequest.Title, mergeRequest.SourceBranch, origin.Where)
 
 	engine, err := cli.Engine(cmd, engines, where)
 	if err != nil {
@@ -129,53 +129,77 @@ func runMrCheckout(
 	}
 
 	if err := engine.CheckoutMergeRequestBranch(
-		environment,
-		adapter.IssueForkRemote(nid, fork.SSHURL),
-		adapter.HTTPSURL(fork.PathWithNamespace),
-		mergeRequest.SourceBranch,
+		environment, origin.Remote, origin.FetchURL, mergeRequest.SourceBranch,
 	); err != nil {
 		return 0, err
 	}
 
-	reportMrCheckout(cmd, module.Name, coreMajor, environment, mergeRequest.SourceBranch, nid)
+	reportMrCheckout(cmd, module.Name, coreMajor, environment, *mergeRequest, origin)
 
 	return workflow.OK, nil
 }
 
-// mergeRequestSource is the project a merge request's branch lives on, and the
-// issue it was forked for.
+// mergeRequestOrigin is where a merge request's branch lives, and what it
+// takes to push back to it.
+type mergeRequestOrigin struct {
+	// Where is the project holding the branch, for the report.
+	Where string
+	// Remote carries the SSH URL to push to, under a name publish reuses.
+	Remote adapter.GitRemote
+	// FetchURL is the anonymous HTTPS URL, so taking over a merge request
+	// needs no key.
+	FetchURL string
+	// IssueNid is the issue the fork was made for, or 0 when the branch is on
+	// the project itself and no issue fork is involved.
+	IssueNid int
+}
+
+// mergeRequestSource is where a merge request's branch lives.
 //
-// Resolved through the fork map rather than by looking the source project up
-// by id, because the id alone does not say which issue it belongs to — and the
-// issue is what names the remote and what `publish` is given. One request for
-// every fork of the project, which is also how the dashboard pairs a Project
-// Update Bot merge request to its issue.
+// **Two shapes, both ordinary.** A branch on an issue fork is what drupal.org's
+// issue queue produces: the issue page mints the fork, and a contributor has no
+// write access to the project. Measured on pathauto, 100 of 100 open merge
+// requests came from a fork. A project whose issues live in GitLab has no such
+// step, so a maintainer pushes branches straight to the canonical repository —
+// on `helper`, four of five open merge requests are same-project. This refused
+// that case outright, which made it useless on exactly those projects;
+// generalising from one project was the mistake.
+//
+// The fork is resolved through the fork map rather than by looking the source
+// project up by id, because the id alone does not say which issue it belongs
+// to — and the issue is what names the remote and what `publish` is given.
 func mergeRequestSource(
 	client *gitlab.Client, project gitlab.Project, mergeRequest gitlab.MergeRequest,
-) (gitlab.Project, int, error) {
-	// Two conditions, two messages, because one of them would be a lie told in
-	// the other's words: a zero source project means GitLab did not say where
-	// the branch is, which is not the same as saying it is on the project.
+) (mergeRequestOrigin, error) {
+	// GitLab did not say where the branch is, which is not the same as saying
+	// it is on the project — so it is not guessed either way.
 	if mergeRequest.SourceProjectID == 0 {
-		return gitlab.Project{}, 0, fmt.Errorf(
-			"MR !%d does not say which project its branch %q is on, so upkeep cannot tell where a push "+
-				"would go.\nCheck it out with git directly, or read it with `upkeep check %d`",
+		return mergeRequestOrigin{}, fmt.Errorf(
+			"MR !%d does not say which project its branch %q is on, so upkeep cannot tell where a "+
+				"push would go.\nCheck it out with git directly, or read it with `upkeep check %d`",
 			mergeRequest.IID, mergeRequest.SourceBranch, mergeRequest.IID,
 		)
 	}
 
 	if mergeRequest.SourceProjectID == project.ID {
-		return gitlab.Project{}, 0, fmt.Errorf(
-			"MR !%d's branch %q is on %s itself rather than on an issue fork, and upkeep only knows "+
-				"how to push to a fork.\nCheck it out with git directly, or open the work as a new "+
-				"merge request from an issue fork with `upkeep start` and `upkeep publish`",
-			mergeRequest.IID, mergeRequest.SourceBranch, project.PathWithNamespace,
-		)
+		if project.SSHURL == "" {
+			return mergeRequestOrigin{}, fmt.Errorf(
+				"MR !%d's branch %q is on %s itself, but GitLab advertises no SSH URL for it, so "+
+					"there is nowhere to push back to",
+				mergeRequest.IID, mergeRequest.SourceBranch, project.PathWithNamespace,
+			)
+		}
+
+		return mergeRequestOrigin{
+			Where:    project.PathWithNamespace + " itself",
+			Remote:   adapter.CanonicalRemote(project.SSHURL),
+			FetchURL: adapter.HTTPSURL(project.PathWithNamespace),
+		}, nil
 	}
 
 	nids, failure := client.IssueForkNids(project)
 	if failure != nil {
-		return gitlab.Project{}, 0, fmt.Errorf(
+		return mergeRequestOrigin{}, fmt.Errorf(
 			"MR !%d's branch is on another project, and this project's issue forks could not be "+
 				"listed to say which: %s",
 			mergeRequest.IID, failure.Message,
@@ -184,36 +208,51 @@ func mergeRequestSource(
 
 	nid, paired := nids[mergeRequest.SourceProjectID]
 	if !paired {
-		return gitlab.Project{}, 0, fmt.Errorf(
-			"MR !%d's branch %q is on a project that is not an issue fork of %s, so there is no issue "+
-				"to publish it against",
+		return mergeRequestOrigin{}, fmt.Errorf(
+			"MR !%d's branch %q is on a project that is neither %s nor one of its issue forks, so "+
+				"upkeep cannot tell where a push would go",
 			mergeRequest.IID, mergeRequest.SourceBranch, project.PathWithNamespace,
 		)
 	}
 
 	fork, failure := client.IssueFork(project, nid)
 	if failure != nil {
-		return gitlab.Project{}, 0, fmt.Errorf(
+		return mergeRequestOrigin{}, fmt.Errorf(
 			"the issue fork for issue %d could not be read: %s", nid, failure.Message)
 	}
 	if fork == nil {
-		return gitlab.Project{}, 0, fmt.Errorf(
+		return mergeRequestOrigin{}, fmt.Errorf(
 			"issue %d has no fork, though MR !%d says its branch is there",
 			nid, mergeRequest.IID)
 	}
 
-	return *fork, nid, nil
+	return mergeRequestOrigin{
+		Where:    fork.PathWithNamespace,
+		Remote:   adapter.IssueForkRemote(nid, fork.SSHURL),
+		FetchURL: adapter.HTTPSURL(fork.PathWithNamespace),
+		IssueNid: nid,
+	}, nil
 }
 
 // reportMrCheckout says where the work is and how to send it back.
 //
-// The publish line is printed rather than described, because it carries the
-// issue node id and the branch name — two things the operator has no reason to
-// know and every reason to get wrong.
+// The line is printed rather than described because it carries values the
+// operator has no reason to know and every reason to get wrong: the issue node
+// id, the branch name, and the core — an environment is one per module *and*
+// core, and publish is the one command that works that out for itself.
+//
+// Which line depends on where the branch lives. An issue fork has an issue, so
+// `publish` can open or update a merge request against it. A branch on the
+// project itself has no issue to publish against, and the merge request is
+// already open on it — so pushing the branch is the whole job, and naming a
+// command that would refuse would be worse than naming git.
 func reportMrCheckout(
 	cmd *cobra.Command, moduleName, coreMajor string,
-	environment adapter.Environment, branch string, nid int,
+	environment adapter.Environment, mergeRequest gitlab.MergeRequest,
+	origin mergeRequestOrigin,
 ) {
+	branch := mergeRequest.SourceBranch
+
 	cli.Println(cmd, "")
 	cli.Printf(cmd, "  Environment  %s\n", environment.ProjectName)
 	cli.Printf(cmd, "  Branch       %s\n", branch)
@@ -221,13 +260,15 @@ func reportMrCheckout(
 	cli.Println(cmd, "")
 	cli.Printf(cmd, "  Check it as you work:  upkeep check %s --working-copy --version=%s\n",
 		moduleName, coreMajor)
-	// --version is not optional here, and leaving it off is a bug this line
-	// shipped with: an environment is per (module x core), and publish
-	// defaults the core to core_versions[0]. A module tracking 11 and then 12
-	// defaults to 11 — `modules:track` appends precisely so adding a core does
-	// not move that default — so the printed command went looking in the
-	// wrong environment and refused on a branch that was never there.
-	cli.Printf(cmd, "  Send the work back:    upkeep publish %s %d --branch %s --version=%s\n",
-		moduleName, nid, branch, coreMajor)
+
+	if origin.IssueNid != 0 {
+		cli.Printf(cmd, "  Send the work back:    upkeep publish %s %d --branch %s --version=%s\n",
+			moduleName, origin.IssueNid, branch, coreMajor)
+	} else {
+		cli.Printf(cmd, "  Send the work back:    git -C %s/module push %s %s\n",
+			environment.ProjectPath, origin.Remote.Name, branch)
+		cli.Printf(cmd, "                         MR !%d is already open on that branch, so the "+
+			"push updates it. There is no issue fork to publish against.\n", mergeRequest.IID)
+	}
 	cli.Println(cmd, "")
 }

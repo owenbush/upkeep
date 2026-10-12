@@ -225,3 +225,24 @@ func TestQuotingCannotStartASecondCommand(t *testing.T) {
 		}
 	}
 }
+
+// The canonical remote pushes to the project itself, under a name that is not
+// origin — origin stays HTTPS and anonymous so a fetch needs no key.
+func TestTheCanonicalRemotePushesToTheProject(t *testing.T) {
+	remote := CanonicalRemote("git@git.drupal.org:project/helper.git")
+
+	if remote.Name == "origin" {
+		t.Error("it re-points origin, which must stay anonymous and read-only")
+	}
+	if remote.Name == "" {
+		t.Error("the remote has no name")
+	}
+	if remote.URL != "git@git.drupal.org:project/helper.git" {
+		t.Errorf("url %q — it must be the one GitLab advertises, never assembled", remote.URL)
+	}
+	// One name, not one per project: a working copy belongs to exactly one
+	// canonical project, unlike an issue fork which is one of many.
+	if CanonicalRemote("git@git.drupal.org:project/pathauto.git").Name != remote.Name {
+		t.Error("the name varies by project, which it has no reason to")
+	}
+}

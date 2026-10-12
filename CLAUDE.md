@@ -197,7 +197,16 @@ and was learned the hard way — see `docs/go-port.md`.
   would be the tool declining its own purpose; `check` asks that, where a
   verdict is produced. Fetch is anonymous HTTPS and push is SSH, the same split
   as everywhere else, so taking over somebody's work needs no credential until
-  it goes back. An existing local branch is **resumed, never reset**. Two
+  it goes back. **Both shapes of source are handled**: an issue fork, which is
+  what drupal.org's queue produces, and the canonical project itself, which is
+  what a GitLab-issues project produces — on `helper` four of five open merge
+  requests are same-project, because the maintainer has write access and needs
+  no fork. This refused that outright on the pathauto measurement (100 of 100
+  from a fork), which made it useless on exactly those projects; generalising
+  from one project was the mistake. `adapter.CanonicalRemote` is the push
+  target there, named once rather than per project because a working copy
+  belongs to one canonical project, and the report says to push rather than
+  naming `publish`, which has no issue to publish against. An existing local branch is **resumed, never reset**. Two
   refusals, two messages, because one in the other's words would be a lie: a
   zero `SourceProjectID` means GitLab did not say where the branch is, which is
   not "it is on the project itself" — a distinction a surviving mutant found.
