@@ -213,9 +213,14 @@ func (q *IssueQueues) gitlab() gitlabQueue {
 	defer q.mu.Unlock()
 
 	if q.gitlabClient == nil {
-		q.gitlabClient = q.gitlabFor(func(note string) {
-			q.notes = append(q.notes, note)
-		})
+		// The client's own diagnostics are deliberately dropped here rather
+		// than collected as shortfalls. The one it issues is the cost of
+		// reading anonymously, which the ordinary ReadingClient path already
+		// announces once for the merge requests this same command reads — so
+		// collecting it printed that paragraph twice and filed it under
+		// "requests that did not answer", which it is not. Shortfalls that
+		// *are* shortfalls are noted by the read that failed, below.
+		q.gitlabClient = q.gitlabFor(func(string) {})
 	}
 
 	return q.gitlabClient

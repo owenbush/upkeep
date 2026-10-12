@@ -455,3 +455,50 @@ func TestTheScanLineDoesNotClaimAQueue(t *testing.T) {
 		t.Errorf("the scan line claimed drupal.org while reading GitLab: %q", stderr)
 	}
 }
+
+// The GitLab client's own diagnostics are not issue-scan shortfalls.
+//
+// The one it issues is the cost of reading anonymously, which the ordinary
+// reading path already announces once for the merge requests the same command
+// reads. Collecting it here printed that paragraph twice and filed it under
+// "requests that did not answer", which it is not. Caught running against the
+// real `helper`, not by the suite, which is why it is pinned.
+func TestTheGitlabClientsOwnNoticeIsNotAScanShortfall(t *testing.T) {
+	queues := &IssueQueues{
+		drupalClient: &fakeDrupalQueue{movedQueue: map[string]bool{"helper": true}},
+		gitlabFor: func(report gitlab.Report) gitlabQueue {
+			report("No GitLab token configured, so this is reading anonymously ...")
+
+			return &fakeGitlabQueue{}
+		},
+		read: map[string]Queue{},
+	}
+
+	queues.ProjectIssues("helper", drupal.OpenStatuses())
+
+	for _, warning := range queues.Warnings() {
+		if strings.Contains(warning, "token configured") {
+			t.Errorf("the anonymous-read notice was reported as a shortfall: %q", warning)
+		}
+	}
+}
+
+// A read that genuinely falls short still reports, so the fix above did not
+// silence the thing the notes exist for.
+func TestARealShortfallStillReportsAfterThat(t *testing.T) {
+	queues := &IssueQueues{
+		drupalClient: &fakeDrupalQueue{movedQueue: map[string]bool{"helper": true}},
+		gitlabFor: func(report gitlab.Report) gitlabQueue {
+			report("an ignored notice")
+
+			return &fakeGitlabQueue{listFails: &gitlab.Failure{Message: "slow down"}}
+		},
+		read: map[string]Queue{},
+	}
+
+	queues.ProjectIssues("helper", drupal.OpenStatuses())
+
+	if warnings := strings.Join(queues.Warnings(), "\n"); !strings.Contains(warnings, "slow down") {
+		t.Errorf("a real shortfall went unreported: %q", warnings)
+	}
+}
