@@ -308,7 +308,10 @@ incantation.
 Both happen on the Linux runner. GoReleaser signs with `quill`, so no macOS
 runner is involved.
 
-It needs four more secrets, all scoped and revocable:
+It needs five more secrets, all scoped and revocable. They go on **this**
+repository (Settings → Secrets and variables → Actions → repository
+secrets); the tap repository needs none of its own, being the target of the
+PAT rather than the thing that holds it:
 
 | secret | what |
 | --- | --- |
@@ -317,6 +320,10 @@ It needs four more secrets, all scoped and revocable:
 | `MACOS_NOTARY_ISSUER_ID` | App Store Connect API issuer id |
 | `MACOS_NOTARY_KEY_ID` | that key's id |
 | `MACOS_NOTARY_KEY` | the .p8 private key, base64'd |
+
+Both base64 values must be **one line**. GoReleaser takes either a path or
+base64'd contents for these two, and Go's base64 decoder rejects embedded
+newlines — so `base64 -i x.p12 | tr -d '\n'`, not a wrapped encode.
 
 An App Store Connect API key rather than an app-specific password: it is
 scoped to notarization, revocable on its own, and does not carry the Apple ID.
