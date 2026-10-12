@@ -413,12 +413,12 @@ func runPublish(
 		return 0, fmt.Errorf("%s", cockpit.ProjectFailure(modules, module, failure.Message))
 	}
 
-	cli.Progressf(cmd, "Issue fork")
-	fork, err := requireIssueFork(client, *project, issue.Nid, module.Name)
+	cli.Progressf(cmd, "Destination")
+	route, err := publishRouteFor(client, issues, *project, issue, module.Name)
 	if err != nil {
 		return 0, err
 	}
-	cli.Progressf(cmd, "Pushing to %s", fork.PathWithNamespace)
+	cli.Progressf(cmd, "Pushing to %s", route.Where)
 
 	engine, err := cli.Engine(cmd, engines, where)
 	if err != nil {
@@ -438,15 +438,14 @@ func runPublish(
 		return 0, err
 	}
 
-	sha, err := engine.PushWork(
-		environment, branch, adapter.IssueForkRemote(issue.Nid, fork.SSHURL))
+	sha, err := engine.PushWork(environment, branch, route.Remote)
 	if err != nil {
 		return 0, err
 	}
 	cli.Progressf(cmd, "Pushed %s at %s.", branch.Name, shortSHA(sha))
 
 	cli.Progressf(cmd, "Merge request")
-	existing, failure := client.MergeRequestForBranch(*project, branch.Name, fork)
+	existing, failure := client.MergeRequestForBranch(*project, branch.Name, &route.Source)
 	if failure != nil {
 		return 0, fmt.Errorf(
 			"the branch was pushed, but its merge requests could not be listed: %s", failure.Message)
@@ -465,13 +464,14 @@ func runPublish(
 		return 0, err
 	}
 
-	// Posted to the *fork*, which holds the branch, naming the canonical
-	// project as the destination. Backwards-looking until you remember that
-	// the branch is the subject of the request.
+	// Posted to the project that *holds the branch*, naming the canonical one
+	// as the destination. Backwards-looking until you remember that the branch
+	// is the subject of the request — and for a same-project branch the two
+	// are one, which CreateMergeRequest handles by omitting target_project_id.
 	created, failure := client.CreateMergeRequest(
-		*fork, branch.Name, target,
+		route.Source, branch.Name, target,
 		mergeRequestTitle(cmd, issue),
-		fmt.Sprintf("Fixes %s\n\nOpened with `upkeep publish`.", issue.URL),
+		route.Description,
 		project,
 	)
 	if failure != nil {
@@ -522,54 +522,153 @@ func publishTarget(
 			"project, like 2.0.x — not a core version)", moduleName, nid)
 }
 
-// requireIssueFork is the issue fork, or a refusal explaining how to make one.
+// publishRoute is where a published branch goes, and what the merge request
+// opened from it says.
+type publishRoute struct {
+	// Where names the destination for the progress line.
+	Where string
+	// Remote is where the branch is pushed.
+	Remote adapter.GitRemote
+	// Source is the project that will hold the branch. A merge-request lookup
+	// narrows by it, and the request is opened from it.
+	Source gitlab.Project
+	// Description is the merge request body, which is also how the merge
+	// request declares the issue it fixes.
+	Description string
+}
+
+// publishRouteFor decides where the work goes back to.
 //
-// upkeep does not create it. The fork is minted by drupal.org's own issue
-// page, which is also what associates it with the issue — one conjured
-// straight from the GitLab API would be a repository nothing links to, which
-// is harder to clean up than the click was to make.
+// **The issue fork wins wherever there is one**, which keeps every drupal.org
+// project and every *migrated* issue behaving exactly as before: `helper` has
+// 85 issue forks, all for issues that predate its migration, and a merge
+// request for one of those still belongs on its fork.
 //
-// Checked *before* anything is pushed: discovering it afterwards would leave a
-// branch on a remote the operator never chose.
-func requireIssueFork(
-	client *gitlab.Client, project gitlab.Project, nid int, moduleName string,
-) (*gitlab.Project, error) {
-	fork, failure := client.IssueFork(project, nid)
+// The canonical project is the fall back, and only for a project whose issues
+// are on GitLab. There the refusal it replaces could never be satisfied: a
+// GitLab-native issue has no drupal.org issue page, so nothing can mint a
+// fork for it, and the old message sent people to `drupal.org/node/<nid>` to
+// click a button that is not there. Worse, GitLab continues its iid sequence
+// from the migrated node ids, so that URL resolves to an unrelated node —
+// measured on helper issue 3619173, where drupal.org node 3619173 is a German
+// translation correction. Sending somebody to the wrong page confidently is
+// worse than not answering.
+//
+// A project that has *not* moved keeps the old refusal, because there the
+// fork is genuinely missing and clicking the button is genuinely the fix.
+func publishRouteFor(
+	client *gitlab.Client,
+	issues IssueClients,
+	project gitlab.Project,
+	issue drupal.Issue,
+	moduleName string,
+) (publishRoute, error) {
+	fork, failure := client.IssueFork(project, issue.Nid)
 	if failure != nil {
-		return nil, fmt.Errorf("the issue fork for #%d could not be read: %s", nid, failure.Message)
+		return publishRoute{}, fmt.Errorf(
+			"the issue fork for #%d could not be read: %s", issue.Nid, failure.Message)
 	}
 
-	if fork == nil {
-		return nil, fmt.Errorf(
-			"issue #%d has no issue fork yet, and that is where the branch has to go — on "+
-				"drupal.org a merge request comes from a fork at issue/<module>-<nid>, never "+
-				"from the project itself.\n\n"+
-				"  1. Open %s\n"+
-				"  2. Click \"Create issue fork\" (under the issue summary)\n"+
-				"  3. Re-run: upkeep publish %s %d\n\n"+
-				"upkeep does not create it: drupal.org mints the fork *and* links it to the "+
-				"issue, and one made straight from the GitLab API would be a repository "+
-				"nothing points at.",
-			nid, drupal.IssueURL(nid), moduleName, nid)
+	if fork != nil {
+		if err := assertPushable(*fork, fork.PathWithNamespace, issue.Nid); err != nil {
+			return publishRoute{}, err
+		}
+
+		return publishRoute{
+			Where:  fork.PathWithNamespace,
+			Remote: adapter.IssueForkRemote(issue.Nid, fork.SSHURL),
+			Source: *fork,
+			// The issue is a drupal.org node, so its URL is what names it.
+			Description: fmt.Sprintf(
+				"Fixes %s\n\nOpened with `upkeep publish`.", issue.URL),
+		}, nil
 	}
 
-	// Asked before the push, not diagnosed after it. Unknown is unknown — an
-	// unauthenticated read omits the permissions entirely — and unknown
-	// proceeds, because refusing on an absent field would block pushes that
-	// work.
-	if fork.CanPush() == gitlab.No {
-		return nil, fmt.Errorf(
+	if !readFromGitLab(issues.Issues(), moduleName) {
+		return publishRoute{}, missingIssueForkError(issue.Nid, moduleName)
+	}
+
+	if err := assertPushable(project, project.PathWithNamespace, issue.Nid); err != nil {
+		return publishRoute{}, err
+	}
+
+	return publishRoute{
+		Where:  project.PathWithNamespace,
+		Remote: adapter.CanonicalRemote(project.SSHURL),
+		Source: project,
+		// `Closes #N`, not the issue URL. Two reasons, and both matter: it is
+		// GitLab's own closing vocabulary, so GitLab links the merge request
+		// to the issue and closes it on merge; and it is what upkeep's *own*
+		// pairing reads — drupal.ExtractOwningIssue matches `Closes #N` and a
+		// drupal.org URL, and a work-items URL matches neither, so an MR
+		// described by its URL would have paired with nothing on the very
+		// dashboard that opened it.
+		Description: fmt.Sprintf(
+			"Closes #%d\n\nOpened with `upkeep publish`.", issue.Nid),
+	}, nil
+}
+
+// readFromGitLab reports whether this project's issues came from GitLab.
+//
+// Asked of the reader that already answered, after the issue has been read, so
+// it is a record of what happened rather than a second guess at it. A reader
+// that cannot say is treated as drupal.org, which is the behaviour every
+// release so far had.
+func readFromGitLab(source IssueSource, machineName string) bool {
+	reader, says := source.(QueueReader)
+	if !says {
+		return false
+	}
+
+	queue, decided := reader.QueueFor(machineName)
+
+	return decided && queue == QueueGitLab
+}
+
+// assertPushable refuses a destination the branch cannot actually go to.
+//
+// Asked before the push, not diagnosed after it: discovering either of these
+// afterwards would leave a branch on a remote the operator never chose.
+//
+// Push access first. Unknown is unknown — an unauthenticated read omits the
+// permissions entirely — and unknown proceeds, because refusing on an absent
+// field would block pushes that work.
+//
+// Then an SSH URL, which is never assembled: git.drupalcode.org serves the web
+// and the API while advertising SSH on git.drupal.org, so a URL built by
+// swapping the scheme points at a host that does not answer. Its absence is an
+// anomalous shape for either destination — drupal.org advertises one for every
+// project and every fork — so both get the same words rather than one of them
+// getting advice invented for a case nobody has seen.
+func assertPushable(project gitlab.Project, where string, nid int) error {
+	if project.CanPush() == gitlab.No {
+		return fmt.Errorf(
 			"you do not have push access to %s, so the branch cannot go there yet.\n\n%s",
-			fork.PathWithNamespace, adapter.PushAuthorizationHelp(nid))
+			where, adapter.PushAuthorizationHelp(nid))
+	}
+	if project.SSHURL == "" {
+		return fmt.Errorf(
+			"%s reports no SSH URL, so upkeep does not know where to push. "+
+				"Report this — it is a shape this tool has not seen.", where)
 	}
 
-	if fork.SSHURL == "" {
-		return nil, fmt.Errorf(
-			"the issue fork %s reports no SSH URL, so upkeep does not know where to push. "+
-				"Report this — it is a shape this tool has not seen.", fork.PathWithNamespace)
-	}
+	return nil
+}
 
-	return fork, nil
+// missingIssueForkError is the refusal for a drupal.org project whose issue
+// has no fork yet.
+func missingIssueForkError(nid int, moduleName string) error {
+	return fmt.Errorf(
+		"issue #%d has no issue fork yet, and that is where the branch has to go — on "+
+			"drupal.org a merge request comes from a fork at issue/<module>-<nid>, never "+
+			"from the project itself.\n\n"+
+			"  1. Open %s\n"+
+			"  2. Click \"Create issue fork\" (under the issue summary)\n"+
+			"  3. Re-run: upkeep publish %s %d\n\n"+
+			"upkeep does not create it: drupal.org mints the fork *and* links it to the "+
+			"issue, and one made straight from the GitLab API would be a repository "+
+			"nothing points at.",
+		nid, drupal.IssueURL(nid), moduleName, nid)
 }
 
 // mergeRequestTitle is the drupal.org convention, so the merge request is

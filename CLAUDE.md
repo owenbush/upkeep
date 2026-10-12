@@ -316,6 +316,35 @@ and was learned the hard way — see `docs/go-port.md`.
   like the issue status and the credit; publish refuses before pushing
   anything. Origin is never pushed to or altered, so fetch stays anonymous and
   read-only work needs no key.
+- **Publishing follows the fork where there is one, and the project where
+  there cannot be.** `publishRouteFor` resolves the destination: the issue fork
+  wins wherever it exists, so every drupal.org project and every *migrated*
+  issue behaves exactly as before — helper has 85 issue forks, all for issues
+  predating its migration. The canonical project is the fall back, and **only**
+  for a project whose issues are on GitLab, because there the old refusal could
+  never be satisfied: a GitLab-native issue has no drupal.org issue page, so
+  nothing can mint a fork for it. Worse, the refusal sent people to
+  `drupal.org/node/<nid>` to click a button that is not there, and the iid
+  sequence continues from the migrated node ids — so that URL resolves to an
+  unrelated node. Measured on the issue that prompted this: helper issue
+  3619173 is "Add timestamp date-only field widget" while drupal.org node
+  3619173 is a *different project's issue* — title "Mercury Editor", type
+  `project_issue`, status Closed (fixed), in the German translation project.
+  That is the sharp version of the hazard: api-d7 does not 404, it returns a
+  well-formed issue of the right node type with a real status, so nothing at
+  the call site distinguishes it from a correct answer. Observed in the wild,
+  as `start helper 3619173` printing `Issue #3619173 "Mercury Editor"
+  (closed)`. Confidently wrong is worse than not answering. A project that has not moved keeps the handoff,
+  because there the fork is genuinely missing and the click genuinely fixes it.
+  The canonical description is **`Closes #N`, not the issue URL**, for two
+  reasons that both bite: it is GitLab's closing vocabulary, so GitLab links
+  and closes the issue on merge; and it is what `ExtractOwningIssue` reads — a
+  work-items URL matches neither of the URL patterns, so a merge request
+  described by its URL would have paired with nothing on the very dashboard
+  that opened it. `assertPushable` is one guard for both destinations (push
+  access, then an SSH URL that is never assembled), asked before the push
+  because discovering either afterwards leaves a branch on a remote the
+  operator never chose.
 - **Two refusals, opposite answers.** `adapter.PushAuthorizationHelp` tells
   *authentication* (GitLab does not know you — SSH key) from *authorization*
   (it knows you and says no). On drupal.org the second is the ordinary state of

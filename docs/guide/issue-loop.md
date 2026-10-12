@@ -109,10 +109,61 @@ can return it however it filters — and today that is 1 issue of 74, while it i
 
 There is a sharper edge underneath. GitLab continues its issue numbering from
 the migrated node ids, so a post-migration issue's number is also some
-unrelated drupal.org node's id — on `helper`, issue 3619172 is "Drush command
-to run a module hook" while drupal.org node 3619172 is an unrelated change
-notice. Reading the issue from the queue that owns the number is what keeps the
-two attached.
+unrelated drupal.org node's id.
+
+**It does not fail loudly.** Reading `helper` issue 3619173 from drupal.org
+returns this:
+
+```
+$ upkeep start helper 3619173
+Resolving issue #3619173 via drupal.org ...
+Issue #3619173 "Mercury Editor" (closed)
+```
+
+That is a real, well-formed issue — node type `project_issue`, status Closed
+(fixed) — belonging to the German translation project. Nothing about it looks
+like an error, which is exactly what makes it dangerous: it is not a 404 you
+would notice, it is a plausible answer about somebody else's work. The actual
+issue is "Add timestamp date-only field widget". (If you see the `via
+drupal.org` line above, you are running a build from before this, which is the
+quickest way to tell.)
+
+Reading the issue from the queue that owns the number is what keeps the number
+attached to the thing it names.
+
+### Publishing an issue that only exists in GitLab
+
+`publish` sends the branch to an **issue fork** wherever there is one, which is
+every drupal.org project and every issue that predates a migration — `helper`
+has 85 of them.
+
+A GitLab-native issue has none, and never can: issue forks are minted by
+drupal.org's issue page, and there is no drupal.org issue to mint from. So for
+a project whose queue has moved, `publish` pushes to the **canonical project**
+and opens the merge request there:
+
+```bash
+upkeep publish helper 3619173
+```
+
+```
+Destination
+Pushing to project/helper
+...
+Opened !104 against 2.x.
+```
+
+This needs push access to the project itself. If you do not have it, `publish`
+says so before pushing anything rather than after.
+
+The merge request is described as `Closes #3619173` — GitLab's own closing
+vocabulary, so GitLab links it to the issue and closes it on merge, and so
+upkeep's own pairing finds it again on the dashboard.
+
+A project that has **not** moved still gets the browser handoff for a missing
+fork, because there the fork is genuinely missing and clicking "Create issue
+fork" is genuinely the fix. The same missing fork means opposite things
+depending on where the project keeps its issues.
 
 ### When drupal.org will not say
 

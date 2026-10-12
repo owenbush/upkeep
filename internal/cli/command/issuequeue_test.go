@@ -502,3 +502,36 @@ func TestARealShortfallStillReportsAfterThat(t *testing.T) {
 		t.Errorf("a real shortfall went unreported: %q", warnings)
 	}
 }
+
+// A reader that has not decided yet is read as drupal.org, not as GitLab.
+//
+// Unreachable through `publish`, which asks only after requireIssue has
+// recorded a queue — so it is pinned here rather than through a command. It
+// guards the direction a wrong answer would break: routing to the canonical
+// project on a reader that has said nothing would push a drupal.org project's
+// branch somewhere it does not belong.
+func TestAnUndecidedReaderIsNotReadAsGitlab(t *testing.T) {
+	queues := queuesFor(
+		&fakeDrupalQueue{movedQueue: map[string]bool{"helper": true}},
+		&fakeGitlabQueue{},
+	)
+
+	// Nothing read yet, so nothing decided — even though helper *has* moved.
+	if readFromGitLab(queues.Issues(), "helper") {
+		t.Error("an undecided reader was read as GitLab")
+	}
+
+	queues.ProjectIssues("helper", drupal.OpenStatuses())
+
+	if !readFromGitLab(queues.Issues(), "helper") {
+		t.Error("a decided GitLab reader was not read as GitLab")
+	}
+}
+
+// And a source that cannot say at all is read as drupal.org, which is the
+// behaviour every release so far had.
+func TestASourceThatCannotSayIsReadAsDrupalOrg(t *testing.T) {
+	if readFromGitLab(noIssues{}, "helper") {
+		t.Error("a source with no opinion was read as GitLab")
+	}
+}
