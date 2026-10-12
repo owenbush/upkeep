@@ -339,7 +339,9 @@ func ReportScanWarnings(cmd *cobra.Command, warnings []string) {
 			fmt.Sprintf("... and %d more.", len(warnings)-5))
 	}
 
-	Warnf(cmd, "%d drupal.org request(s) did not answer.", len(warnings))
+	// Not "drupal.org request(s)": a scan reads whichever issue queue the
+	// project uses, so a shortfall here can be either side's.
+	Warnf(cmd, "%d issue-scan request(s) did not answer.", len(warnings))
 	for _, warning := range shown {
 		fmt.Fprintln(cmd.ErrOrStderr(), "  - "+warning)
 	}

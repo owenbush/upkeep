@@ -82,7 +82,7 @@ func runIssue(
 	issueURL := drupal.IssueURL(nid)
 
 	cli.Printf(cmd, "Issue #%d\n", nid)
-	if issue, readable := issues.Issues().Issue(nid); readable {
+	if issue, readable := issues.Issues().Issue(module.Name, nid); readable {
 		describeIssue(cmd, issue)
 		issueURL = issue.URL
 	} else {
@@ -183,7 +183,7 @@ func runStart(
 		return 0, err
 	}
 
-	issue, err := requireIssue(cmd, issues, rawNid)
+	issue, err := requireIssue(cmd, issues, module.Name, rawNid)
 	if err != nil {
 		return 0, err
 	}
@@ -229,19 +229,19 @@ func runStart(
 
 // requireIssue reads an issue, refusing a node id that cannot be one.
 func requireIssue(
-	cmd *cobra.Command, issues IssueClients, rawNid string,
+	cmd *cobra.Command, issues IssueClients, machineName, rawNid string,
 ) (drupal.Issue, error) {
 	nid, err := issueNid(rawNid)
 	if err != nil {
 		return drupal.Issue{}, err
 	}
 
-	cli.Progressf(cmd, "Resolving issue #%d via drupal.org ...", nid)
-	issue, found := issues.Issues().Issue(nid)
+	cli.Progressf(cmd, "Resolving issue #%d ...", nid)
+	issue, found := issues.Issues().Issue(machineName, nid)
 	if !found {
 		return drupal.Issue{}, fmt.Errorf(
-			"drupal.org issue #%d could not be read. Check the node id "+
-				"(it is the number in the issue URL)", nid,
+			"issue #%d could not be read for %s. Check the issue "+
+				"number (it is the number in the issue URL)", nid, machineName,
 		)
 	}
 
@@ -400,7 +400,7 @@ func runPublish(
 		return 0, err
 	}
 
-	issue, err := requireIssue(cmd, issues, rawNid)
+	issue, err := requireIssue(cmd, issues, module.Name, rawNid)
 	if err != nil {
 		return 0, err
 	}

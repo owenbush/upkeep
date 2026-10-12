@@ -87,6 +87,28 @@ func IssueForkRemote(issueNid int, sshURL string) GitRemote {
 	return GitRemote{Name: "issue-" + strconv.Itoa(issueNid), URL: sshURL}
 }
 
+// CanonicalRemote is the remote for pushing to the project itself.
+//
+// Needed because a merge request's branch does not always live on an issue
+// fork. Measured on pathauto, 100 of 100 open merge requests came from a fork
+// — which is what drupal.org's issue queue produces, since the issue page
+// mints the fork and the contributor has no write access to the project. A
+// project whose issues live in GitLab instead has no such step, so a
+// maintainer pushes branches straight to the canonical repository: on `helper`,
+// four of five open merge requests are same-project. Generalising from one
+// project was the mistake; both shapes are ordinary.
+//
+// Named rather than reusing `origin`, which stays exactly as cloned: HTTPS and
+// anonymous, so fetching a merge request still needs no key. This carries the
+// SSH URL GitLab advertises and exists only to push.
+//
+// One name, not one per project, because a working copy belongs to exactly one
+// canonical project — unlike an issue fork, which is one of many and so has to
+// be named for its issue.
+func CanonicalRemote(sshURL string) GitRemote {
+	return GitRemote{Name: "canonical", URL: sshURL}
+}
+
 // Why a push was refused, and what to do about it.
 //
 // There are two refusals and they need opposite answers, which is the whole

@@ -73,10 +73,12 @@ func main() {
 // Built from the same NewRoot the binary calls, with seams that do nothing:
 // the reference describes the surface, and nothing here runs a command.
 func tree() *cobra.Command {
+	clients := cli.NewResolvedClients(func(string) {})
+
 	return command.NewRoot(command.Surface{
 		Engines: adapter.NewDdevContribFactory(nil),
-		Clients: cli.NewResolvedClients(func(string) {}),
-		Issues:  command.NewDrupalClients(),
+		Clients: clients,
+		Issues:  command.NewIssueQueues(clients.ReadOnly),
 		Prompts: func(cmd *cobra.Command) cli.Prompt { return cli.NewTerminalPrompt(cmd) },
 		Volumes: nil,
 		Sizer:   nil,

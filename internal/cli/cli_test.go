@@ -204,7 +204,7 @@ func TestScanWarningsStateTheShortfallAndCapTheList(t *testing.T) {
 	ReportScanWarnings(cmd, many)
 
 	report := errOut.String()
-	if !strings.Contains(report, "9 drupal.org request(s) did not answer") {
+	if !strings.Contains(report, "9 issue-scan request(s) did not answer") {
 		t.Errorf("the count is missing:\n%s", report)
 	}
 	if !strings.Contains(report, "... and 4 more.") {

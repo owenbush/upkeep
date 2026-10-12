@@ -78,8 +78,13 @@ func runIssues(
 
 	source := issues.Issues()
 
-	cli.Progressf(cmd, "Reading %s issues from drupal.org ...", module.Name)
+	// Deliberately not "from drupal.org", which is what this said and was a
+	// claim rather than a report: a project whose queue has moved is read from
+	// GitLab, and the line is printed before anything knows which. Where it
+	// was read is said afterwards, by the reader that decided.
+	cli.Progressf(cmd, "Reading %s issues ...", module.Name)
 	found := source.ProjectIssues(module.Name, selectedStatuses(cmd))
+	reportIssueQueue(cmd, source, module.Name)
 
 	// Merge requests come from the dashboard cache when there is one, and from
 	// a live read when there is not.

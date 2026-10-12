@@ -28,13 +28,13 @@ wrong for working:
   anywhere.
 
 What you want is the merge request's own **source branch**, which on
-drupal.org lives on an issue fork rather than on the project. `mr:checkout`
+drupal.org lives on an issue fork rather than on the project. `checkout`
 gets it.
 
 ## The loop
 
 ```bash
-upkeep mr:checkout jumplinks 1 --version=12
+upkeep checkout jumplinks 1 --version=12
 ```
 
 That resolves which fork the branch is on, adds the remote that pushes back to
@@ -101,13 +101,13 @@ upkeep check jumplinks 1 --version=12
 This works because the core check reads the merge request's **own** tree, not
 the branch it targets — so the `^12` you just added is what it sees.
 
-## Why `mr:checkout` does not check the core
+## Why `checkout` does not check the core
 
 Every other merge-request command refuses a core the code does not declare,
 because gathering evidence against an unsupported core produces failures that
 say nothing about the contribution.
 
-`mr:checkout` deliberately does not ask. The reason to take over a merge
+`checkout` deliberately does not ask. The reason to take over a merge
 request is frequently that it does *not* support the core yet — that is the
 work. Refusing to check out the branch because the branch lacks what you are
 about to add would be the tool declining its own purpose. `check` asks the
@@ -120,7 +120,7 @@ the site rather than installed as a composer package, so its own
 
 ## Nothing here resets anything
 
-`mr:checkout` is safe to re-run. An existing local branch of that name is
+`checkout` is safe to re-run. An existing local branch of that name is
 checked out **as it stands** — it may hold commits that exist nowhere else, and
 discarding those is precisely what the managed `mr-<iid>` branch does and this
 command does not. If you want the fork's version of it, move your own commits
@@ -151,13 +151,27 @@ Two push refusals need opposite answers, and upkeep tells them apart:
   issue page. If the fork is somebody else's and you are not a maintainer, the
   access is theirs to give.
 
-## When the branch is not on a fork
+## When the branch is on the project itself
 
-`mr:checkout` only handles a merge request whose branch is on an issue fork,
-which measured on pathauto is 100 of 100 open merge requests. If the branch is
-on the project itself, or the merge request does not say where it is, the
-command refuses and says so rather than guessing — check it out with git, or
-start the work as your own contribution:
+Both shapes work. A branch on an **issue fork** is what drupal.org's issue
+queue produces — the issue page mints the fork, and a contributor has no write
+access to the project. Measured on pathauto, 100 of 100 open merge requests
+came from a fork.
+
+A project whose issues live in **GitLab** has no such step, so a maintainer
+pushes branches straight to the canonical repository. On `helper`, four of five
+open merge requests are same-project. `checkout` handles those too: it adds
+a `canonical` remote carrying the SSH URL GitLab advertises, and the report
+tells you to push rather than naming `publish` — there is no issue fork to
+publish against, and the merge request is already open on the branch, so the
+push updates it.
+
+`origin` is untouched in both cases: HTTPS and anonymous, so the fetch needs no
+key.
+
+If the merge request does not say where its branch is at all, the command
+refuses rather than guessing — check it out with git, or start the work as your
+own contribution:
 
 ```bash
 upkeep start <module> <issue>      # your own branch, cut from a fresh base

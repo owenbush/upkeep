@@ -22,6 +22,10 @@ type fakeAPI struct {
 	fileDelay time.Duration
 	fileFails map[int]int // fid -> status to answer with
 	throttle  map[string]int
+	// issueQueue is what the project node says about
+	// field_project_has_issue_queue: nil omits the field, which is what a
+	// payload that cannot answer looks like.
+	issueQueue *bool
 }
 
 func (f *fakeAPI) serve(t *testing.T) *Client {
@@ -44,7 +48,11 @@ func (f *fakeAPI) serve(t *testing.T) *Client {
 		case strings.HasPrefix(r.URL.Path, "/api-d7/file/"):
 			f.serveFile(w, r)
 		case r.URL.Query().Get("field_project_machine_name") != "":
-			fmt.Fprint(w, `{"list":[{"nid":3060,"type":"project_module"}]}`)
+			queue := ""
+			if f.issueQueue != nil {
+				queue = fmt.Sprintf(`,"field_project_has_issue_queue":%t`, *f.issueQueue)
+			}
+			fmt.Fprintf(w, `{"list":[{"nid":3060,"type":"project_module"%s}]}`, queue)
 		case r.URL.Query().Get("type") == "project_issue":
 			f.serveListing(w, r)
 		default:

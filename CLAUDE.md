@@ -181,7 +181,7 @@ and was learned the hard way — see `docs/go-port.md`.
   environment is skipped rather than reported as detached, which a surviving
   mutant caught: both carry no branch name. An explicit `--version` still wins
   outright, having already been validated against the tracked cores.
-- **`mr:checkout` is the way in to *changing* a merge request**, as against
+- **`checkout` is the way in to *changing* a merge request**, as against
   reading one. `check` and `review` fetch the merge ref onto the managed
   `mr-<iid>` branch — force-updated on every apply, refused by `publish` — so a
   commit there is a commit waiting to be destroyed, and the merge tree is a
@@ -197,10 +197,28 @@ and was learned the hard way — see `docs/go-port.md`.
   would be the tool declining its own purpose; `check` asks that, where a
   verdict is produced. Fetch is anonymous HTTPS and push is SSH, the same split
   as everywhere else, so taking over somebody's work needs no credential until
-  it goes back. An existing local branch is **resumed, never reset**. Two
+  it goes back. **Both shapes of source are handled**: an issue fork, which is
+  what drupal.org's queue produces, and the canonical project itself, which is
+  what a GitLab-issues project produces — on `helper` four of five open merge
+  requests are same-project, because the maintainer has write access and needs
+  no fork. This refused that outright on the pathauto measurement (100 of 100
+  from a fork), which made it useless on exactly those projects; generalising
+  from one project was the mistake. `adapter.CanonicalRemote` is the push
+  target there, named once rather than per project because a working copy
+  belongs to one canonical project, and the report says to push rather than
+  naming `publish`, which has no issue to publish against. An existing local branch is **resumed, never reset**. Two
   refusals, two messages, because one in the other's words would be a lie: a
   zero `SourceProjectID` means GitLab did not say where the branch is, which is
   not "it is on the project itself" — a distinction a surviving mutant found.
+  **Named `checkout`, not `mr:checkout`.** It was namespaced first and that
+  was the wrong shape: it was the only namespaced command in an otherwise
+  unnamespaced merge-request family (`check`, `review`, `merge`, `publish`),
+  and a namespace of one says nothing. `checkout` is the verb everybody
+  already has for "put this code in my working copy", which is the job. No
+  alias is carried, because the old name never shipped — there were no tags
+  and no releases when it was renamed. It does not collide with `check`:
+  cobra matches a name exactly unless `EnablePrefixMatching` is set, and
+  nothing here sets it.
   `docs/guide/taking-over-an-mr.md` is the worked example.
 - **The module is linked in, never installed as a package.** It used to be a
   Composer path repository plus `composer require drupal/<module>:<branch>-dev`,
@@ -506,6 +524,81 @@ and was learned the hard way — see `docs/go-port.md`.
   which would collide with a row's file count) and `CI FAILED` (not `BLOCKED`,
   which is what that verdict is actually set by). There is no `REVIEW` column:
   it counted everything neither ready nor CI-failed, i.e. every row.
+- **Which issue queue a project uses is the project's property, and
+  drupal.org states it.** Issue queues are migrating into GitLab one project at
+  a time, so `IssueQueues` (`internal/cli/command/issuequeue.go`) routes per
+  project behind the existing `IssueClients`/`IssueSource` seam and every
+  consumer — dashboard, gate, patch surface, `issues`, `start`, `publish` — is
+  unchanged. The GitLab reader returns **`drupal.Issue`**, not a parallel type,
+  because each of them is about an issue rather than about where it was read
+  from; a second shape would have been a second code path through all of them.
+  **Detection is `field_project_has_issue_queue` on the project node** —
+  drupal.org's own statement, false for `helper` and true for pathauto, token
+  and jumplinks. It costs no request (`ProjectNid` already reads that node, so
+  the nid and the flag share one fetch and one cache entry) and it answers for
+  a migrated project with *nothing open*, which the first design — counting
+  GitLab issues — could not. `issues_enabled` and `open_issues_count` were the
+  obvious signals and are **absent from an anonymous project read**, so they
+  are unavailable to a tool whose reads need no credential. **Not knowing is
+  not "moved"**: an unreadable project node reads drupal.org, which is what
+  every release so far did, because guessing wrong scans an empty queue and
+  reports a module as having no open issues at all. A migrated project whose
+  GitLab side fails is a **reported shortfall, never a fall back** to the queue
+  drupal.org has just said is not the live one — that would list the migrated
+  issues as though they were all there were.
+  **The justification is not the one it looks like, and the first version of
+  this comment had it wrong.** api-d7 is *not* stale for a migrated project:
+  measured on `helper`, api-d7 lists 73 open issues against GitLab's 74 and the
+  statuses agree exactly (needs review 13, needs work 3, RTBC 1, to be ported
+  1), every migrated issue kept its node, and `drupal.org/node/<nid>` 301s to
+  the work item — which is why the six `drupal.IssueURL(nid)` call sites still
+  produce working links. What justifies reading GitLab is the **one issue in
+  that difference**: iid 3619172 was opened after the migration and has no
+  drupal.org node at all, so no api-d7 query can return it whatever it filters
+  on. That is 1 of 74 today and *every future issue* on that project. Worse
+  than the gap is the collision — GitLab continues its iid sequence from the
+  migrated nids, so a native issue's number is also some unrelated drupal.org
+  node's id (3619172 is a change notice there), and a lookup built from it
+  lands on that node. **`IssueSource.Issue` therefore takes the project**: it
+  was always implicit, both callers had the module in hand, and for a migrated
+  project the implicit version is actively wrong.
+  **The label vocabulary is read off helper, never derived from drupal.org's
+  names**, and the difference is load-bearing: drupal.org's "Active" is
+  `state::accepted`, so the migration renames rather than transliterating —
+  which is why `state::postponed` and `state::fixed` are *not* mapped (they
+  return no rows; "Fixed" is `state::closed` with no reason label, 92 of 100).
+  Closure is three passes so label order cannot decide the answer — structural
+  `state` field, then the open `state::` scope, then the `why::` scope that
+  carries drupal.org's several flavours of closed (`why::duplicate`,
+  `wontFix`, `worksAsDesigned`; 8 of 100 closed issues). An unrecognised label
+  is ignored and the issue still lists. `Files` is empty because a project that
+  has moved takes contributions as merge requests, so the patch surface finding
+  nothing is the truth rather than a gap, and `User` is **never routed** — a
+  uid is a drupal.org account id whatever queue the issue came from, and a
+  migrated project has no patch files to promote. The `issues` progress line
+  stopped saying "from drupal.org", which was a claim rather than a report;
+  where it read is said *afterwards*, by the reader that decided, and only when
+  that is not where it has always been — a line confirming the status quo on
+  every run is a line people stop reading.
+- **GitLab's closing vocabulary pairs a merge request too.** A project whose
+  issue queue has moved to GitLab declares what a branch fixes the GitLab way:
+  `Closes #N`, and the four verb families of GitLab's documented default
+  closing pattern — clos(e|es|ed|ing), fix(|es|ed|ing), resolv(e|es|ed|ing),
+  implement(|s|ed|ing). Demonstrated on `helper`: MR !94 is on branch
+  `url-helper` with "Closes #3619171", so no title convention, no leading
+  digits in the branch and no drupal.org URL — it paired with nothing while
+  GitLab's own `/closes_issues` knew the answer. **Read from the description
+  upkeep already has, never from that endpoint**, which would be one request
+  per merge request — a cost already on record at 155 requests for a pathauto
+  refresh. The endpoint is the authority; the description is where the
+  authority reads it from. Ranked *above* `relatesTo` and applied in both
+  modes, because a declaration outranks a mention and the two do appear
+  together: a bot merge request says only "Relates to #NNN" and whoever takes
+  it over adds what it fixes. The owning rule is unchanged — a mention still
+  cannot claim an issue, or anybody could suppress its patches by referring to
+  it — and the drupal.org signals still win where they exist, so a project
+  that has not moved behaves exactly as before. The word boundary is
+  load-bearing: without it "prefixes #12" is "fixes #12".
 - **An MR belongs to the issue its fork was made for.**
   `IssueReference::fromForkPath()` reads the nid out of `issue/<module>-<nid>`,
   and `GitlabClient::issueForkNids()` maps every fork of a project in one

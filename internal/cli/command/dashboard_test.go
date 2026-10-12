@@ -34,7 +34,7 @@ func (s scriptedIssues) Issues() IssueSource { return s }
 
 func (s scriptedIssues) Warnings() []string { return s.warnings }
 
-func (s scriptedIssues) Issue(nid int) (drupal.Issue, bool) {
+func (s scriptedIssues) Issue(_ string, nid int) (drupal.Issue, bool) {
 	for _, issue := range s.issues {
 		if issue.Nid == nid {
 			return issue, true
@@ -949,10 +949,10 @@ func TestTheOverviewColoursTheThreeCellsThatCarryAVerdict(t *testing.T) {
 	}
 }
 
-// The production drupal.org source hands out a usable reader and starts with
+// The production issue source hands out a usable reader and starts with
 // nothing to report.
 func TestTheDrupalClientSourceIsUsable(t *testing.T) {
-	clients := NewDrupalClients()
+	clients := NewIssueQueues(cli.NewResolvedClients(func(string) {}).ReadOnly)
 
 	if clients.Issues() == nil {
 		t.Error("no reader")
