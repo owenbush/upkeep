@@ -1,9 +1,11 @@
 package check
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func exit(code int) *int { return &code }
@@ -174,6 +176,153 @@ func TestStatusesIsEveryStatusAndOnlyOpenOnes(t *testing.T) {
 	for _, status := range statuses {
 		if status.Passed() != (status != Failed) {
 			t.Errorf("%q passes: %v", status, status.Passed())
+		}
+	}
+}
+
+// The excerpt never begins in the middle of a line.
+//
+// It used to: a raw byte slice off the tail opened the report on the back half
+// of whatever line the budget landed in, reported from the wild as output
+// beginning "ssertSame() when expecting". A reader cannot tell that from a
+// check whose output is genuinely strange, so they doubt the tool first.
+func TestTheOutputTailStartsOnALineBoundary(t *testing.T) {
+	var builder strings.Builder
+	for line := 0; line < 200; line++ {
+		fmt.Fprintf(&builder, "%03d    You should use assertTrue() instead of assertSame()\n", line)
+	}
+	result := Result{Output: builder.String()}
+
+	// Every budget in the range, so this cannot pass by landing luckily.
+	for budget := 500; budget <= 3000; budget += 7 {
+		excerpt, _ := result.OutputTail(budget)
+		first := strings.SplitN(excerpt, "\n", 2)[0]
+
+		if !strings.HasSuffix(first, "assertSame()") {
+			t.Fatalf("budget %d opened mid-line: %q", budget, first)
+		}
+		if len(first) != len("000    You should use assertTrue() instead of assertSame()") {
+			t.Fatalf("budget %d produced a partial first line: %q", budget, first)
+		}
+	}
+}
+
+// It says how many lines it left out, so a surface can tell the reader rather
+// than letting them assume that was all the output.
+func TestTheOutputTailCountsWhatItLeftOut(t *testing.T) {
+	var builder strings.Builder
+	for line := 0; line < 100; line++ {
+		fmt.Fprintf(&builder, "line %d padded out to make the budget bite\n", line)
+	}
+	result := Result{Output: builder.String()}
+
+	excerpt, dropped := result.OutputTail(600)
+
+	if dropped == 0 {
+		t.Fatal("it dropped lines and reported none")
+	}
+	kept := strings.Count(excerpt, "\n") + 1
+	if total := kept + dropped; total != 100 {
+		t.Errorf("kept %d + dropped %d = %d, want 100", kept, dropped, total)
+	}
+}
+
+// Nothing is claimed to be missing when nothing is.
+func TestShortOutputIsWholeAndReportsNothingDropped(t *testing.T) {
+	result := Result{Output: "  phpcs found three things\nand that is all of it  "}
+
+	excerpt, dropped := result.OutputTail(ConsoleExcerptBytes)
+
+	if dropped != 0 {
+		t.Errorf("it reported %d dropped lines from output that fits", dropped)
+	}
+	if excerpt != "phpcs found three things\nand that is all of it" {
+		t.Errorf("got %q", excerpt)
+	}
+}
+
+// The excerpt is always valid UTF-8, including when the budget lands inside a
+// multi-byte character.
+//
+// These checks emit them: phpstan labels every finding with an emoji
+// identifier. A byte cut inside one put a replacement character at the front
+// of the report. The case with no newline in the tail at all is the one the
+// line-boundary rule cannot cover, so it is the one tested here.
+func TestTheOutputTailIsAlwaysValidUtf8(t *testing.T) {
+	oneLongLine := "preamble\n" + strings.Repeat("🪪", 500)
+	result := Result{Output: oneLongLine}
+
+	// Every offset through the emoji run, so a cut lands at each of the four
+	// byte positions of a rune.
+	for budget := 100; budget < 400; budget++ {
+		excerpt, _ := result.OutputTail(budget)
+
+		if !utf8.ValidString(excerpt) {
+			t.Fatalf("budget %d produced invalid UTF-8: %q", budget, excerpt)
+		}
+		if strings.ContainsRune(excerpt, utf8.RuneError) {
+			t.Fatalf("budget %d produced a replacement character: %q", budget, excerpt)
+		}
+	}
+}
+
+// A line-aligned cut is still bounded: the excerpt never exceeds the budget.
+func TestTheOutputTailStaysWithinItsBudget(t *testing.T) {
+	var builder strings.Builder
+	for line := 0; line < 300; line++ {
+		fmt.Fprintf(&builder, "a line of output number %d\n", line)
+	}
+	result := Result{Output: builder.String()}
+
+	for _, budget := range []int{200, 1000, 4000} {
+		excerpt, _ := result.OutputTail(budget)
+
+		if len(excerpt) > budget {
+			t.Errorf("budget %d produced %d bytes", budget, len(excerpt))
+		}
+	}
+}
+
+// The console shows more than a merge-request comment quotes, deliberately.
+//
+// A comment is a pointer for somebody who can open the pipeline; the console
+// output is what the person who just ran the check diagnoses from, and nothing
+// persists the full output for them to go back to.
+func TestTheConsoleBudgetIsLargerThanACommentsQuote(t *testing.T) {
+	if ConsoleExcerptBytes <= ExcerptBytes {
+		t.Errorf("console %d is not larger than a comment's %d",
+			ConsoleExcerptBytes, ExcerptBytes)
+	}
+}
+
+// OutputExcerpt is the same truncation, so no two surfaces disagree about what
+// the last N bytes means.
+func TestOutputExcerptIsTheTailWithoutTheCount(t *testing.T) {
+	var builder strings.Builder
+	for line := 0; line < 80; line++ {
+		fmt.Fprintf(&builder, "output line %d with some padding on it\n", line)
+	}
+	result := Result{Output: builder.String()}
+
+	tail, _ := result.OutputTail(900)
+	if excerpt := result.OutputExcerpt(900); excerpt != tail {
+		t.Errorf("the two disagree:\n%q\n%q", excerpt, tail)
+	}
+}
+
+// A zero or negative budget takes the comment default rather than returning
+// nothing.
+func TestANonPositiveBudgetTakesTheDefault(t *testing.T) {
+	result := Result{Output: strings.Repeat("padding line\n", 500)}
+
+	for _, budget := range []int{0, -1} {
+		excerpt, _ := result.OutputTail(budget)
+
+		if excerpt == "" {
+			t.Errorf("budget %d returned nothing", budget)
+		}
+		if len(excerpt) > ExcerptBytes {
+			t.Errorf("budget %d returned %d bytes, over the default", budget, len(excerpt))
 		}
 	}
 }

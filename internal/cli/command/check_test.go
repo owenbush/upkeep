@@ -3,8 +3,10 @@ package command
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -750,5 +752,116 @@ func TestADetachedHeadIsNamedAsOne(t *testing.T) {
 
 	if !strings.Contains(stderr, "(detached HEAD)") {
 		t.Errorf("a detached HEAD read as a blank branch: %q", stderr)
+	}
+}
+
+// Truncated output says so, and names the way to see all of it.
+//
+// It used to cut silently, which is how somebody reads an excerpt opening
+// `ssertSame() when expecting` and concludes the tool is broken. Nothing
+// persists the full output, so the note has to name the command that produces
+// it rather than a file to go and read.
+func TestTruncatedCheckOutputSaysSoAndNamesTheFlag(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aCheckingEngine()
+	engine.statusOK = true
+	one := 1
+
+	var builder strings.Builder
+	for line := 0; line < 1200; line++ {
+		fmt.Fprintf(&builder, "  %d    a phpstan finding, with its own identifier \U0001FAAA\n", line)
+	}
+	engine.run = check.RunResult{Results: []check.Result{
+		{Type: check.PhpStan, Status: check.Failed, ExitCode: &one, Output: builder.String()},
+	}}
+
+	_, stdout, _ := runCheckCommand(t, engine, nil,
+		"check", "pathauto", "--working-copy", "--cockpit="+root)
+
+	if !strings.Contains(stdout, "are not shown") {
+		t.Errorf("the truncation was silent:\n%s", lastLines(stdout, 6))
+	}
+	if !strings.Contains(stdout, "-v") {
+		t.Errorf("it does not name the flag that shows all of it:\n%s", lastLines(stdout, 6))
+	}
+	// And the excerpt itself still opens on a whole line: the first finding
+	// shown carries its line number and its whole text, rather than whatever
+	// survived the byte the budget landed on.
+	wholeLine := regexp.MustCompile(`^\d+ {4}a phpstan finding, with its own identifier \x{1FAAA}$`)
+	for _, line := range strings.Split(stdout, "\n") {
+		if !strings.Contains(line, "a phpstan finding") {
+			continue
+		}
+		if !wholeLine.MatchString(strings.TrimSpace(line)) {
+			t.Errorf("the excerpt opens mid-line: %q", line)
+		}
+
+		break
+	}
+}
+
+// Output that fits claims nothing is missing, because a note that fires when
+// nothing was dropped is a note people learn to ignore.
+func TestOutputThatFitsSaysNothingAboutTruncation(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aCheckingEngine()
+	engine.statusOK = true
+	one := 1
+	engine.run = check.RunResult{Results: []check.Result{
+		{Type: check.PhpCs, Status: check.Failed, ExitCode: &one,
+			Output: "FILE: src/Thing.php\n  12 | ERROR | Missing doc comment"},
+	}}
+
+	_, stdout, _ := runCheckCommand(t, engine, nil,
+		"check", "pathauto", "--working-copy", "--cockpit="+root)
+
+	if strings.Contains(stdout, "are not shown") {
+		t.Errorf("it claimed output was dropped:\n%s", stdout)
+	}
+}
+
+// lastLines is the tail of a report, for a failure message that does not bury
+// what it is complaining about.
+func lastLines(text string, count int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > count {
+		lines = lines[len(lines)-count:]
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// Output too big for a merge-request comment is still shown whole on the
+// console, which is the whole point of the two budgets differing.
+//
+// Without this the budgets could be swapped and every test still pass: a
+// report long enough to be truncated is truncated under either one. What
+// distinguishes them is output in between — and a linter's output usually is.
+func TestOutputTooBigForACommentIsStillShownWholeOnTheConsole(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aCheckingEngine()
+	engine.statusOK = true
+	one := 1
+
+	var builder strings.Builder
+	builder.WriteString("the first finding, which must survive\n")
+	for len(builder.String()) < check.ExcerptBytes*2 {
+		builder.WriteString("  a middle finding to push this past a comment's quote\n")
+	}
+	if builder.Len() >= check.ConsoleExcerptBytes {
+		t.Fatalf("the premise does not hold: %d bytes is past the console budget", builder.Len())
+	}
+	engine.run = check.RunResult{Results: []check.Result{
+		{Type: check.PhpStan, Status: check.Failed, ExitCode: &one, Output: builder.String()},
+	}}
+
+	_, stdout, _ := runCheckCommand(t, engine, nil,
+		"check", "pathauto", "--working-copy", "--cockpit="+root)
+
+	if !strings.Contains(stdout, "the first finding, which must survive") {
+		t.Error("the console cut output that fits its budget")
+	}
+	if strings.Contains(stdout, "are not shown") {
+		t.Error("it reported dropping output that fits")
 	}
 }

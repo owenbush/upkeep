@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Type is a check suite a maintenance environment can run against the module
@@ -56,9 +57,24 @@ const (
 // non-failures.
 func (s Status) Passed() bool { return s != Failed }
 
-// ExcerptBytes is how much of a check's output tail is reported. Child output
-// is unbounded; the tail is where the failure is.
+// ExcerptBytes is how much of a check's output tail a *merge-request comment*
+// quotes. Child output is unbounded; the tail is where the failure is.
 const ExcerptBytes = 2000
+
+// ConsoleExcerptBytes is how much the console report echoes.
+//
+// Six times a comment's quote, because the two are read for different reasons.
+// A comment is a pointer for somebody else, who can open the pipeline. The
+// console output is what the person who just ran the check diagnoses *from*,
+// and there is nowhere else for them to look — nothing persists the full
+// output, so whatever is cut here is gone.
+//
+// 2000 was both budgets, and it is far too small for a linter: phpstan
+// reporting 32 findings in its boxed layout, or phpcs printing a full report
+// plus two summary tables, runs to several times that. So the cut landed in
+// the middle of the findings — and said nothing about having done so, which is
+// the part that cost somebody an afternoon.
+const ConsoleExcerptBytes = 12000
 
 // Result is the outcome of one check suite run inside an environment.
 type Result struct {
@@ -126,21 +142,53 @@ func (r Result) Passed() bool { return r.Status.Passed() }
 func Statuses() []Status { return []Status{Passed, Failed, NoTests, Unavailable} }
 
 // OutputExcerpt is the trailing excerpt of this check's output — what the
-// console report echoes and what the merge-request comment quotes.
+// merge-request comment quotes.
 //
-// One truncation rule, so the two never disagree about what "the last 2000
+// One truncation rule, so no two surfaces disagree about what "the last N
 // bytes" means. A maxBytes of 0 or less takes the default.
 func (r Result) OutputExcerpt(maxBytes int) string {
+	excerpt, _ := r.OutputTail(maxBytes)
+
+	return excerpt
+}
+
+// OutputTail is the trailing excerpt and how many whole lines it left out.
+//
+// **It cuts on a line boundary.** It used to slice raw bytes off the tail, so
+// the excerpt opened on the back half of whatever line the budget landed in —
+// reported from the wild as output beginning `ssertSame() when expecting` and
+// `tion extends to column 143`. A reader cannot tell that from a check whose
+// output is genuinely strange, so the first thing they do is doubt the tool.
+//
+// Byte slicing was also not UTF-8 safe, and these checks emit multi-byte
+// characters: phpstan labels every finding with an emoji identifier. A cut
+// inside one of those put a replacement character at the front of the report.
+// A newline is never part of a multi-byte rune, so cutting after one lands on
+// a rune boundary by construction; the loop afterwards covers the single line
+// too long to hold a newline at all.
+//
+// The dropped count is returned rather than rendered, so each surface words it
+// for its own reader, and so no surface can print a number this did not
+// measure.
+func (r Result) OutputTail(maxBytes int) (excerpt string, droppedLines int) {
 	if maxBytes <= 0 {
 		maxBytes = ExcerptBytes
 	}
 
 	output := strings.TrimSpace(r.Output)
 	if len(output) <= maxBytes {
-		return output
+		return output, 0
 	}
 
-	return strings.TrimSpace(output[len(output)-maxBytes:])
+	tail := output[len(output)-maxBytes:]
+	if newline := strings.IndexByte(tail, '\n'); newline >= 0 {
+		tail = tail[newline+1:]
+	}
+	for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
+		tail = tail[1:]
+	}
+
+	return strings.TrimSpace(tail), strings.Count(output[:len(output)-len(tail)], "\n")
 }
 
 // RunResult is the aggregate outcome of running a set of checks: one entry per

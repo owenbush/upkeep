@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/owenbush/upkeep/internal/check"
 )
@@ -297,5 +298,76 @@ func TestABadCacheFileIsAMiss(t *testing.T) {
 	sha := strings.TrimSuffix("aaa1111.json", ".json")
 	if found := cache.Find("pathauto", key, "11", sha); found != nil {
 		t.Error("a malformed file was found")
+	}
+}
+
+// What is cached is cut on a line boundary and is always valid UTF-8.
+//
+// This was a raw byte slice, and a check's output carries multi-byte
+// characters — phpstan labels every finding with an emoji identifier — so the
+// cut could leave a half-written rune at the end of cached YAML.
+//
+// The head rather than the tail, unlike every reporting surface: what reads
+// this is the dashboard asking what happened, and the first lines are where a
+// check says what it was doing.
+func TestTheCachedExcerptIsLineAlignedAndValidUtf8(t *testing.T) {
+	long := strings.Repeat("a finding with an identifier \U0001FAAA\n", 400)
+
+	excerpt := headExcerpt(long)
+
+	if len(excerpt) > outputExcerptBytes {
+		t.Errorf("%d bytes cached, over the %d bound", len(excerpt), outputExcerptBytes)
+	}
+	if !utf8.ValidString(excerpt) {
+		t.Error("the cached excerpt is not valid UTF-8")
+	}
+	if strings.ContainsRune(excerpt, utf8.RuneError) {
+		t.Error("the cached excerpt carries a replacement character")
+	}
+	if strings.HasSuffix(excerpt, "\n") {
+		t.Errorf("it kept a trailing newline: %q", excerpt[len(excerpt)-20:])
+	}
+	for _, line := range strings.Split(excerpt, "\n") {
+		if line != "a finding with an identifier \U0001FAAA" {
+			t.Fatalf("a partial line was cached: %q", line)
+		}
+	}
+}
+
+// One line too long to hold a newline is still cut safely, which is the case
+// the line-boundary rule cannot cover.
+//
+// Padded by nought to three bytes so the bound lands at each byte of a
+// four-byte rune. Without the padding the cut divides evenly, the string is
+// already valid, and the narrowing loop never runs — which is how this passed
+// while covering nothing.
+func TestASingleOverlongLineIsCachedAsValidUtf8(t *testing.T) {
+	for pad := 0; pad < 4; pad++ {
+		line := strings.Repeat("x", pad) + strings.Repeat("\U0001FAAA", 4000)
+
+		excerpt := headExcerpt(line)
+
+		if !utf8.ValidString(excerpt) {
+			t.Errorf("pad %d: not valid UTF-8", pad)
+		}
+		if strings.ContainsRune(excerpt, utf8.RuneError) {
+			t.Errorf("pad %d: replacement character", pad)
+		}
+		if len(excerpt) > outputExcerptBytes {
+			t.Errorf("pad %d: %d bytes, over the bound", pad, len(excerpt))
+		}
+		if len(excerpt) < outputExcerptBytes-4 {
+			t.Errorf("pad %d: it threw away %d bytes to find a boundary",
+				pad, outputExcerptBytes-len(excerpt))
+		}
+	}
+}
+
+// Output that fits is cached whole, newline and all.
+func TestShortOutputIsCachedUnchanged(t *testing.T) {
+	short := "FILE: src/Thing.php\n  12 | ERROR | Missing doc comment\n"
+
+	if excerpt := headExcerpt(short); excerpt != short {
+		t.Errorf("got %q, want %q", excerpt, short)
 	}
 }

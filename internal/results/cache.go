@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/owenbush/upkeep/internal/check"
 	"github.com/owenbush/upkeep/internal/filesystem"
@@ -16,6 +18,31 @@ import (
 // outputExcerptBytes bounds what is cached: an excerpt for reporting, not a
 // full log archive.
 const outputExcerptBytes = 4000
+
+// headExcerpt is what gets stored, cut on a line boundary.
+//
+// The head rather than the tail, unlike every reporting surface, because what
+// reads this is the dashboard asking "what happened" rather than somebody
+// diagnosing — and the first lines are where a check says what it was doing.
+//
+// Line-aligned for the same reason the console excerpt is: this was a raw byte
+// slice, and a check's output carries multi-byte characters, so the cut could
+// leave a half-written rune at the end of cached YAML.
+func headExcerpt(output string) string {
+	if len(output) <= outputExcerptBytes {
+		return output
+	}
+
+	head := output[:outputExcerptBytes]
+	if newline := strings.LastIndexByte(head, '\n'); newline >= 0 {
+		return head[:newline]
+	}
+	for len(head) > 0 && !utf8.ValidString(head) {
+		head = head[:len(head)-1]
+	}
+
+	return head
+}
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 
@@ -105,10 +132,7 @@ func (c *Cache) Store(
 		Results:    make([]storedCheck, 0, len(result.Results)),
 	}
 	for _, one := range result.Results {
-		output := one.Output
-		if len(output) > outputExcerptBytes {
-			output = output[:outputExcerptBytes]
-		}
+		output := headExcerpt(one.Output)
 		stored.Results = append(stored.Results, storedCheck{
 			Type:     string(one.Type),
 			Status:   string(one.Status),
