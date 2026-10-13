@@ -69,12 +69,32 @@ ddev drush uli
 ddev drush en helper -y
 ```
 
-**Install only core, your module, and what your module requires.** An upkeep
-environment deliberately holds nothing else, so a fixture whose database
-mentions `admin_toolbar` will be *refused* on load unless the module under test
-requires it — the manifest catches that before the database is touched. See
-[A dump alone is not enough](#a-dump-alone-is-not-enough), which is the section
-to read before you spend an afternoon building state that cannot travel.
+**Other contrib is allowed, and `composer` is what makes it travel.** A
+realistic fixture often needs more than the module under test — a workflow, a
+field type, an admin UI — so install it the way the next environment will have
+to:
+
+```bash
+ddev composer require drupal/admin_toolbar
+ddev drush en admin_toolbar -y
+```
+
+The manifest is generated from the project's own `composer.json`, so a package
+required like that is recorded in the fixture's `require:`, and
+`upkeep-fixture-load` **installs it for you** in any environment that does not
+have it. You are not limited to what your module depends on.
+
+What does not travel is anything composer cannot fetch on the other side: a
+custom module, a package from a private repository, or code copied into
+`web/modules/` by hand. That code is in *your* codebase and absent from
+`composer.json`, so the manifest never learns of it, and the load is refused
+with the extension named rather than failing later inside Drupal. If a fixture
+has to carry something like that, the module it belongs to has to be in the
+project by hand on every machine that loads it — which is usually the sign to
+build the state with composer-installable code instead.
+
+[A dump alone is not enough](#a-dump-alone-is-not-enough) is the mechanism in
+full.
 
 ### 3. Export it
 
@@ -177,8 +197,11 @@ The dividing line is worth knowing:
 | Anything that module `require`s in its `composer.json` | Yes — composer resolves it |
 | Any other contrib — `admin_toolbar`, `webform`, `paragraphs` | **No** |
 
-So `olivero` is fine and `admin_toolbar` is not, unless the module under test
-depends on it.
+So `olivero` needs nothing, and `admin_toolbar` needs only to be in the
+project's `composer.json` when the fixture is captured — `ddev composer require
+drupal/admin_toolbar` is the whole difference between a fixture that installs
+it on load and one that is refused. The restriction is **not** "only what your
+module depends on"; it is "only what composer can fetch".
 
 This is what the manifest is for. `upkeep-fixture-create` records the core
 version, the enabled extensions and the composer requirements it saw:
