@@ -25,6 +25,10 @@ func NewIssue(clients cli.GitlabClients, issues IssueClients, browser cli.Browse
 		Short: "Show and open the drupal.org issue linked to a merge request",
 		Args:  cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddNoOpen(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddModuleCompletion(cmd)
@@ -157,6 +161,10 @@ and nothing here ever resets or discards.
 When the work is ready: upkeep publish <module> <issue>.`,
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesWorkingCopy,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddTargetCore(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddProjectsRoot(cmd)
@@ -359,6 +367,10 @@ Opens merge requests; never merges one. Re-running after more commits updates
 the existing MR rather than opening a second.`,
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesRemote,
+		Credential: cli.CredentialRequired,
+	})
 	cli.AddTargetCore(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddProjectsRoot(cmd)

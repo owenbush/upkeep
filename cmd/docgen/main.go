@@ -130,6 +130,38 @@ func render(root *cobra.Command) string {
 		fmt.Fprintf(&out, "| [`%s`](#%s) | %s |\n", cmd.Name(), anchor(cmd.Name()), cmd.Short)
 	}
 
+	out.WriteString("\n## What each one does to you\n\n")
+	out.WriteString("The question the list above cannot answer: whether running it writes " +
+		"anything,\nwhether it can lose work, and whether it needs a credential. Each " +
+		"command declares\nthis for itself and this table is generated from those " +
+		"declarations, so it cannot\ndisagree with the binary.\n\n")
+	out.WriteString("A blank **Can lose** means nothing is lost by running it, which is " +
+		"most of the\nsurface. `--fixture` **overwrites the environment's database** " +
+		"wherever it is offered.\n\n")
+	out.WriteString("| Command | Changes | Needs a token | `--fixture` | Can lose |\n")
+	out.WriteString("| --- | --- | --- | --- | --- |\n")
+	for _, cmd := range documented {
+		traits, declared := cli.TraitsOf(cmd)
+		if !declared {
+			continue
+		}
+		fixture := "–"
+		if traits.Fixture {
+			fixture = "yes"
+		}
+		token := "–"
+		if traits.Credential == cli.CredentialRequired {
+			token = "**yes**"
+		}
+		destroys := traits.Destroys
+		if destroys == "" {
+			destroys = "–"
+		}
+		fmt.Fprintf(&out, "| [`%s`](#%s) | %s | %s | %s | %s |\n",
+			cmd.Name(), anchor(cmd.Name()), traits.Changes, token, fixture, destroys)
+	}
+	out.WriteString("\n")
+
 	if persistent := sortedFlags(root.PersistentFlags()); len(persistent) > 0 {
 		out.WriteString("\n## Global options\n\n")
 		out.WriteString("Accepted by every command, so they are listed once rather than " +
@@ -158,6 +190,17 @@ func renderCommand(out *bytes.Buffer, cmd *cobra.Command) {
 
 	// UseLine already carries the full path, "upkeep" included.
 	fmt.Fprintf(out, "```\n%s\n```\n", strings.TrimSpace(cmd.UseLine()))
+
+	if traits, declared := cli.TraitsOf(cmd); declared {
+		fmt.Fprintf(out, "\nChanges **%s**", traits.Changes)
+		if traits.Credential == cli.CredentialRequired {
+			out.WriteString("; needs a GitLab token")
+		}
+		if traits.Destroys != "" {
+			fmt.Fprintf(out, ". Careful: it %s", traits.Destroys)
+		}
+		out.WriteString(".\n")
+	}
 
 	if flags := sortedFlags(cmd.NonInheritedFlags()); len(flags) > 0 {
 		out.WriteString("\n**Options**\n\n")

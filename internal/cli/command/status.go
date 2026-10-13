@@ -34,6 +34,10 @@ func NewStatus(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
 			"with totals.",
 		Args: cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cmd.Flags().Bool("disk", false,
 		"Itemize disk usage (project trees, materialized snapshots, engine volumes, "+
 			"base artifacts, fixture dumps) with totals")

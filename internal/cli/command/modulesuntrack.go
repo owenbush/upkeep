@@ -44,6 +44,11 @@ To reclaim its environments and cached results, run ` + "`upkeep prune`" + `. To
 which cores it tracks rather than stop watching it, run ` + "`upkeep modules:track`" + `.`,
 		Args: cobra.ExactArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialNone,
+		Destroys:   "removes the module's entry, and its core list is recorded nowhere else",
+	})
 	cli.AddCockpit(cmd)
 	cli.AddWatchedModuleCompletion(cmd)
 

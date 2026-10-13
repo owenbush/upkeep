@@ -21,6 +21,7 @@ module — registered or not.
 
 ## Daily flow
 
+- [Which command do I want?](guide/which-command.md) — thirty commands by what you are trying to do, what each changes, and what can lose work
 - [The dashboard](guide/dashboard.md) — everything open, and what a row represents
 - [Work on an issue](guide/issue-loop.md) — `issues` → `start` → `publish`
 - [Work on somebody else's MR](guide/taking-over-an-mr.md) — `checkout` → `check --working-copy` → `publish`

@@ -44,6 +44,10 @@ func NewInit() *cobra.Command {
 			"and projects/ directories.",
 		Args: cobra.MaximumNArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialNone,
+	})
 	cmd.RunE = cli.Run(runInit)
 
 	return cmd

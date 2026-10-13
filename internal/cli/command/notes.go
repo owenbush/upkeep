@@ -35,6 +35,10 @@ through the cockpit registry when there is one, and taken as a project path
 when there is not.`,
 		Args: cobra.ExactArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddCockpit(cmd)
 	cli.AddModuleCompletion(cmd)
 

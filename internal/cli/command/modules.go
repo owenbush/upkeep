@@ -17,6 +17,10 @@ func NewModules() *cobra.Command {
 		Short: "List the modules registered in the cockpit module registry",
 		Args:  cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddCockpit(cmd)
 	cmd.RunE = cli.Run(runModules)
 

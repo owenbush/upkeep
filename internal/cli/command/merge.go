@@ -50,6 +50,11 @@ offered. There is no batch mode and no unattended flag, by Drupal Association
 policy — see the README's policy stance.`,
 		Args: cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesRemote,
+		Credential: cli.CredentialRequired,
+		Destroys:   "merges the merge request, which nothing here can undo",
+	})
 	cmd.Flags().Bool("fast-lane", false,
 		"Required: run the fast-lane loop (the only mode; named explicitly because it performs merges)")
 	cli.AddCockpit(cmd)

@@ -70,6 +70,10 @@ request to *add* that support is the usual reason to run this.
 Nothing is reset: an existing local branch is resumed exactly as it stands.`,
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesWorkingCopy,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddTargetCore(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddProjectsRoot(cmd)

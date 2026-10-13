@@ -77,6 +77,10 @@ Cached by default, so repeat runs are instant.
 upkeep explain <term> defines any column or status.`,
 		Args: cobra.MaximumNArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialNone,
+	})
 
 	cli.AddCockpit(cmd)
 	cli.AddCoreFilter(cmd)

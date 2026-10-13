@@ -34,6 +34,11 @@ func NewPatchApply(surface PatchSurface) *cobra.Command {
 			"  cd $(upkeep patch:apply widget 3597808)",
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesEnvironment,
+		Credential: cli.CredentialNone,
+		Destroys:   "force-updates the managed patch-<nid> branch",
+	})
 	addPatchSurface(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
@@ -110,6 +115,12 @@ includes a patch that does not apply, because no verdict on the contribution
 was produced.`,
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesEnvironment,
+		Credential: cli.CredentialNone,
+		Destroys:   "force-updates the managed patch-<nid> branch, and overwrites the database with --fixture",
+		Fixture:    true,
+	})
 	addPatchSurface(cmd)
 	cmd.Flags().String("fixture", "",
 		"Load this named fixture into the database before running checks")
@@ -239,6 +250,10 @@ so resolve the rejects, delete the .rej files, commit, and publish. It exits 1,
 because the patch did not apply.`,
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesWorkingCopy,
+		Credential: cli.CredentialNone,
+	})
 	addPatchSurface(cmd)
 	cmd.Flags().String("branch", "",
 		"Work branch to promote onto (default: the drupal.org <nid>-<slug> convention)")

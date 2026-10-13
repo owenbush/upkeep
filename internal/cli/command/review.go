@@ -26,7 +26,20 @@ func NewReview(engines adapter.Factory, clients cli.GitlabClients) *cobra.Comman
 			"Use `upkeep check` for a verdict.",
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesEnvironment,
+		Credential: cli.CredentialNone,
+		Destroys:   "force-updates the managed mr-<iid> branch, and overwrites the database with --fixture",
+		Fixture:    true,
+	})
 	addMrSurface(cmd)
+	// The same flag `check` has, for the same reason one core short of the
+	// opposite one: review exists to put a running site in front of you, and
+	// an empty site is the weak version of exactly that. A module that manages
+	// vocabulary terms cannot be looked at without terms.
+	cmd.Flags().String("fixture", "",
+		"Load this named fixture into the database before serving the site")
+	cli.AddFixtureCompletion(cmd)
 	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
@@ -58,6 +71,14 @@ func runReview(
 
 	cli.Progressf(cmd, "Merge request")
 	if err := engine.ApplyMr(environment, context.MergeRequest); err != nil {
+		return 0, err
+	}
+
+	// After the apply, before serving. The apply can add a dependency or a
+	// schema the fixture's data needs, and the point of looking at the site is
+	// to look at it with the fixture loaded — so a failure here stops the
+	// command rather than handing back a URL onto the wrong database.
+	if err := loadFixtureIfAsked(cmd, engine, environment); err != nil {
 		return 0, err
 	}
 

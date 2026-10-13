@@ -57,6 +57,12 @@ Exits 0 all green, 1 a check failed, 2 it could not run at all. Needs base
 artifacts for that core: upkeep base-artifacts:build --version=11.`,
 		Args: cobra.RangeArgs(1, 2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesEnvironment,
+		Credential: cli.CredentialNone,
+		Destroys:   "force-updates the managed mr-<iid> branch, and overwrites the database with --fixture",
+		Fixture:    true,
+	})
 	cmd.Flags().Bool("working-copy", false,
 		"Check the module working copy as it stands instead of a merge request (caches nothing)")
 	cmd.Flags().String("fixture", "",

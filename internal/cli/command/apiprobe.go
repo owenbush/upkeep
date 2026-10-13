@@ -36,6 +36,10 @@ surprising.
 Takes the name or the full path, consults no registry, and only ever reads.`,
 		Args: cobra.ExactArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {

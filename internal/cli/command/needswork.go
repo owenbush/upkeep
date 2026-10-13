@@ -39,6 +39,10 @@ Posts what was recorded; it never runs the checks itself. --dry-run prints
 the comment without posting it.`,
 		Args: cobra.ExactArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesRemote,
+		Credential: cli.CredentialRequired,
+	})
 	addMrSurface(cmd)
 	cli.AddNoOpen(cmd)
 	cmd.Flags().Bool("dry-run", false, "Print the comment without posting it")
