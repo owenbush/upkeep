@@ -83,7 +83,7 @@ cd upkeep
 go build -o upkeep ./cmd/upkeep
 ```
 
-Requires Go >= 1.24. There is nothing to install first — `go build` fetches
+Requires Go >= 1.26. There is nothing to install first — `go build` fetches
 what it needs and the checkout is ready.
 
 Sanity check, however you installed:
