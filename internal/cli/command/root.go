@@ -105,7 +105,7 @@ func NewRoot(surface Surface) *cobra.Command {
 // check, review, dev and the rest it selects the target core major, and one
 // spelling cannot mean both.
 func NewVersion() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the upkeep version",
 		Args:  cobra.NoArgs,
@@ -113,4 +113,10 @@ func NewVersion() *cobra.Command {
 			cmd.Println(Version)
 		},
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
+
+	return cmd
 }

@@ -43,6 +43,10 @@ carries no commits, so any patch beside it is the only work there is —
 see upkeep explain "empty MR".`,
 		Args: cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddCockpit(cmd)
 	cmd.Flags().String("module", "", "Only scan this module (default: all registered modules)")
 	cmd.Flags().Bool("without-mr", false,

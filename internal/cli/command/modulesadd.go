@@ -31,6 +31,10 @@ the ones you choose, so the survey commands cover them.
 
 Reads GitLab and writes registry.yml, and nothing else.`,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialRequired,
+	})
 	cli.AddCockpit(cmd)
 	cmd.Flags().String("core-versions", "11",
 		`Comma-separated core majors the new entries track (e.g. "10,11")`)

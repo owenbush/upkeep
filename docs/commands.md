@@ -47,6 +47,50 @@ Conventions worth knowing before the list:
 | [`status`](#upkeep-status) | Report cockpit state; --disk itemizes real measured disk usage |
 | [`version`](#upkeep-version) | Print the upkeep version |
 
+## What each one does to you
+
+The question the list above cannot answer: whether running it writes anything,
+whether it can lose work, and whether it needs a credential. Each command declares
+this for itself and this table is generated from those declarations, so it cannot
+disagree with the binary.
+
+A blank **Can lose** means nothing is lost by running it, which is most of the
+surface. `--fixture` **overwrites the environment's database** wherever it is offered.
+
+| Command | Changes | Needs a token | `--fixture` | Can lose |
+| --- | --- | --- | --- | --- |
+| [`api:probe`](#upkeep-apiprobe) | nothing | – | – | – |
+| [`base-artifacts:build`](#upkeep-base-artifactsbuild) | the cockpit | – | – | replaces that core's existing artifact set, with --force |
+| [`base-artifacts:status`](#upkeep-base-artifactsstatus) | nothing | – | – | – |
+| [`check`](#upkeep-check) | an environment | – | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
+| [`checkout`](#upkeep-checkout) | your working copy | – | – | – |
+| [`dashboard`](#upkeep-dashboard) | the cockpit | – | – | – |
+| [`dev`](#upkeep-dev) | an environment | – | – | – |
+| [`env:path`](#upkeep-envpath) | nothing | – | – | – |
+| [`exec`](#upkeep-exec) | an environment | – | – | can do anything the command you hand it does |
+| [`explain`](#upkeep-explain) | nothing | – | – | – |
+| [`init`](#upkeep-init) | the cockpit | – | – | – |
+| [`issue`](#upkeep-issue) | nothing | – | – | – |
+| [`issues`](#upkeep-issues) | nothing | – | – | – |
+| [`merge`](#upkeep-merge) | drupal.org | **yes** | – | merges the merge request, which nothing here can undo |
+| [`modules`](#upkeep-modules) | nothing | – | – | – |
+| [`modules:add`](#upkeep-modulesadd) | the cockpit | **yes** | – | – |
+| [`modules:track`](#upkeep-modulestrack) | the cockpit | – | – | – |
+| [`modules:untrack`](#upkeep-modulesuntrack) | the cockpit | – | – | removes the module's entry, and its core list is recorded nowhere else |
+| [`needs-work`](#upkeep-needs-work) | drupal.org | **yes** | – | – |
+| [`notes`](#upkeep-notes) | nothing | – | – | – |
+| [`patch:apply`](#upkeep-patchapply) | an environment | – | – | force-updates the managed patch-<nid> branch |
+| [`patch:check`](#upkeep-patchcheck) | an environment | – | yes | force-updates the managed patch-<nid> branch, and overwrites the database with --fixture |
+| [`patch:promote`](#upkeep-patchpromote) | your working copy | – | – | – |
+| [`patches`](#upkeep-patches) | nothing | – | – | – |
+| [`prune`](#upkeep-prune) | the cockpit | – | – | deletes environments, cached results and fixture snapshots, with --yes |
+| [`publish`](#upkeep-publish) | drupal.org | **yes** | – | – |
+| [`review`](#upkeep-review) | an environment | – | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
+| [`start`](#upkeep-start) | your working copy | – | – | – |
+| [`status`](#upkeep-status) | nothing | – | – | – |
+| [`version`](#upkeep-version) | nothing | – | – | – |
+
+
 ## `upkeep api:probe`
 
 What GitLab actually says about a module — for when a row looks wrong and
@@ -62,6 +106,8 @@ Takes the name or the full path, consults no registry, and only ever reads.
 upkeep api:probe <module>
 ```
 
+Changes **nothing**.
+
 ## `upkeep base-artifacts:build`
 
 Builds the artifact set every environment for a core is seeded from.
@@ -76,6 +122,8 @@ build that fails costs the attempt and leaves the existing set untouched.
 ```
 upkeep base-artifacts:build [flags]
 ```
+
+Changes **the cockpit**. Careful: it replaces that core's existing artifact set, with --force.
 
 **Options**
 
@@ -96,6 +144,8 @@ List which core versions have base artifacts, with build dates and sizes
 ```
 upkeep base-artifacts:status [flags]
 ```
+
+Changes **nothing**.
 
 **Options**
 
@@ -127,6 +177,8 @@ artifacts for that core: upkeep base-artifacts:build --version=11.
 ```
 upkeep check <module> [mr] [flags]
 ```
+
+Changes **an environment**. Careful: it force-updates the managed mr-<iid> branch, and overwrites the database with --fixture.
 
 **Options**
 
@@ -160,6 +212,8 @@ Nothing is reset: an existing local branch is resumed exactly as it stands.
 upkeep checkout <module> <iid> [flags]
 ```
 
+Changes **your working copy**.
+
 **Options**
 
 | Option | What it does |
@@ -191,6 +245,8 @@ upkeep explain <term> defines any column or status.
 upkeep dashboard [module] [flags]
 ```
 
+Changes **the cockpit**.
+
 **Options**
 
 | Option | What it does |
@@ -209,6 +265,8 @@ Prepare an environment for active development: provision it if needed, optionall
 ```
 upkeep dev <module> [flags]
 ```
+
+Changes **an environment**.
 
 **Options**
 
@@ -230,6 +288,8 @@ stdout carries the path and nothing else, so `cd $(upkeep env:path pathauto)` wo
 upkeep env:path <module> [flags]
 ```
 
+Changes **nothing**.
+
 **Options**
 
 | Option | What it does |
@@ -250,6 +310,8 @@ stdout belongs to the wrapped command; upkeep's own words go to stderr.
 upkeep exec <module> -- <command>... [flags]
 ```
 
+Changes **an environment**. Careful: it can do anything the command you hand it does.
+
 **Options**
 
 | Option | What it does |
@@ -268,6 +330,8 @@ Matches on the term and on its meaning, so a half-remembered word still finds it
 upkeep explain [term]
 ```
 
+Changes **nothing**.
+
 ## `upkeep init`
 
 Scaffold a new cockpit: module registry, base-artifacts/, fixtures/, and projects/ directories.
@@ -276,6 +340,8 @@ Scaffold a new cockpit: module registry, base-artifacts/, fixtures/, and project
 upkeep init [dir]
 ```
 
+Changes **the cockpit**.
+
 ## `upkeep issue`
 
 Show and open the drupal.org issue linked to a merge request
@@ -283,6 +349,8 @@ Show and open the drupal.org issue linked to a merge request
 ```
 upkeep issue <module> <mr> [flags]
 ```
+
+Changes **nothing**.
 
 **Options**
 
@@ -309,6 +377,8 @@ To begin work on one: upkeep start <module> <issue>.
 upkeep issues <module> [flags]
 ```
 
+Changes **nothing**.
+
 **Options**
 
 | Option | What it does |
@@ -332,6 +402,8 @@ policy — see the README's policy stance.
 upkeep merge --fast-lane [flags]
 ```
 
+Changes **drupal.org**; needs a GitLab token. Careful: it merges the merge request, which nothing here can undo.
+
 **Options**
 
 | Option | What it does |
@@ -346,6 +418,8 @@ List the modules registered in the cockpit module registry
 ```
 upkeep modules [flags]
 ```
+
+Changes **nothing**.
 
 **Options**
 
@@ -367,6 +441,8 @@ Reads GitLab and writes registry.yml, and nothing else.
 ```
 upkeep modules:add [module...] [flags]
 ```
+
+Changes **the cockpit**; needs a GitLab token.
 
 **Options**
 
@@ -397,6 +473,8 @@ module that has no entry yet.
 upkeep modules:track <module> [core...] [flags]
 ```
 
+Changes **the cockpit**.
+
 **Options**
 
 | Option | What it does |
@@ -423,6 +501,8 @@ which cores it tracks rather than stop watching it, run `upkeep modules:track`.
 upkeep modules:untrack <module> [flags]
 ```
 
+Changes **the cockpit**. Careful: it removes the module's entry, and its core list is recorded nowhere else.
+
 **Options**
 
 | Option | What it does |
@@ -443,6 +523,8 @@ the comment without posting it.
 ```
 upkeep needs-work <module> <mr> [flags]
 ```
+
+Changes **drupal.org**; needs a GitLab token.
 
 **Options**
 
@@ -471,6 +553,8 @@ when there is not.
 upkeep notes <module> [flags]
 ```
 
+Changes **nothing**.
+
 **Options**
 
 | Option | What it does |
@@ -489,6 +573,8 @@ stdout carries the environment path and nothing else, so it composes:
 ```
 upkeep patch:apply <module> <issue> [flags]
 ```
+
+Changes **an environment**. Careful: it force-updates the managed patch-<nid> branch.
 
 **Options**
 
@@ -522,6 +608,8 @@ was produced.
 ```
 upkeep patch:check <module> <issue> [flags]
 ```
+
+Changes **an environment**. Careful: it force-updates the managed patch-<nid> branch, and overwrites the database with --fixture.
 
 **Options**
 
@@ -567,6 +655,8 @@ because the patch did not apply.
 upkeep patch:promote <module> <issue> [flags]
 ```
 
+Changes **your working copy**.
+
 **Options**
 
 | Option | What it does |
@@ -599,6 +689,8 @@ see upkeep explain "empty MR".
 upkeep patches [flags]
 ```
 
+Changes **nothing**.
+
 **Options**
 
 | Option | What it does |
@@ -626,6 +718,8 @@ named volumes released with the tree); pruned state regenerates on demand.
 ```
 upkeep prune --trees|--snapshots|--projects|--all [flags]
 ```
+
+Changes **the cockpit**. Careful: it deletes environments, cached results and fixture snapshots, with --yes.
 
 **Options**
 
@@ -657,6 +751,8 @@ the existing MR rather than opening a second.
 upkeep publish <module> <issue> [flags]
 ```
 
+Changes **drupal.org**; needs a GitLab token.
+
 **Options**
 
 | Option | What it does |
@@ -680,11 +776,14 @@ Runs no checks — this is for looking at the change in a browser. Use `upkeep c
 upkeep review <module> <mr> [flags]
 ```
 
+Changes **an environment**. Careful: it force-updates the managed mr-<iid> branch, and overwrites the database with --fixture.
+
 **Options**
 
 | Option | What it does |
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--fixture=FIXTURE` | Load this named fixture into the database before serving the site |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
@@ -705,6 +804,8 @@ When the work is ready: upkeep publish <module> <issue>.
 ```
 upkeep start <module> <issue> [flags]
 ```
+
+Changes **your working copy**.
 
 **Options**
 
@@ -728,6 +829,8 @@ Report cockpit state.
 upkeep status [flags]
 ```
 
+Changes **nothing**.
+
 **Options**
 
 | Option | What it does |
@@ -743,3 +846,5 @@ Print the upkeep version
 ```
 upkeep version
 ```
+
+Changes **nothing**.

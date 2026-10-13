@@ -62,6 +62,11 @@ Environments are always disposed through the engine adapter (containers and
 named volumes released with the tree); pruned state regenerates on demand.`,
 		Args: cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialNone,
+		Destroys:   "deletes environments, cached results and fixture snapshots, with --yes",
+	})
 
 	for _, scope := range scopeFlags {
 		cmd.Flags().Bool(scope.flag, false, scope.description)

@@ -45,6 +45,10 @@ upkeep dashboard --refresh=<module> if it is empty.
 To begin work on one: upkeep start <module> <issue>.`,
 		Args: cobra.ExactArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddCockpit(cmd)
 	cmd.Flags().String("status", "",
 		"Only this status: active, review, needs-work, rtbc, postponed (default: every open status)")

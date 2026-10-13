@@ -55,6 +55,10 @@ Writes registry.yml, and nothing else. Use ` + "`upkeep modules:add`" + ` to reg
 module that has no entry yet.`,
 		Args: cobra.MinimumNArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddCockpit(cmd)
 	cmd.Flags().String(cli.FlagRemove, "",
 		`Comma-separated core majors to stop tracking (e.g. "10")`)

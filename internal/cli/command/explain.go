@@ -31,6 +31,10 @@ func NewExplain() *cobra.Command {
 			"Matches on the term and on its meaning, so a half-remembered word still finds it.",
 		Args: cobra.MaximumNArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	// The glossary is data on disk here, so completing it costs nothing and
 	// turns "what was that word?" into two keystrokes.
 	cmd.ValidArgsFunction = func(

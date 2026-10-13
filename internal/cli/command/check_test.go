@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -864,4 +865,69 @@ func TestOutputTooBigForACommentIsStillShownWholeOnTheConsole(t *testing.T) {
 	if strings.Contains(stdout, "are not shown") {
 		t.Error("it reported dropping output that fits")
 	}
+}
+
+// review loads the fixture it is given.
+//
+// Accepting the flag and ignoring it is the failure worth guarding: you would
+// get a URL, open it, and be looking at an empty site while believing you were
+// looking at your fixture's state.
+func TestReviewLoadsTheFixtureItIsGiven(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aCheckingEngine()
+	engine.statusOK = true
+
+	server, client := aReviewableGitlab(t)
+	defer server.Close()
+
+	code, _, stderr := runCheckCommand(t, engine, client,
+		"review", "pathauto", "12", "--fixture=sample-content", "--cockpit="+root)
+
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if len(engine.fixtures) != 1 || engine.fixtures[0] != "sample-content" {
+		t.Errorf("fixtures %v", engine.fixtures)
+	}
+}
+
+// And it loads before serving, so a fixture that will not load never hands
+// back a URL onto the wrong database.
+//
+// Ordering is asserted by the failure rather than by a transcript: the engine
+// fake would serve a URL happily, so the absence of the Site URL line is what
+// says the load came first.
+func TestAFixtureThatWillNotLoadStopsTheReview(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	engine := aCheckingEngine()
+	engine.statusOK = true
+	engine.fixtureErr = errors.New("no such fixture")
+
+	server, client := aReviewableGitlab(t)
+	defer server.Close()
+
+	code, stdout, stderr := runCheckCommand(t, engine, client,
+		"review", "pathauto", "12", "--fixture=ghost", "--cockpit="+root)
+
+	if code == workflow.OK {
+		t.Errorf("exit %d for a fixture that would not load", code)
+	}
+	if strings.Contains(stdout, "Site URL") {
+		t.Errorf("it served a site onto a database that did not load:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "no such fixture") {
+		t.Errorf("the failure is not reported: %q", stderr)
+	}
+}
+
+// aReviewableGitlab answers the two reads a review makes.
+func aReviewableGitlab(t *testing.T) (*httptest.Server, *gitlab.Client) {
+	t.Helper()
+
+	return aGitlabStub(t, map[string]string{
+		"/api/v4/projects/project%2Fpathauto": `{"id":1,"path":"pathauto",` +
+			`"path_with_namespace":"project/pathauto","web_url":"https://git.drupalcode.org/project/pathauto"}`,
+		"/api/v4/projects/1/merge_requests/12": `{"iid":12,"title":"Fix it","state":"opened",` +
+			`"source_branch":"fix","target_branch":"2.0.x","sha":"head1"}`,
+	})
 }

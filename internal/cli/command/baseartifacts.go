@@ -25,6 +25,10 @@ func NewBaseArtifactsStatus() *cobra.Command {
 		Short: "List which core versions have base artifacts, with build dates and sizes",
 		Args:  cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	cli.AddCockpit(cmd)
 	cmd.RunE = cli.Run(runBaseArtifactsStatus)
 

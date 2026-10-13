@@ -21,6 +21,10 @@ func NewEnvPath(engines adapter.Factory) *cobra.Command {
 			"stdout carries the path and nothing else, so `cd $(upkeep env:path pathauto)` works.",
 		Args: cobra.ExactArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesNothing,
+		Credential: cli.CredentialNone,
+	})
 	addEnvironmentFlags(cmd)
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
 		path, err := locateEnvironment(cmd, engines, args[0])
@@ -47,6 +51,11 @@ func NewExec(engines adapter.Factory) *cobra.Command {
 			"stdout belongs to the wrapped command; upkeep's own words go to stderr.",
 		Args: cobra.MinimumNArgs(2),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesEnvironment,
+		Credential: cli.CredentialNone,
+		Destroys:   "can do anything the command you hand it does",
+	})
 	addEnvironmentFlags(cmd)
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
 		return runExec(cmd, engines, args[0], args[1:])
@@ -64,6 +73,10 @@ func NewDev(engines adapter.Factory) *cobra.Command {
 			"check out a branch, and print where it is.",
 		Args: cobra.ExactArgs(1),
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesEnvironment,
+		Credential: cli.CredentialNone,
+	})
 	cmd.Flags().String("branch", "", "Branch to check out in the module working copy")
 	addEnvironmentFlags(cmd)
 	cli.AddVerbose(cmd)

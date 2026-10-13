@@ -33,6 +33,11 @@ A rebuild is staged beside the live set and swapped in at the end, so a
 build that fails costs the attempt and leaves the existing set untouched.`,
 		Args: cobra.NoArgs,
 	}
+	cli.Describe(cmd, cli.Traits{
+		Changes:    cli.ChangesCockpit,
+		Credential: cli.CredentialNone,
+		Destroys:   "replaces that core's existing artifact set, with --force",
+	})
 	// --version, like every other core-version selector. The application's own
 	// -V/--version is removed at the root rather than left to collide.
 	cmd.Flags().String(cli.FlagVersion, "",
