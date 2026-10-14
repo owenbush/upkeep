@@ -1,0 +1,56 @@
+# Dependency updates.
+#
+# Two ecosystems, and the value is lopsided enough to be worth saying out loud.
+#
+# **github-actions is the one that earns its place.** Every action here is
+# pinned to a major — `actions/checkout@v4`, `goreleaser/goreleaser-action@v6`
+# — which floats inside that major and then goes silently stale when the next
+# one ships. Nothing in the repository or in CI would ever tell us; the jobs
+# keep passing on a version that stopped getting fixes.
+#
+# **gomod is cheap insurance rather than maintenance.** Three direct
+# dependencies, all of them slow-moving and widely used, so this will be quiet
+# most years. What it is for is the month one of them has a security release.
+#
+# Monthly, not weekly: at this dependency count weekly would mostly open
+# nothing, and a bot that usually opens nothing is a bot whose pull requests
+# stop getting read.
+#
+# **What Dependabot does not cover here, and is not meant to.** These are
+# pinned deliberately and bumped by a human who has read the changelog:
+#
+#   - ddev-drupal-contrib      internal/adapter/addon.go
+#   - ddev-upkeep              internal/adapter/fixtureaddon.go
+#   - the Go version in CI     .github/workflows/*.yml, and `go` in go.mod
+#   - drush's constraint hint  internal/adapter/drush.go
+#
+# A bumped pin there changes what every environment is built from, which is a
+# decision rather than an update.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # One pull request for the lot. Four actions whose bumps are almost always
+    # independent and uninteresting; four separate pull requests for them is
+    # how the queue becomes noise.
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    # Minor and patch together; a major arrives on its own, because a cobra
+    # major is a change to the command surface and wants reading rather than
+    # merging alongside a yaml patch.
+    groups:
+      go-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
