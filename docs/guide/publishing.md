@@ -66,3 +66,51 @@ reaches a child process. Your SSH agent answers instead. The PAT stays what it
 is: an API credential for reading merge requests, pipelines and issues.
 
 Origin is never pushed to and never altered.
+
+## What the merge request says
+
+The description is the issue reference, then a body:
+
+```
+Closes #3223746
+
+Opened with `upkeep publish`.
+```
+
+The reference is upkeep's and is always the first line — it is what GitLab
+closes the issue on, and what upkeep's own pairing reads to put the merge
+request on the right dashboard row. `Closes #<nid>` is also the form drupal.org
+itself auto-populates: of pathauto's open merge requests, half are that line
+and nothing else.
+
+The body is yours:
+
+```bash
+upkeep publish pathauto 3223746 --description="## What
+
+Two preg_replace() calls work on bytes while the string is UTF-8."
+
+upkeep publish pathauto 3223746 --description-file=notes.md
+
+upkeep publish pathauto 3223746 --no-footer
+```
+
+| Flag | What you get after the reference |
+| --- | --- |
+| nothing | `Opened with upkeep publish.` |
+| `--description=<text>` | your text |
+| `--description-file=<path>` | the file's contents |
+| `--no-footer` | nothing — the reference alone |
+
+**Giving a description replaces upkeep's note rather than appending to it.**
+Somebody who wrote a description did not ask for a signature under it, and
+needing a second flag to say so would be a poor trade. `--no-footer` is for
+wanting neither.
+
+Two sources for one body is a refusal rather than a precedence rule nobody
+would remember, and a `--description-file` that cannot be read or is empty is a
+refusal too — falling back to the default would publish a merge request whose
+description is not the one you wrote.
+
+`--title` works the same way, defaulting to drupal.org's `Issue #NNN: Title`
+convention so the merge request pairs with its issue by the ordinary rule.

@@ -1286,3 +1286,183 @@ func TestAMissingForkStillHandsOffForADrupalOrgProject(t *testing.T) {
 		t.Errorf("the handoff is gone: %q", stderr)
 	}
 }
+
+// publishDescription composes the body, and the issue reference is always
+// first — that is what makes the merge request find its issue again.
+func TestThePublishedDescriptionAlwaysOpensWithTheReference(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags []string
+	}{
+		{"the default", nil},
+		{"a given description", []string{"--description=Explains the fix at length."}},
+		{"no footer", []string{"--no-footer"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := anEnvironmentCockpit(t)
+			scene := aForkScene(t)
+
+			args := append([]string{"publish", "pathauto", "3223746", "--cockpit=" + root}, tc.flags...)
+			if code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+				scriptedClients{client: scene.client()}, cli.NoBrowser{}, args...); code != workflow.OK {
+				t.Fatalf("exit %d (%s)", code, stderr)
+			}
+
+			description, _ := scene.createdSeen["description"].(string)
+			if !strings.HasPrefix(description, "Closes #3223746") {
+				t.Errorf("the description does not open with the reference: %q", description)
+			}
+			nid, paired := drupal.ExtractOwningIssue("", "", description)
+			if !paired || nid != 3223746 {
+				t.Errorf("it no longer pairs with its issue: %q", description)
+			}
+		})
+	}
+}
+
+// A given description replaces upkeep's note rather than appending to it.
+//
+// Somebody who wrote a description did not ask for a signature under it, and
+// needing a second flag to say so would be a poor trade.
+func TestAGivenDescriptionReplacesTheFooter(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+
+	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root,
+		"--description=## What\n\nThe alias cache was never invalidated.")
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+
+	description, _ := scene.createdSeen["description"].(string)
+	if !strings.Contains(description, "The alias cache was never invalidated.") {
+		t.Errorf("the given description is missing: %q", description)
+	}
+	if strings.Contains(description, "upkeep publish") {
+		t.Errorf("it kept its own footer under somebody's description: %q", description)
+	}
+}
+
+// --no-footer leaves the reference alone, with nothing after it. That is the
+// form drupal.org itself auto-populates.
+func TestNoFooterLeavesTheReferenceAlone(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+
+	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root, "--no-footer")
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+
+	description, _ := scene.createdSeen["description"].(string)
+	if strings.Contains(description, "upkeep publish") {
+		t.Errorf("the footer survived --no-footer: %q", description)
+	}
+	if strings.Contains(strings.TrimSpace(description), "\n") {
+		t.Errorf("something was left under the reference: %q", description)
+	}
+}
+
+// The default still carries the note, because removing it silently would be a
+// change nobody asked for.
+func TestTheDefaultDescriptionStillCarriesTheNote(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+
+	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root)
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+
+	if description, _ := scene.createdSeen["description"].(string); !strings.Contains(
+		description, publishFooter) {
+		t.Errorf("the default lost its note: %q", description)
+	}
+}
+
+// A description read from a file, which is how anything longer than a shell
+// argument gets written.
+func TestTheDescriptionCanComeFromAFile(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+
+	path := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(path, []byte("## What\n\nTwo preg_replace calls work on bytes.\n"), 0o600); err != nil {
+		t.Fatalf("writing the body: %v", err)
+	}
+
+	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root, "--description-file="+path)
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+
+	description, _ := scene.createdSeen["description"].(string)
+	if !strings.Contains(description, "Two preg_replace calls work on bytes.") {
+		t.Errorf("the file's body is missing: %q", description)
+	}
+	if strings.Contains(description, "upkeep publish") {
+		t.Errorf("it appended its footer anyway: %q", description)
+	}
+}
+
+// Two sources for one body is a refusal rather than a precedence rule nobody
+// would remember.
+func TestTwoDescriptionSourcesIsARefusal(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	scene := aForkScene(t)
+
+	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+		scriptedClients{client: scene.client()}, cli.NoBrowser{},
+		"publish", "pathauto", "3223746", "--cockpit="+root,
+		"--description=inline", "--description-file=/nonexistent")
+
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d", code)
+	}
+	if !strings.Contains(stderr, "only one can be used") {
+		t.Errorf("the refusal does not say why: %q", stderr)
+	}
+}
+
+// A file that cannot be read, and an empty one, are both refusals — not a
+// silent fall back to the default, which would publish a merge request whose
+// description is not the one somebody wrote.
+func TestAnUnusableDescriptionFileIsARefusal(t *testing.T) {
+	empty := filepath.Join(t.TempDir(), "empty.md")
+	if err := os.WriteFile(empty, []byte("   \n"), 0o600); err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		path  string
+		match string
+	}{
+		{"missing", filepath.Join(t.TempDir(), "absent.md"), "could not read the description"},
+		{"empty", empty, "is empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := anEnvironmentCockpit(t)
+			scene := aForkScene(t)
+
+			code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
+				scriptedClients{client: scene.client()}, cli.NoBrowser{},
+				"publish", "pathauto", "3223746", "--cockpit="+root, "--description-file="+tc.path)
+
+			if code != workflow.Infrastructure {
+				t.Errorf("exit %d", code)
+			}
+			if !strings.Contains(stderr, tc.match) {
+				t.Errorf("got %q, want it to mention %q", stderr, tc.match)
+			}
+		})
+	}
+}

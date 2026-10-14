@@ -759,7 +759,10 @@ Changes **drupal.org**; needs a GitLab token.
 | --- | --- |
 | `--branch=BRANCH` | Publish this branch instead of deriving it |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--description=DESCRIPTION` | Merge request body, after the issue reference (default: a one-line note) |
+| `--description-file=DESCRIPTION-FILE` | Read the merge request body from this file instead |
 | `--draft` | Open it as a draft |
+| `--no-footer` | Leave the body empty rather than adding upkeep's own note |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--target=TARGET` | Branch to merge into (default: the base the work branch was started from) |
 | `--title=TITLE` | Merge request title (default: from the issue) |

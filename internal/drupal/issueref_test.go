@@ -161,3 +161,81 @@ func TestAClosingDeclarationOutranksAMentionBesideIt(t *testing.T) {
 		t.Errorf("owning: got %d,%v", nid, found)
 	}
 }
+
+// drupal.org's short link is a reference like any other.
+//
+// `drupal.org/i/<nid>` 302s to the full issue URL and is what the issue page
+// offers you, so people paste it into merge request descriptions. Not knowing
+// the shape meant losing the pairing on an ordinary reference somebody else
+// wrote — found when a published description built from it paired with
+// nothing.
+func TestTheShortIssueLinkPairs(t *testing.T) {
+	for _, text := range []string{
+		"Fixes https://www.drupal.org/i/3223746",
+		"see https://drupal.org/i/3223746 for the details",
+	} {
+		nid, found := ExtractOwningIssue("", "", text)
+		if !found || nid != 3223746 {
+			t.Errorf("%q -> %d, %t", text, nid, found)
+		}
+	}
+}
+
+// A host that merely contains "drupal.org" is not drupal.org.
+//
+// Every one of the three URL patterns needed a word boundary and none had one,
+// so `notdrupal.org/node/123` paired as though it were an issue reference.
+// Tested across all three rather than just the one that exposed it, because
+// the omission was identical in each.
+func TestALookalikeHostDoesNotPair(t *testing.T) {
+	for _, text := range []string{
+		"notdrupal.org/i/3223746 is somewhere else",
+		"notdrupal.org/node/3223746 is somewhere else",
+		"notdrupal.org/project/pathauto/issues/3223746 is somewhere else",
+		"mydrupal.org/node/3223746",
+	} {
+		if nid, found := ExtractOwningIssue("", "", text); found {
+			t.Errorf("%q paired with %d", text, nid)
+		}
+	}
+}
+
+// And a reference needs an actual number.
+func TestAShortLinkNeedsANumber(t *testing.T) {
+	for _, text := range []string{
+		"drupal.org/i/not-a-number",
+		"drupal.org/node/",
+	} {
+		if nid, found := ExtractOwningIssue("", "", text); found {
+			t.Errorf("%q paired with %d", text, nid)
+		}
+	}
+}
+
+// The real host still pairs on every shape, including with a subdomain.
+func TestTheRealHostPairsWithOrWithoutWww(t *testing.T) {
+	for _, text := range []string{
+		"https://www.drupal.org/node/3223746",
+		"https://drupal.org/node/3223746",
+		"drupal.org/i/3223746",
+	} {
+		nid, found := ExtractOwningIssue("", "", text)
+		if !found || nid != 3223746 {
+			t.Errorf("%q -> %d, %t", text, nid, found)
+		}
+	}
+}
+
+// Every URL shape drupal.org serves for an issue reaches the same nid.
+func TestEveryIssueUrlShapeAgrees(t *testing.T) {
+	for _, text := range []string{
+		"https://www.drupal.org/node/3223746",
+		"https://www.drupal.org/i/3223746",
+		"https://www.drupal.org/project/pathauto/issues/3223746",
+	} {
+		nid, found := ExtractOwningIssue("", "", text)
+		if !found || nid != 3223746 {
+			t.Errorf("%q -> %d, %t", text, nid, found)
+		}
+	}
+}
