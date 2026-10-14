@@ -1,0 +1,66 @@
+# Known vulnerabilities in code upkeep actually calls.
+#
+# The complement to Dependabot rather than a duplicate of it. Dependabot
+# answers "is there a newer version", which for three slow-moving dependencies
+# is usually no. This answers "is there a known vulnerability on a path we
+# call" — and most of what it finds is not a dependency at all but the
+# **standard library of the toolchain that built the binary**, which no
+# dependency bot looks at.
+#
+# That is what it found on the day it was added, and nothing else would have.
+# The `go` directive said 1.24.4 and the scan reported 35 called
+# vulnerabilities, every one of them stdlib. Raising the floor to the last 1.24
+# patch left 23: Go backports only to the two most recent minors, 1.24 had
+# stopped being one, and those 23 were never going to be fixed there. Moving to
+# 1.26 returned "No vulnerabilities found". Not one of the four gates, the race
+# detector, `go mod verify` or Dependabot would have said a word.
+#
+# **Its own workflow, because of the schedule.** The Go vulnerability database
+# changes without this repository changing, so a run triggered only by a push
+# would miss exactly the case this exists for: a vulnerability published
+# against code already shipped. Weekly, plus the ordinary push and pull-request
+# runs, plus a button.
+#
+# **Blocking, and it can go red with no commit behind it.** That is the signal
+# working rather than a flake. The alternative is finding out when somebody
+# else does.
+name: Vulnerabilities
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/vulnerabilities.yml"
+  pull_request:
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/vulnerabilities.yml"
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: No known vulnerabilities on a called path
+    runs-on: ubuntu-latest
+    steps:
+      # The action checks the repository out itself.
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          # Read the toolchain from go.mod rather than naming one here, so
+          # what gets scanned is the floor anyone building this is held to —
+          # and so a vulnerability fixed only in a later minor fails here
+          # until that floor moves, which is the decision it should force.
+          go-version-file: go.mod
+          go-package: ./...

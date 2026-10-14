@@ -1,7 +1,7 @@
 # CLAUDE.md — upkeep
 
 Maintenance orchestrator CLI for contributed Drupal modules. One static Go
-binary (Go >= 1.24, cobra). User-facing docs: `README.md` and `docs/`.
+binary (Go >= 1.26, cobra). User-facing docs: `README.md` and `docs/`.
 
 **This file is the architecture and the rationale.** The separate design
 documents it used to point at — the design document, the dashboard row model,
@@ -1015,7 +1015,7 @@ and was learned the hard way.
 ## Quality gates
 
 Four, matching the PHP's, and all blocking in CI
-(`.github/workflows/go.yml`, on Go 1.24 and 1.25):
+(`.github/workflows/go.yml`, on Go 1.26 and 1.27):
 
 ```bash
 gofmt -l cmd internal   # must print nothing
@@ -1037,6 +1037,28 @@ red build is legible, and a `go mod tidy` job — which earned its place
 immediately by catching cobra and yaml.v3 marked `// indirect` when both are
 direct dependencies, something no amount of local testing would notice with a
 warm module cache.
+
+**A fifth job, and it is a gate even though it is not one of the four.**
+`.github/workflows/vulnerabilities.yml` runs `govulncheck` over `./...`, and
+it is the complement to Dependabot rather than a duplicate: Dependabot asks
+whether a newer version exists, which for three slow-moving dependencies is
+usually no, while this asks whether a known vulnerability sits on a path upkeep
+calls. **Most of what it finds is the standard library of the toolchain**,
+which no dependency bot looks at. It earned its place on the day it was added:
+the `go` directive said 1.24.4 and the scan reported **35 called
+vulnerabilities, every one of them stdlib**; raising the floor to the last 1.24
+patch left 23, because Go backports only to the two most recent minors and
+1.24 had stopped being one, so those 23 were never going to be fixed there.
+The toolchain moved to 1.26 and the scan came back clean. Not one of the four
+gates, the race detector, `go mod verify` or Dependabot would have said a
+word. It reads the toolchain from `go.mod` rather than naming one, so what is
+scanned is the floor anyone building this is held to, and a vulnerability fixed
+only in a later minor fails the build until that floor moves — which is the
+decision it should force. **Its own workflow because of the schedule**: the
+vulnerability database changes without this repository changing, so a run
+triggered only by a push would miss the case it exists for. Weekly, plus
+pushes, plus a button. It blocks, and it can go red with no commit behind it;
+that is the signal working.
 
 **The coverage floor is per package, not one number** (`coverage.sh`). This
 is the port of the PHP's 100%-line coverage threshold, and being
