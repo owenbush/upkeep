@@ -41,8 +41,19 @@ var (
 	closesIssue = regexp.MustCompile(
 		`(?i)\b(?:clos(?:e|es|ed|ing)|fix(?:es|ed|ing)?|resolv(?:e|es|ed|ing)|` +
 			`implement(?:s|ed|ing)?)\b:?\s+#(\d+)`)
-	issueURL    = regexp.MustCompile(`drupal\.org/project/[^/]+/issues/(\d+)`)
-	nodeURL     = regexp.MustCompile(`drupal\.org/node/(\d+)`)
+	// The \b on each is load-bearing and was missing: without it
+	// `notdrupal.org/node/123` matches, because "notdrupal.org" contains
+	// "drupal.org". A word boundary rejects it — "t" and "d" are both word
+	// characters, so there is no boundary between them — while still matching
+	// `www.drupal.org`, where the dot before "drupal" supplies one.
+	issueURL = regexp.MustCompile(`\bdrupal\.org/project/[^/]+/issues/(\d+)`)
+	nodeURL  = regexp.MustCompile(`\bdrupal\.org/node/(\d+)`)
+	// shortURL is drupal.org's own short link, which 302s to the full issue
+	// URL. People paste it into merge request descriptions because it is what
+	// the issue page offers them, and upkeep reads those descriptions to pair
+	// a merge request to its issue — so not knowing this shape meant losing
+	// the pairing on somebody else's perfectly ordinary reference.
+	shortURL    = regexp.MustCompile(`\bdrupal\.org/i/(\d+)`)
 	forkPathNid = regexp.MustCompile(`^issue/.+-(\d{4,})$`)
 )
 
@@ -119,6 +130,9 @@ func fromText(text string, owningOnly bool) (int, bool) {
 		return atoi(m[1]), true
 	}
 	if m := nodeURL.FindStringSubmatch(text); m != nil {
+		return atoi(m[1]), true
+	}
+	if m := shortURL.FindStringSubmatch(text); m != nil {
 		return atoi(m[1]), true
 	}
 

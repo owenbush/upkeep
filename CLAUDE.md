@@ -351,6 +351,34 @@ and was learned the hard way.
   access, then an SSH URL that is never assembled), asked before the push
   because discovering either afterwards leaves a branch on a remote the
   operator never chose.
+- **The merge request description is a reference line upkeep owns and a body
+  you own.** `publishDescription` composes `<reference>\n\n<body>`, which is
+  the shape drupal.org's own merge requests take — measured on pathauto, three
+  of six open ones are the bare reference and nothing else, the form
+  drupal.org auto-populates, and the rest are that line followed by the
+  author's prose under their own headings. The reference stays upkeep's because
+  a description without it is a merge request that pairs with nothing on the
+  dashboard that opened it; the body comes from `--description`,
+  `--description-file`, or the footer, and **supplying one replaces the footer
+  rather than appending to it** — somebody who wrote a description did not ask
+  for upkeep's signature under it, and a second flag to say so would be a poor
+  trade. `--no-footer` is for wanting neither. Two sources is a refusal rather
+  than a precedence rule nobody would remember, and an unreadable or empty
+  `--description-file` is a refusal rather than a silent fall back, which would
+  publish a description that is not the one somebody wrote.
+  **The fork route's reference moved from `Fixes <issue.URL>` to
+  `Closes #<nid>`, and the old form was only reliable by accident.** The
+  pairing matches a `/node/` or `/project/x/issues/` URL, which is the shape
+  api-d7 happens to produce — while `drupal.org/i/<nid>` is an equally real
+  drupal.org link (302 to the full URL, and what the issue page offers you)
+  that matched *neither*. So a description built from a URL arriving in that
+  form paired with nothing. Found by a test written for the new flags, not by
+  reading. The number cannot have that problem, and it is drupal.org's own
+  convention besides. `shortURL` now recognises the short link too, because
+  upkeep reads *other people's* descriptions to pair their merge requests —
+  and all three URL patterns gained the `\b` they never had: without it
+  `notdrupal.org/node/123` paired as an issue reference, since that host
+  contains "drupal.org".
 - **Two refusals, opposite answers.** `adapter.PushAuthorizationHelp` tells
   *authentication* (GitLab does not know you — SSH key) from *authorization*
   (it knows you and says no). On drupal.org the second is the ordinary state of

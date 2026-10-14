@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -380,6 +381,12 @@ the existing MR rather than opening a second.`,
 	cmd.Flags().String("target", "",
 		"Branch to merge into (default: the base the work branch was started from)")
 	cmd.Flags().Bool("draft", false, "Open it as a draft")
+	cmd.Flags().String("description", "",
+		"Merge request body, after the issue reference (default: a one-line note)")
+	cmd.Flags().String("description-file", "",
+		"Read the merge request body from this file instead")
+	cmd.Flags().Bool("no-footer", false,
+		"Leave the body empty rather than adding upkeep's own note")
 	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
@@ -480,10 +487,15 @@ func runPublish(
 	// as the destination. Backwards-looking until you remember that the branch
 	// is the subject of the request — and for a same-project branch the two
 	// are one, which CreateMergeRequest handles by omitting target_project_id.
+	description, err := publishDescription(cmd, route.Reference)
+	if err != nil {
+		return 0, err
+	}
+
 	created, failure := client.CreateMergeRequest(
 		route.Source, branch.Name, target,
 		mergeRequestTitle(cmd, issue),
-		route.Description,
+		description,
 		project,
 	)
 	if failure != nil {
@@ -544,9 +556,15 @@ type publishRoute struct {
 	// Source is the project that will hold the branch. A merge-request lookup
 	// narrows by it, and the request is opened from it.
 	Source gitlab.Project
-	// Description is the merge request body, which is also how the merge
-	// request declares the issue it fixes.
-	Description string
+	// Reference is how the merge request declares the issue it fixes, and it
+	// is always the first line of the description — which is where every
+	// reader looks for it: GitLab's closing pattern, upkeep's own pairing,
+	// and a person opening the page.
+	//
+	// The route owns this and the flags do not, because a description without
+	// it is a merge request that pairs with nothing on the dashboard that
+	// opened it.
+	Reference string
 }
 
 // publishRouteFor decides where the work goes back to.
@@ -590,9 +608,18 @@ func publishRouteFor(
 			Where:  fork.PathWithNamespace,
 			Remote: adapter.IssueForkRemote(issue.Nid, fork.SSHURL),
 			Source: *fork,
-			// The issue is a drupal.org node, so its URL is what names it.
-			Description: fmt.Sprintf(
-				"Fixes %s\n\nOpened with `upkeep publish`.", issue.URL),
+			// `Closes #<nid>`, which is what drupal.org itself auto-populates
+			// — measured on pathauto, three of six open merge requests are
+			// exactly that line and nothing else.
+			//
+			// It used to be `Fixes <issue.URL>`, and that was only reliable
+			// by accident: the pairing matches a /node/ or a
+			// /project/x/issues/ URL, which is the shape api-d7 happens to
+			// produce. `drupal.org/i/<nid>` is an equally real drupal.org
+			// link and matches neither, so a description built from a URL
+			// that arrived in that form paired with nothing. The number
+			// cannot have that problem.
+			Reference: fmt.Sprintf("Closes #%d", issue.Nid),
 		}, nil
 	}
 
@@ -615,8 +642,7 @@ func publishRouteFor(
 		// drupal.org URL, and a work-items URL matches neither, so an MR
 		// described by its URL would have paired with nothing on the very
 		// dashboard that opened it.
-		Description: fmt.Sprintf(
-			"Closes #%d\n\nOpened with `upkeep publish`.", issue.Nid),
+		Reference: fmt.Sprintf("Closes #%d", issue.Nid),
 	}, nil
 }
 
@@ -681,6 +707,61 @@ func missingIssueForkError(nid int, moduleName string) error {
 			"issue, and one made straight from the GitLab API would be a repository "+
 			"nothing points at.",
 		nid, drupal.IssueURL(nid), moduleName, nid)
+}
+
+// publishFooter is the line upkeep adds when nobody gave it anything better.
+//
+// Suppressible, because it is upkeep's words in somebody else's merge request
+// and plenty of maintainers would rather it were not there. Nothing reads it:
+// the issue reference does the pairing, and this is a courtesy note.
+const publishFooter = "Opened with `upkeep publish`."
+
+// publishDescription composes the merge request body.
+//
+// `<reference>` then a blank line then the body, which is the shape
+// drupal.org's own merge requests take. Measured on pathauto's open ones:
+// three of six are the bare reference and nothing else — the form drupal.org
+// auto-populates — and the rest are that reference followed by the author's
+// prose under their own headings, up to three thousand characters of it. So
+// the useful thing upkeep can do is put the reference where it belongs and
+// get out of the way.
+//
+// The body comes from --description, or --description-file, or the footer, or
+// nothing. Supplying one **replaces the footer** rather than appending to it:
+// somebody who wrote a description did not ask for upkeep's signature under
+// it, and needing a second flag to say so would be a poor trade.
+func publishDescription(cmd *cobra.Command, reference string) (string, error) {
+	text := cli.Flag(cmd, "description")
+	file := cli.Flag(cmd, "description-file")
+
+	if text != "" && file != "" {
+		return "", fmt.Errorf(
+			"--description and --description-file both give the body, so only one can be " +
+				"used. Pass the text, or the path to a file holding it")
+	}
+
+	body := strings.TrimSpace(text)
+	if file != "" {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("could not read the description from %q: %w", file, err)
+		}
+		body = strings.TrimSpace(string(raw))
+		if body == "" {
+			return "", fmt.Errorf(
+				"%q is empty, so there is no description in it. Drop the flag to use the "+
+					"default, or --no-footer for the issue reference alone", file)
+		}
+	}
+
+	if body == "" && !cli.Switched(cmd, "no-footer") {
+		body = publishFooter
+	}
+	if body == "" {
+		return reference, nil
+	}
+
+	return reference + "\n\n" + body, nil
 }
 
 // mergeRequestTitle is the drupal.org convention, so the merge request is
