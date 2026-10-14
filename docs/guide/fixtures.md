@@ -34,6 +34,146 @@ yourself, but you can:
 | `ddev upkeep-fixture-list` | Both scopes, with size and snapshot state |
 | `ddev upkeep-fixture-prune` | Delete this project's materialized snapshots — never the dumps |
 
+## Making one, start to finish
+
+A worked example on `helper` for Drupal 11. Substitute your own module and core
+major throughout.
+
+### 1. Get a running site
+
+```bash
+upkeep dev helper --version=11
+cd "$(upkeep env:path helper --version=11)"
+ddev launch
+```
+
+`dev` provisions the environment if there is not one yet and prints where it
+is. What you get is a clean minimal install of that core major with your module
+linked in — the same thing every check runs against, which is the point: a
+fixture captured anywhere else is a fixture that may not load here.
+
+Two paths inside the environment are worth knowing, because they are the same
+files by two names:
+
+| Path | What it is |
+| --- | --- |
+| `<project>/module` | your module's **git checkout** — the real one, and where a commit goes |
+| `<project>/web/modules/contrib/helper` | a symlink to it, which is where Drupal and the checks look |
+
+### 2. Set the site up the way you want it captured
+
+Either through the UI, after a one-time login link, or with drush directly:
+
+```bash
+ddev drush uli
+ddev drush en helper -y
+```
+
+**Other contrib is allowed, and `composer` is what makes it travel.** A
+realistic fixture often needs more than the module under test — a workflow, a
+field type, an admin UI — so install it the way the next environment will have
+to:
+
+```bash
+ddev composer require drupal/admin_toolbar
+ddev drush en admin_toolbar -y
+```
+
+The manifest is generated from the project's own `composer.json`, so a package
+required like that is recorded in the fixture's `require:`, and
+`upkeep-fixture-load` **installs it for you** in any environment that does not
+have it. You are not limited to what your module depends on.
+
+What does not travel is anything composer cannot fetch on the other side: a
+custom module, a package from a private repository, or code copied into
+`web/modules/` by hand. That code is in *your* codebase and absent from
+`composer.json`, so the manifest never learns of it, and the load is refused
+with the extension named rather than failing later inside Drupal. If a fixture
+has to carry something like that, the module it belongs to has to be in the
+project by hand on every machine that loads it — which is usually the sign to
+build the state with composer-installable code instead.
+
+[A dump alone is not enough](#a-dump-alone-is-not-enough) is the mechanism in
+full.
+
+### 3. Export it
+
+```bash
+ddev upkeep-fixture-create smoke
+```
+
+That writes `smoke.sql.gz` and its generated `smoke.yml` manifest. You never
+write the manifest; it is read out of the database and the project's
+`composer.json` at this moment, so it cannot drift from the dump beside it.
+
+Where it lands: the **module repository** when the project root is a module
+checkout, the shared library otherwise. Say which if you would rather not rely
+on that:
+
+```bash
+ddev upkeep-fixture-create smoke --dest=module    # tests/fixtures/ in the module
+ddev upkeep-fixture-create smoke --dest=library   # shared across modules
+```
+
+Two things it does for you, both worth knowing about rather than discovering:
+
+- **It sanitises by default** when the destination is the module repository —
+  `drush sql:sanitize` — because a committed fixture is public data.
+  `--no-sanitize` opts out, and the only database that deserves it is one that
+  never held a real account or address.
+- **It warns past 5 MB.** A minimal install plus the entities you need gzips to
+  well under that. Megabytes beyond it are usually cache and watchdog tables;
+  truncate them and dump again.
+
+### 4. Prove it loads before you rely on it
+
+```bash
+ddev upkeep-fixture-list
+upkeep check helper --working-copy --version=11 --fixture=smoke
+```
+
+The second line is the real test, because it is the thing that will consume the
+fixture from now on. An unknown name aborts before any check runs, so a typo
+cannot quietly test against the wrong state.
+
+If the load is refused, the message names what is missing — a core-major
+mismatch, a package it installed, or an extension nothing can install for you
+(a custom module in the dump is the usual culprit).
+
+### 5. Commit it, if it belongs to the module
+
+```bash
+cd "$(upkeep env:path helper --version=11)/module"
+git add tests/fixtures/smoke.sql.gz tests/fixtures/smoke.yml
+git commit -m "Add a smoke fixture"
+```
+
+Commit **both** files: a dump whose requirements nobody recorded only works on
+the machine that made it. Never commit a snapshot — those are disposable local
+caches, and `.sql.gz` plus `.yml` is the whole portable artifact.
+
+A module fixture shadows a same-named library one, so this is how you give
+every co-maintainer the same state without them running upkeep at all.
+
+### Using it from then on
+
+```bash
+upkeep check helper 94 --fixture=smoke
+upkeep patch:check helper 3597857 --fixture=smoke
+```
+
+Those two are the only commands that take `--fixture`; `review`, `dev` and
+`patch:apply` do not. First use imports the dump and materializes a snapshot;
+every later load restores the snapshot instead, which is most of why this is
+worth doing.
+
+### When it goes stale
+
+Re-create it under the same name — `upkeep-fixture-create` overwrites, and the
+changed checksum invalidates the snapshot, so the next load rebuilds from the
+new dump. If you only want the cache gone, `ddev upkeep-fixture-prune` or
+`upkeep prune` deletes snapshots and never dumps.
+
 ## A dump alone is not enough
 
 A database encodes references to *code*: which extensions are enabled, plugin
@@ -57,8 +197,11 @@ The dividing line is worth knowing:
 | Anything that module `require`s in its `composer.json` | Yes — composer resolves it |
 | Any other contrib — `admin_toolbar`, `webform`, `paragraphs` | **No** |
 
-So `olivero` is fine and `admin_toolbar` is not, unless the module under test
-depends on it.
+So `olivero` needs nothing, and `admin_toolbar` needs only to be in the
+project's `composer.json` when the fixture is captured — `ddev composer require
+drupal/admin_toolbar` is the whole difference between a fixture that installs
+it on load and one that is refused. The restriction is **not** "only what your
+module depends on"; it is "only what composer can fetch".
 
 This is what the manifest is for. `upkeep-fixture-create` records the core
 version, the enabled extensions and the composer requirements it saw:
