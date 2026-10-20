@@ -175,9 +175,13 @@ Four appear nearly everywhere:
 `upkeep <command> --help` is authoritative for the rest, and
 [the reference](../commands.md) lists them all in one page.
 
-If you are scripting any of this, or pointing an agent at it, read
-[structured output](../reference/json.md) rather than parsing the tables: the
+If you are scripting any of this, read [structured output](../reference/json.md)
+rather than parsing the tables: the
 columns truncate titles and are free to change, and the JSON is a contract.
+
+## Pointing an agent at this
+
+There is a skill for that, and a gate behind it. See [Agents](./agents.md).
 
 ## Exit codes
 
