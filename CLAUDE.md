@@ -379,6 +379,38 @@ and was learned the hard way.
   and all three URL patterns gained the `\b` they never had: without it
   `notdrupal.org/node/123` paired as an issue reference, since that host
   contains "drupal.org".
+- **The outward-facing commands need somebody present.** `merge` has refused
+  without a terminal since it was written, which is what makes the DA
+  one-approval stance structural rather than advisory. `publish` and
+  `needs-work` had no such property and are the other two commands whose
+  effects land on somebody else's project — a merge request under your name, a
+  comment a contributor will read and act on — so a script, a pipe or an agent
+  could reach either, and the mistake is not a broken build but a wrong thing
+  said in public. Both now refuse without a terminal **unless `--yes`**, which
+  is already this tool's word for "I meant this" (`prune`). A flag rather than
+  `merge`'s hard refusal, and the difference is the stance: a merge consumes an
+  approval only a human can give, while a publish is an action a human can
+  authorise in advance. `merge` keeps its own refusal and gains no `--yes`.
+  `needs-work --dry-run` is exempt because it posts nothing, and gating a
+  preview would have made the safe path as awkward as the unsafe one. The gate
+  is asked **before the credential**, same reasoning as the node id: a caller
+  told the wrong refusal configures a token they did not need.
+  **It also fixed a hole the terminal test had from the start.**
+  `isTerminalReader` asked whether stdin's mode carried `os.ModeCharDevice`,
+  and `/dev/null` is `crw-rw-rw-` — so a process whose stdin was /dev/null, what
+  CI steps and many agent runners hand a child, was read as somebody typing.
+  `merge` survived that by accident: it went on to read EOF and fall to the
+  default, which is always the answer that does nothing. A gate has no such
+  second line, so it would simply not have existed in the case it was built
+  for. Found by running the real binary with `< /dev/null`, not by reading.
+  `golang.org/x/term` now does the ioctl — the fourth direct dependency, taken
+  deliberately, because this is the one job that cannot be done from the
+  standard library without per-platform build tags.
+  **The test harness pins stdin** (`invokeWith` sets it to a buffer): left
+  unset it is `os.Stdin`, which made the gate open when the suite ran from a
+  shell and closed under CI — an answer that depends on where it ran, which is
+  the one thing a gate's tests must not be. 51 call sites gained `--yes`, as a
+  caller would.
 - **Two refusals, opposite answers.** `adapter.PushAuthorizationHelp` tells
   *authentication* (GitLab does not know you — SSH key) from *authorization*
   (it knows you and says no). On drupal.org the second is the ordinary state of

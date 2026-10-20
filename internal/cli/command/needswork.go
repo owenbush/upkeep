@@ -46,6 +46,7 @@ the comment without posting it.`,
 	addMrSurface(cmd)
 	cli.AddNoOpen(cmd)
 	cmd.Flags().Bool("dry-run", false, "Print the comment without posting it")
+	addWriteConfirmation(cmd, "posting the comment")
 	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
@@ -58,6 +59,17 @@ the comment without posting it.`,
 func runNeedsWork(
 	cmd *cobra.Command, clients cli.GitlabClients, browser cli.Browser, moduleName, rawIID string,
 ) (int, error) {
+	// Exempting --dry-run, which posts nothing: previewing the comment is a
+	// read, and an agent preparing one for a human to send is exactly the use
+	// worth leaving open.
+	if !cli.Switched(cmd, "dry-run") {
+		if err := assertDeliberateWrite(cmd,
+			"this posts your recorded check results as a comment somebody else will read "+
+				"and act on"); err != nil {
+			return 0, err
+		}
+	}
+
 	// The strict path, before the resolution: this command's whole purpose is
 	// to write, and a credential error after two round trips is two round
 	// trips wasted.
