@@ -36,6 +36,14 @@ func invokeWith(t *testing.T, root *cobra.Command, args ...string) (code int, st
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	root.SetOut(out)
 	root.SetErr(errOut)
+	// Stdin is set explicitly, and to something that is not a terminal.
+	//
+	// Left unset it is os.Stdin, which makes the outward-write gate open when
+	// the suite is run from a shell and closed when CI runs it — a test whose
+	// answer depends on where it ran, which is the one thing a gate's tests
+	// must not be. A command that is meant to get through the gate says so
+	// with --yes, as a caller would.
+	root.SetIn(&bytes.Buffer{})
 	root.SetArgs(args)
 
 	code = cli.Execute(root, errOut)

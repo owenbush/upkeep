@@ -170,7 +170,7 @@ func TestNeedsWorkFindsEvidenceByTheMergeRef(t *testing.T) {
 	storeEvidence(t, root, nwMergeRefSHA, time.Now(), aFailedRun()...)
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -199,7 +199,7 @@ func TestNeedsWorkFallsBackToTheHeadSha(t *testing.T) {
 	storeEvidence(t, root, nwHeadSHA, time.Now(), aFailedRun()...)
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -221,7 +221,7 @@ func TestNeedsWorkPublishesOlderEvidenceAndSaysSo(t *testing.T) {
 	storeEvidence(t, root, nwOlderSHA, time.Now().Add(-time.Hour), aFailedRun()...)
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -241,7 +241,7 @@ func TestNeedsWorkRefusesWithNothingToPublish(t *testing.T) {
 	scene := aNotingGitlab(t)
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -267,7 +267,7 @@ func TestTheCommentSaysWhatHappened(t *testing.T) {
 	storeEvidence(t, root, nwMergeRefSHA, time.Now(), checks...)
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -310,7 +310,7 @@ func TestTheCommentOmitsAnEmptyFold(t *testing.T) {
 		check.Result{Type: check.PhpUnit, Status: check.Failed, ExitCode: &one})
 
 	runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if comment := scene.comment(t); strings.Contains(comment, "<details>") {
 		t.Errorf("an empty fold was written:\n%s", comment)
@@ -325,7 +325,7 @@ func TestNeedsWorkDryRunPostsNothing(t *testing.T) {
 	storeEvidence(t, root, nwMergeRefSHA, time.Now(), aFailedRun()...)
 
 	code, stdout, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--dry-run", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--dry-run", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -347,7 +347,7 @@ func TestNeedsWorkOpensTheIssueForTheStatusChange(t *testing.T) {
 	browser := &recordingBrowser{}
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, browser,
-		"needs-work", "pathauto", "12", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -362,7 +362,7 @@ func TestNeedsWorkOpensTheIssueForTheStatusChange(t *testing.T) {
 	// A browser that will not open says where to go instead.
 	refusing := &recordingBrowser{refuse: true}
 	_, _, stderr = runNeedsWorkCommand(t, aNotingGitlab(t), refusing,
-		"needs-work", "pathauto", "12", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--cockpit="+root)
 	if !strings.Contains(stderr, "drupal.org/node/3300001") {
 		t.Errorf("it does not print the issue URL: %q", stderr)
 	}
@@ -376,7 +376,7 @@ func TestNeedsWorkOpensNothingWhenToldNotTo(t *testing.T) {
 	browser := &recordingBrowser{}
 
 	runNeedsWorkCommand(t, scene, browser,
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if len(browser.opened) != 0 {
 		t.Errorf("it opened %v", browser.opened)
@@ -393,7 +393,7 @@ func TestNeedsWorkReportsARefusedComment(t *testing.T) {
 	browser := &recordingBrowser{}
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, browser,
-		"needs-work", "pathauto", "12", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -415,7 +415,7 @@ func TestNeedsWorkRefusesWithoutACredential(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), noIssues{},
 		scriptedClients{}, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -460,7 +460,7 @@ func TestNeedsWorkReportsAnUnreadableResultsCache(t *testing.T) {
 	}
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -490,7 +490,7 @@ func TestNeedsWorkSaysNothingAboutStalenessWithNoRevisionToCompare(t *testing.T)
 	storeEvidence(t, root, nwOlderSHA, time.Now(), aFailedRun()...)
 
 	code, _, stderr := runNeedsWorkCommand(t, scene, cli.NoBrowser{},
-		"needs-work", "pathauto", "12", "--no-open", "--cockpit="+root)
+		"needs-work", "--yes", "pathauto", "12", "--no-open", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)

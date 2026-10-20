@@ -379,6 +379,38 @@ and was learned the hard way.
   and all three URL patterns gained the `\b` they never had: without it
   `notdrupal.org/node/123` paired as an issue reference, since that host
   contains "drupal.org".
+- **The outward-facing commands need somebody present.** `merge` has refused
+  without a terminal since it was written, which is what makes the DA
+  one-approval stance structural rather than advisory. `publish` and
+  `needs-work` had no such property and are the other two commands whose
+  effects land on somebody else's project — a merge request under your name, a
+  comment a contributor will read and act on — so a script, a pipe or an agent
+  could reach either, and the mistake is not a broken build but a wrong thing
+  said in public. Both now refuse without a terminal **unless `--yes`**, which
+  is already this tool's word for "I meant this" (`prune`). A flag rather than
+  `merge`'s hard refusal, and the difference is the stance: a merge consumes an
+  approval only a human can give, while a publish is an action a human can
+  authorise in advance. `merge` keeps its own refusal and gains no `--yes`.
+  `needs-work --dry-run` is exempt because it posts nothing, and gating a
+  preview would have made the safe path as awkward as the unsafe one. The gate
+  is asked **before the credential**, same reasoning as the node id: a caller
+  told the wrong refusal configures a token they did not need.
+  **It also fixed a hole the terminal test had from the start.**
+  `isTerminalReader` asked whether stdin's mode carried `os.ModeCharDevice`,
+  and `/dev/null` is `crw-rw-rw-` — so a process whose stdin was /dev/null, what
+  CI steps and many agent runners hand a child, was read as somebody typing.
+  `merge` survived that by accident: it went on to read EOF and fall to the
+  default, which is always the answer that does nothing. A gate has no such
+  second line, so it would simply not have existed in the case it was built
+  for. Found by running the real binary with `< /dev/null`, not by reading.
+  `golang.org/x/term` now does the ioctl — the fourth direct dependency, taken
+  deliberately, because this is the one job that cannot be done from the
+  standard library without per-platform build tags.
+  **The test harness pins stdin** (`invokeWith` sets it to a buffer): left
+  unset it is `os.Stdin`, which made the gate open when the suite ran from a
+  shell and closed under CI — an answer that depends on where it ran, which is
+  the one thing a gate's tests must not be. 51 call sites gained `--yes`, as a
+  caller would.
 - **Two refusals, opposite answers.** `adapter.PushAuthorizationHelp` tells
   *authentication* (GitLab does not know you — SSH key) from *authorization*
   (it knows you and says no). On drupal.org the second is the ordinary state of
@@ -1062,6 +1094,45 @@ and was learned the hard way.
   merging — is deliberately absent under the DA one-approval stance. It is in
   git history if it is ever worth reviving; reviving it means solving "what
   makes this stay in step with the core", not porting the code.
+- **The agent skill is published, and upkeep does not install it.**
+  `skills/upkeep/SKILL.md` is the flat layout the skills.sh CLI documents
+  (`skills/<name>/SKILL.md` in a standard discovery location), so
+  `npx skills add owenbush/upkeep` finds it — verified against the real CLI,
+  which clones the *default branch* and reads the frontmatter, so merging is
+  what publishes a skill and a release has nothing to do with it. Required
+  fields are `name` (lowercase, hyphens, ≤64) and `description` (≤1024, and it
+  is the *routing signal*, so it says when to use the skill rather than only
+  what it does); `metadata.internal` must stay unset, since it hides the skill
+  from discovery. **Only one skill directory**, because `.claude/skills/` is
+  also a discovery location and a second there would publish two skills from
+  one repository.
+  **There is deliberately no `upkeep skill` command.** One was built and
+  removed: it printed the embedded file for redirecting into place, and every
+  example written around it hardcoded one agent's directory. The skills CLI
+  handles **seventy-odd harnesses**, auto-detects which are installed and takes
+  `--agent`; upkeep could only compete by carrying that table and keeping it
+  current, which is not its job — and the command cost a `go:embed` package at
+  the module root, a coverage exclusion, and a thirty-first command on a
+  surface already reported as overwhelming. What survives of the idea is the
+  useful half: the skill ships **inside the release archive** beside the
+  LICENSE, for the case npx cannot serve (no Node, no network), costing one
+  file rather than a command that pretends to know your agent's layout.
+  **What the skill carries is judgement, not a command list** — that is
+  `docs/guide/which-command.md`. Where to stop, which branches get destroyed,
+  what an exit code means, what costs minutes, and the two things an agent
+  otherwise reports wrongly and confidently (a green pipeline is not a clean
+  one; CI tests the merge ref, not the branch).
+  **Its shape is an invariant**, in `internal/invariant/skill_test.go`, because
+  nothing in the binary reads the file any more: the frontmatter standard, the
+  body length, that it names no particular agent, and that the stop section
+  still *lists* all three outward commands. Pinned to the bullets rather than
+  the names — the section also explains the `--yes` behaviour, so every name
+  survives deleting the list itself, which a mutation run found twice.
+  **The enforcement is in the binary.** A skill is instructions and
+  instructions can be misread, so `publish` and `needs-work` refuse without a
+  terminal and `merge` refuses outright. An agent passing `--yes` to get past
+  one unasked is the agent at fault, not the gate being awkward — a thing worth
+  being able to say plainly, and only true because the gate exists.
 - **Shell completion** — `upkeep completion <shell>` is cobra's own,
   and command names complete for free. What does not is *values*, so
   `UpkeepCommand::complete()` suggests the registry's module machine names for

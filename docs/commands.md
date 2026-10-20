@@ -541,6 +541,7 @@ Changes **drupal.org**; needs a GitLab token.
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting the comment is deliberate |
 
 ## `upkeep notes`
 
@@ -755,6 +756,9 @@ it is an ordinary MR that dashboard, check and merge already handle.
 Opens merge requests; never merges one. Re-running after more commits updates
 the existing MR rather than opening a second.
 
+This writes to drupal.org under your name, so with no terminal to confirm at it
+refuses unless --yes is passed.
+
 ```
 upkeep publish <module> <issue> [flags]
 ```
@@ -777,6 +781,7 @@ Changes **drupal.org**; needs a GitLab token; `--json` for one JSON document on 
 | `--title=TITLE` | Merge request title (default: from the issue) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — opening a merge request is deliberate |
 
 ## `upkeep review`
 

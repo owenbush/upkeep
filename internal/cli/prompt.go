@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Prompt asks the operator a question and reads the answer.
@@ -165,15 +166,40 @@ func matchOption(reply string, options []string) (string, bool) {
 	return "", false
 }
 
+// InteractiveInput reports whether a human is at the other end of stdin.
+//
+// The same question Prompt.Interactive answers for a command that is given a
+// prompt, asked by the commands that are not. `merge` has had this property
+// since it was written — no terminal means no per-merge-request affirmative is
+// possible, so nothing merges — and it is what makes the one-approval stance
+// structural rather than advisory. The outward-facing commands that do not
+// prompt need the same question asked of them.
+func InteractiveInput(cmd *cobra.Command) bool {
+	return isTerminalReader(cmd.InOrStdin())
+}
+
 // isTerminalReader reports whether a stream is a terminal a human is typing
 // at.
+//
+// **A real terminal test, not a character-device test.** This used to ask
+// whether the stream's mode had os.ModeCharDevice set, and `/dev/null` is
+// `crw-rw-rw-` — a character device. So a process whose stdin was /dev/null,
+// which is what CI steps and plenty of agent runners hand a child, was read as
+// a human typing. For `merge` that was survivable by accident: it went on to
+// read EOF and fall to the default, which is always the answer that does
+// nothing. For the publish and needs-work gate there is no second line of
+// defence, and the gate simply would not have existed in the case it was built
+// for. Found by running the real binary with `< /dev/null` rather than by
+// reading.
+//
+// golang.org/x/term does the ioctl this actually needs. It is the one job that
+// cannot be done from the standard library without per-platform build tags,
+// which is why the package exists.
 func isTerminalReader(stream io.Reader) bool {
 	file, isFile := stream.(*os.File)
 	if !isFile {
 		return false
 	}
 
-	info, err := file.Stat()
-
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(file.Fd()))
 }

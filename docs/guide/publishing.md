@@ -114,3 +114,23 @@ description is not the one you wrote.
 
 `--title` works the same way, defaulting to drupal.org's `Issue #NNN: Title`
 convention so the merge request pairs with its issue by the ordinary rule.
+
+## Publishing from a script
+
+`publish` writes to drupal.org under your name, so it refuses when there is no
+terminal to confirm at:
+
+```bash
+upkeep publish pathauto 3223746 --yes
+```
+
+`--yes` is the same word `prune` uses for "I meant this". It is a flag rather
+than a hard refusal because deliberate scripted publishing is a reasonable
+thing to want — unlike `merge`, which refuses outright whatever you pass,
+because the approval it consumes is one only a human can give.
+
+What counts as a terminal is a real terminal, not a character device. That
+distinction matters more than it sounds: `/dev/null` is a character device, and
+it is what CI steps and many agent runners hand a child process, so a check
+that accepted it would have left the gate open in exactly the case it exists
+for.

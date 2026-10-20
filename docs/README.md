@@ -30,6 +30,7 @@ module — registered or not.
 - [Review, merge and release notes](guide/review-and-merge.md)
 - [Working in an environment](guide/environments.md) — a shell, a path, a running site
 - [Fixtures](guide/fixtures.md) — check against real database state
+- [Agents](guide/agents.md) — letting an AI agent drive upkeep, and where it stops
 
 ## Reference
 

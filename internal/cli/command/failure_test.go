@@ -165,7 +165,7 @@ func TestNoEngineFailureIsSwallowed(t *testing.T) {
 		args  []string
 		calls []string
 	}{
-		args:  []string{"publish", "pathauto", "3223746", "--cockpit=" + root},
+		args:  []string{"publish", "--yes", "pathauto", "3223746", "--cockpit=" + root},
 		calls: []string{"EnsureEnv", "PushWork"},
 	}
 
@@ -287,10 +287,10 @@ func TestNoCommandWorksAroundAMalformedRegistry(t *testing.T) {
 		"patch:promote":   {"patch:promote", "pathauto", "3597857", "--cockpit=" + root},
 		"issue":           {"issue", "pathauto", "9", "--cockpit=" + root},
 		"start":           {"start", "pathauto", "3223746", "--cockpit=" + root},
-		"publish":         {"publish", "pathauto", "3223746", "--cockpit=" + root},
+		"publish":         {"publish", "--yes", "pathauto", "3223746", "--cockpit=" + root},
 		"issues":          {"issues", "pathauto", "--cockpit=" + root},
 		"patches":         {"patches", "--cockpit=" + root},
-		"needs-work":      {"needs-work", "pathauto", "12", "--cockpit=" + root},
+		"needs-work":      {"needs-work", "--yes", "pathauto", "12", "--cockpit=" + root},
 	} {
 		code, stdout, stderr := runCheckCommand(t, aCheckingEngine(), nil, args...)
 

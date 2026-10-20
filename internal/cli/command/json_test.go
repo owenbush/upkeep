@@ -120,7 +120,7 @@ func jsonCases() map[string]jsonCase {
 			scene := aForkScene(t)
 			code, stdout, _ := runIssueLoop(t, aWorkingEngine(), someIssues(),
 				scriptedClients{client: scene.client()}, cli.NoBrowser{},
-				"publish", "pathauto", "3223746", "--json", "--cockpit="+root)
+				"publish", "--yes", "pathauto", "3223746", "--json", "--cockpit="+root)
 
 			return code, stdout
 		}},
@@ -358,7 +358,7 @@ func TestPublishingAnExistingMergeRequestSaysItWasNotCreated(t *testing.T) {
 
 	_, stdout, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--json", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--json", "--cockpit="+root)
 
 	var envelope struct {
 		Data report.PublishPayload `json:"data"`

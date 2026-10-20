@@ -89,6 +89,19 @@ archives:
     files:
       - src: LICENSE
       - src: README.md
+      # The agent skill travels with the binary.
+      #
+      # `npx skills add owenbush/upkeep` is the route for almost everybody: it
+      # knows where each of seventy-odd harnesses keeps its skills and detects
+      # which are installed, which upkeep could not do without carrying that
+      # table and keeping it current. This is for the case that route cannot
+      # serve — no Node, no network — and it costs one small file beside the
+      # LICENSE rather than a command pretending to know your agent's layout.
+      - src: skills/upkeep/SKILL.md
+        # dst is a destination *directory*, not a file path — naming the file
+        # here would produce skills/upkeep/SKILL.md/SKILL.md.
+        dst: skills/upkeep
+        strip_parent: true
 
 checksum:
   name_template: checksums.txt
