@@ -91,6 +91,7 @@ func NewRoot(surface Surface) *cobra.Command {
 		NewPrune(engines, volumes, sizer),
 		NewPublish(engines, clients, issues),
 		NewReview(engines, clients),
+		NewSkill(),
 		NewStart(engines, issues),
 		NewStatus(volumes, sizer),
 		NewVersion(),

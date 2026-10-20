@@ -65,6 +65,12 @@ EOF
 # mock of the thing it exists to not mock.
 # internal/invariant holds checks over the source itself and has no code of its
 # own to cover.
+# The module root (github.com/owenbush/upkeep) is excluded: it holds one
+# embedded string, the published agent skill, and no code of its own to cover.
+# It exists at the root because go:embed cannot reach above its own package and
+# the skill has to sit at skills/upkeep/SKILL.md for the skills.sh CLI to find
+# it. What is worth asserting about that file is its shape, which
+# internal/cli/command does.
 
 status=0
 while read -r package floor; do
@@ -107,7 +113,7 @@ done <<<"$FLOORS"
 
 # A package nobody listed is a package nobody is holding to anything.
 for package in $(go list ./... | sed 's#github.com/owenbush/upkeep/##' |
-	grep -v '^cmd/livecheck$' | grep -v '^cmd/upkeep$' | grep -v '^cmd/docgen$' | grep -v '^internal/contract$' | grep -v '^internal/invariant$'); do
+	grep -v '^cmd/livecheck$' | grep -v '^cmd/upkeep$' | grep -v '^cmd/docgen$' | grep -v '^internal/contract$' | grep -v '^internal/invariant$' | grep -v '^github.com/owenbush/upkeep$'); do
 	if ! grep -q "^$package  *[0-9]" <<<"$FLOORS"; then
 		printf 'FAIL  %-28s is not listed in coverage.sh\n' "$package"
 		status=1
