@@ -11,6 +11,7 @@ import (
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/gitlab"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/results"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
@@ -60,6 +61,7 @@ artifacts for that core: upkeep base-artifacts:build --version=11.`,
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesEnvironment,
 		Credential: cli.CredentialNone,
+		JSON:       true,
 		Destroys:   "force-updates the managed mr-<iid> branch, and overwrites the database with --fixture",
 		Fixture:    true,
 	})
@@ -69,6 +71,7 @@ artifacts for that core: upkeep base-artifacts:build --version=11.`,
 		"Load this named fixture into the database before running checks")
 	addMrSurface(cmd)
 	cli.AddModuleCompletion(cmd)
+	cli.AddJSON(cmd)
 	cli.AddFixtureCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
@@ -147,8 +150,19 @@ func checkMergeRequest(
 		return 0, err
 	}
 
-	renderCheckSummary(cmd, run)
 	cacheVerdict(cmd, where, context, run)
+
+	if cli.WantsJSON(cmd) {
+		return workflow.ForRun(run), emitCheckJSON(cmd, run, report.Subject{
+			Kind:     "merge-request",
+			Module:   context.Module.Name,
+			Core:     context.CoreMajor,
+			IID:      context.MergeRequest.IID,
+			Revision: context.MergeRefSHA,
+		})
+	}
+
+	renderCheckSummary(cmd, run)
 
 	return workflow.ForRun(run), nil
 }
@@ -188,6 +202,15 @@ func checkWorkingCopy(cmd *cobra.Command, engines adapter.Factory, moduleName st
 	run, err := engine.RunChecks(environment, nil)
 	if err != nil {
 		return 0, err
+	}
+
+	if cli.WantsJSON(cmd) {
+		return workflow.ForRun(run), emitCheckJSON(cmd, run, report.Subject{
+			Kind:   "working-copy",
+			Module: module.Name,
+			Core:   coreMajor,
+			Branch: branch,
+		})
 	}
 
 	renderCheckSummary(cmd, run)

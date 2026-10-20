@@ -1,0 +1,31 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "status",
+  "warnings": [],
+  "data": {
+    "cockpit": "/c",
+    "projects_root": "/c/projects",
+    "registered_modules": 2,
+    "items": [
+      {
+        "path": "/c/projects/upkeep-pathauto-d11",
+        "category": "project tree",
+        "bytes": 1073741824,
+        "module": "pathauto",
+        "core": "11",
+        "project": "upkeep-pathauto-d11",
+        "last_used_at": "2026-10-19T09:30:00Z"
+      },
+      {
+        "path": "/c/base-artifacts/11",
+        "category": "base artifact",
+        "bytes": 536870912,
+        "core": "11",
+        "last_used_at": null,
+        "protection": "canonical"
+      }
+    ],
+    "total_bytes": 1610612736
+  }
+}

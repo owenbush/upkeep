@@ -1,0 +1,48 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "dashboard-rows",
+  "warnings": [],
+  "data": {
+    "rows": [
+      {
+        "module": "pathauto",
+        "branch": "8.x-1.x",
+        "title": "Config schema for the form display settings",
+        "issue": {
+          "nid": 3597857,
+          "title": "Config schema for the form display settings",
+          "status": "review",
+          "priority": "Major",
+          "version": "8.x-1.x",
+          "url": "https://www.drupal.org/node/3597857",
+          "patches": 1
+        },
+        "merge_request": {
+          "iid": 40,
+          "title": "Issue #3597857: Config schema",
+          "draft": false,
+          "source_branch": "3597857-config-schema",
+          "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/40",
+          "head_sha": "a1b2c3d4e5f6"
+        },
+        "open_merge_requests": 1,
+        "ci": {
+          "status": "failed",
+          "green": false
+        },
+        "local": {},
+        "verdict": {
+          "status": "READY-AUTO",
+          "reasons": [
+            "ci-red"
+          ]
+        },
+        "ready_auto": true,
+        "landed": null,
+        "status": "ready to merge",
+        "next": "upkeep merge --fast-lane"
+      }
+    ]
+  }
+}

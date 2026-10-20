@@ -1,0 +1,35 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "issues",
+  "warnings": [],
+  "data": {
+    "issues": [
+      {
+        "module": "pathauto",
+        "issue": {
+          "nid": 3597857,
+          "title": "Config schema for the form display settings",
+          "status": "review",
+          "priority": "Major",
+          "version": "8.x-1.x",
+          "url": "https://www.drupal.org/node/3597857",
+          "patches": 1
+        },
+        "kind": "patch-and-merge-request",
+        "merge_requests": [
+          {
+            "iid": 40,
+            "title": "Issue #3597857: Config schema",
+            "draft": false,
+            "source_branch": "3597857-config-schema",
+            "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/40",
+            "head_sha": "a1b2c3d4e5f6"
+          }
+        ],
+        "landed": null,
+        "next": "upkeep start pathauto 3597857"
+      }
+    ]
+  }
+}

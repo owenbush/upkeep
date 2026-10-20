@@ -425,6 +425,40 @@ and was learned the hard way.
   (`headExcerpt`) — head rather than tail because what reads it is the
   dashboard asking what happened, where the first lines are where a check says
   what it was doing.
+- **`--json` is a published contract, and the internal models are not.**
+  `internal/report` declares the payloads; the nine commands a program reads
+  (`dashboard`, `issues`, `patches`, `check`, `patch:check`, `status`,
+  `review`, `publish`, `patch:promote`) emit them. **Not `json.Marshal` of the
+  internal structs**: `dashboard.Row` holds pointers into gitlab, gate, results
+  and patches, so marshalling it would publish the whole internal object graph
+  and freeze it — every field rename in those packages would become a breaking
+  change for somebody's script. It is also **not the table serialised**: the
+  tables truncate titles to a column width and print an en dash for an empty
+  cell, both right for reading and useless to a program. Where a *judgement* is
+  what the command exists to give — a row's status phrase and its next command
+  — the payload carries it from the same `dashboard.GuidanceFor` the table
+  uses, so the two surfaces cannot disagree about what to do with a row.
+  **One document on stdout and nothing else**, which is cheap to hold because
+  the split already existed (progress to stderr, payload to stdout) and is
+  guarded by a test that unmarshals the whole of stdout for every command
+  declaring the trait — a stray `cli.Println` on a stdout path is the one way
+  this breaks. The JSON branch sits **before every early return**, so a run
+  that found nothing emits an empty array rather than silence: an agent cannot
+  otherwise tell "no open issues" from "it stopped earlier". **Exit codes are
+  unchanged** — a failed check emits its payload *and* exits 1, which is what
+  lets a consumer act without parsing — and `emitJSON` returns only an error
+  for that reason, because a helper returning OK would have turned every red
+  check green. The three-line `if err := emit(); err != nil` form was collapsed
+  to `return code, emit(...)`: `cli.Run` ignores the code when the error is
+  non-nil, so the branch was unreachable, and removing it *raised* coverage.
+  `warnings` is in the document, not only on stderr: these readers degrade by
+  returning less data, so a consumer needs to know the lists are lower bounds.
+  `schema` is an integer bumped only when a field changes meaning or goes away.
+  The shape is pinned by committed golden payloads
+  (`internal/report/testdata/`, `-update` to regenerate), so a renamed field is
+  a diff in review rather than a silently different answer. Declared as a trait
+  as well as a flag, cross-checked both ways, so the generated reference cannot
+  claim structured output a command lacks.
 - **Child-process output is progress, not payload.** ddev, composer and git
   print through `cli.LiveStatus`: on a terminal, the latest line sits on
   one line that overwrites itself and is erased when the child exits; under

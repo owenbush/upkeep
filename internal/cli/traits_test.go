@@ -14,6 +14,7 @@ func TestTraitsRoundTrip(t *testing.T) {
 		Credential: CredentialRequired,
 		Destroys:   "force-updates a branch it owns",
 		Fixture:    true,
+		JSON:       true,
 	}
 
 	Describe(cmd, want)

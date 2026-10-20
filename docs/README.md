@@ -37,4 +37,5 @@ module — registered or not.
 - [Exit codes](reference/exit-codes.md) — the 0/1/2 contract
 - [Disk housekeeping](reference/disk.md) — where the space goes, and reclaiming it
 - [Upgrading a cockpit](reference/upgrading.md)
+- [Structured output](reference/json.md) — `--json`, the envelope, and the exit-code contract
 - [Releasing upkeep](reference/releasing.md) — tagging, the secrets it needs, signing and notarization

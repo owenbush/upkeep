@@ -1,0 +1,23 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "publish",
+  "warnings": [],
+  "data": {
+    "module": "pathauto",
+    "issue": 3597857,
+    "branch": "3597857-config-schema",
+    "destination": "issue/pathauto-3597857",
+    "sha": "a1b2c3d4e5f6",
+    "merge_request": {
+      "iid": 40,
+      "title": "Issue #3597857: Config schema",
+      "draft": false,
+      "source_branch": "3597857-config-schema",
+      "web_url": "https://git.drupalcode.org/project/pathauto/-/merge_requests/40",
+      "head_sha": "a1b2c3d4e5f6"
+    },
+    "created": true,
+    "target_branch": "8.x-1.x"
+  }
+}

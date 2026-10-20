@@ -16,6 +16,7 @@ import (
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gate"
 	"github.com/owenbush/upkeep/internal/gitlab"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/results"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
@@ -80,10 +81,12 @@ upkeep explain <term> defines any column or status.`,
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesCockpit,
 		Credential: cli.CredentialNone,
+		JSON:       true,
 	})
 
 	cli.AddCockpit(cmd)
 	cli.AddCoreFilter(cmd)
+	cli.AddJSON(cmd)
 	cli.AddVerbose(cmd)
 	cmd.Flags().String("refresh", "",
 		"Re-fetch remote data: --refresh for all modules, --refresh=<module> for one")
@@ -155,6 +158,21 @@ func runDashboard(
 	}
 
 	cli.ReportScanWarnings(cmd, issues.Warnings())
+
+	// Before the empty check, and before the palette: in JSON mode nothing
+	// colours and nothing is skipped, so an empty dashboard is an empty rows
+	// array rather than silence.
+	//
+	// Which tier is emitted follows which tier would have been rendered, so
+	// `--json` does not quietly answer a different question from the one the
+	// same arguments ask without it.
+	if cli.WantsJSON(cmd) {
+		name, data := "dashboard", any(report.Overview(rows, snapshots))
+		if detailed {
+			name, data = "dashboard-rows", report.Rows(rows)
+		}
+		return workflow.OK, emitJSON(cmd, name, data, issues.Warnings())
+	}
 
 	if len(rows) == 0 {
 		cli.Println(cmd, nothingOpen(plan.versionFilter))

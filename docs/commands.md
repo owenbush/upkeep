@@ -56,39 +56,41 @@ disagree with the binary.
 
 A blank **Can lose** means nothing is lost by running it, which is most of the
 surface. `--fixture` **overwrites the environment's database** wherever it is offered.
+`--json` emits one JSON document on stdout instead of a table, for the commands a
+program reads.
 
-| Command | Changes | Needs a token | `--fixture` | Can lose |
-| --- | --- | --- | --- | --- |
-| [`api:probe`](#upkeep-apiprobe) | nothing | – | – | – |
-| [`base-artifacts:build`](#upkeep-base-artifactsbuild) | the cockpit | – | – | replaces that core's existing artifact set, with --force |
-| [`base-artifacts:status`](#upkeep-base-artifactsstatus) | nothing | – | – | – |
-| [`check`](#upkeep-check) | an environment | – | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
-| [`checkout`](#upkeep-checkout) | your working copy | – | – | – |
-| [`dashboard`](#upkeep-dashboard) | the cockpit | – | – | – |
-| [`dev`](#upkeep-dev) | an environment | – | – | – |
-| [`env:path`](#upkeep-envpath) | nothing | – | – | – |
-| [`exec`](#upkeep-exec) | an environment | – | – | can do anything the command you hand it does |
-| [`explain`](#upkeep-explain) | nothing | – | – | – |
-| [`init`](#upkeep-init) | the cockpit | – | – | – |
-| [`issue`](#upkeep-issue) | nothing | – | – | – |
-| [`issues`](#upkeep-issues) | nothing | – | – | – |
-| [`merge`](#upkeep-merge) | drupal.org | **yes** | – | merges the merge request, which nothing here can undo |
-| [`modules`](#upkeep-modules) | nothing | – | – | – |
-| [`modules:add`](#upkeep-modulesadd) | the cockpit | **yes** | – | – |
-| [`modules:track`](#upkeep-modulestrack) | the cockpit | – | – | – |
-| [`modules:untrack`](#upkeep-modulesuntrack) | the cockpit | – | – | removes the module's entry, and its core list is recorded nowhere else |
-| [`needs-work`](#upkeep-needs-work) | drupal.org | **yes** | – | – |
-| [`notes`](#upkeep-notes) | nothing | – | – | – |
-| [`patch:apply`](#upkeep-patchapply) | an environment | – | – | force-updates the managed patch-<nid> branch |
-| [`patch:check`](#upkeep-patchcheck) | an environment | – | yes | force-updates the managed patch-<nid> branch, and overwrites the database with --fixture |
-| [`patch:promote`](#upkeep-patchpromote) | your working copy | – | – | – |
-| [`patches`](#upkeep-patches) | nothing | – | – | – |
-| [`prune`](#upkeep-prune) | the cockpit | – | – | deletes environments, cached results and fixture snapshots, with --yes |
-| [`publish`](#upkeep-publish) | drupal.org | **yes** | – | – |
-| [`review`](#upkeep-review) | an environment | – | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
-| [`start`](#upkeep-start) | your working copy | – | – | – |
-| [`status`](#upkeep-status) | nothing | – | – | – |
-| [`version`](#upkeep-version) | nothing | – | – | – |
+| Command | Changes | Needs a token | `--json` | `--fixture` | Can lose |
+| --- | --- | --- | --- | --- | --- |
+| [`api:probe`](#upkeep-apiprobe) | nothing | – | – | – | – |
+| [`base-artifacts:build`](#upkeep-base-artifactsbuild) | the cockpit | – | – | – | replaces that core's existing artifact set, with --force |
+| [`base-artifacts:status`](#upkeep-base-artifactsstatus) | nothing | – | – | – | – |
+| [`check`](#upkeep-check) | an environment | – | yes | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
+| [`checkout`](#upkeep-checkout) | your working copy | – | – | – | – |
+| [`dashboard`](#upkeep-dashboard) | the cockpit | – | yes | – | – |
+| [`dev`](#upkeep-dev) | an environment | – | – | – | – |
+| [`env:path`](#upkeep-envpath) | nothing | – | – | – | – |
+| [`exec`](#upkeep-exec) | an environment | – | – | – | can do anything the command you hand it does |
+| [`explain`](#upkeep-explain) | nothing | – | – | – | – |
+| [`init`](#upkeep-init) | the cockpit | – | – | – | – |
+| [`issue`](#upkeep-issue) | nothing | – | – | – | – |
+| [`issues`](#upkeep-issues) | nothing | – | yes | – | – |
+| [`merge`](#upkeep-merge) | drupal.org | **yes** | – | – | merges the merge request, which nothing here can undo |
+| [`modules`](#upkeep-modules) | nothing | – | – | – | – |
+| [`modules:add`](#upkeep-modulesadd) | the cockpit | **yes** | – | – | – |
+| [`modules:track`](#upkeep-modulestrack) | the cockpit | – | – | – | – |
+| [`modules:untrack`](#upkeep-modulesuntrack) | the cockpit | – | – | – | removes the module's entry, and its core list is recorded nowhere else |
+| [`needs-work`](#upkeep-needs-work) | drupal.org | **yes** | – | – | – |
+| [`notes`](#upkeep-notes) | nothing | – | – | – | – |
+| [`patch:apply`](#upkeep-patchapply) | an environment | – | – | – | force-updates the managed patch-<nid> branch |
+| [`patch:check`](#upkeep-patchcheck) | an environment | – | yes | yes | force-updates the managed patch-<nid> branch, and overwrites the database with --fixture |
+| [`patch:promote`](#upkeep-patchpromote) | your working copy | – | yes | – | – |
+| [`patches`](#upkeep-patches) | nothing | – | yes | – | – |
+| [`prune`](#upkeep-prune) | the cockpit | – | – | – | deletes environments, cached results and fixture snapshots, with --yes |
+| [`publish`](#upkeep-publish) | drupal.org | **yes** | yes | – | – |
+| [`review`](#upkeep-review) | an environment | – | yes | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
+| [`start`](#upkeep-start) | your working copy | – | – | – | – |
+| [`status`](#upkeep-status) | nothing | – | yes | – | – |
+| [`version`](#upkeep-version) | nothing | – | – | – | – |
 
 
 ## `upkeep api:probe`
@@ -178,7 +180,7 @@ artifacts for that core: upkeep base-artifacts:build --version=11.
 upkeep check <module> [mr] [flags]
 ```
 
-Changes **an environment**. Careful: it force-updates the managed mr-<iid> branch, and overwrites the database with --fixture.
+Changes **an environment**; `--json` for one JSON document on stdout. Careful: it force-updates the managed mr-<iid> branch, and overwrites the database with --fixture.
 
 **Options**
 
@@ -186,6 +188,7 @@ Changes **an environment**. Careful: it force-updates the managed mr-<iid> branc
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--fixture=FIXTURE` | Load this named fixture into the database before running checks |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
@@ -245,7 +248,7 @@ upkeep explain <term> defines any column or status.
 upkeep dashboard [module] [flags]
 ```
 
-Changes **the cockpit**.
+Changes **the cockpit**; `--json` for one JSON document on stdout.
 
 **Options**
 
@@ -253,6 +256,7 @@ Changes **the cockpit**.
 | --- | --- |
 | `--all` | Every row of every module, rather than the per-module overview |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--no-patches` | Omit patch rows: only merge requests, as the dashboard showed before patch contributions were included |
 | `--refresh=REFRESH` | Re-fetch remote data: --refresh for all modules, --refresh=<module> for one |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
@@ -377,13 +381,14 @@ To begin work on one: upkeep start <module> <issue>.
 upkeep issues <module> [flags]
 ```
 
-Changes **nothing**.
+Changes **nothing**; `--json` for one JSON document on stdout.
 
 **Options**
 
 | Option | What it does |
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--status=STATUS` | Only this status: active, review, needs-work, rtbc, postponed (default: every open status) |
 | `--unclaimed` | Only issues nobody has contributed to yet — the work that has not started |
 
@@ -609,7 +614,7 @@ was produced.
 upkeep patch:check <module> <issue> [flags]
 ```
 
-Changes **an environment**. Careful: it force-updates the managed patch-<nid> branch, and overwrites the database with --fixture.
+Changes **an environment**; `--json` for one JSON document on stdout. Careful: it force-updates the managed patch-<nid> branch, and overwrites the database with --fixture.
 
 **Options**
 
@@ -618,6 +623,7 @@ Changes **an environment**. Careful: it force-updates the managed patch-<nid> br
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--file=FILE` | Apply this exact attachment by filename instead of choosing (e.g. 3597808-9-d11.patch) |
 | `--fixture=FIXTURE` | Load this named fixture into the database before running checks |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--latest` | Take the newest patch without asking, even when the issue carries several |
 | `--no-update` | Do not fetch the base branch first; check against the working copy's base as it stands |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
@@ -655,7 +661,7 @@ because the patch did not apply.
 upkeep patch:promote <module> <issue> [flags]
 ```
 
-Changes **your working copy**.
+Changes **your working copy**; `--json` for one JSON document on stdout.
 
 **Options**
 
@@ -664,6 +670,7 @@ Changes **your working copy**.
 | `--branch=BRANCH` | Work branch to promote onto (default: the drupal.org <nid>-<slug> convention) |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--file=FILE` | Apply this exact attachment by filename instead of choosing (e.g. 3597808-9-d11.patch) |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--latest` | Take the newest patch without asking, even when the issue carries several |
 | `--no-update` | Do not fetch the base branch first; check against the working copy's base as it stands |
 | `--partial` | When the patch will not apply, keep the hunks that still fit and leave the rest as .rej files to resolve by hand — the start of a re-roll rather than a refusal |
@@ -689,13 +696,14 @@ see upkeep explain "empty MR".
 upkeep patches [flags]
 ```
 
-Changes **nothing**.
+Changes **nothing**; `--json` for one JSON document on stdout.
 
 **Options**
 
 | Option | What it does |
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--module=MODULE` | Only scan this module (default: all registered modules) |
 | `--without-mr` | Only issues no merge request carries — omit those where a patch sits alongside a real MR |
 
@@ -751,7 +759,7 @@ the existing MR rather than opening a second.
 upkeep publish <module> <issue> [flags]
 ```
 
-Changes **drupal.org**; needs a GitLab token.
+Changes **drupal.org**; needs a GitLab token; `--json` for one JSON document on stdout.
 
 **Options**
 
@@ -762,6 +770,7 @@ Changes **drupal.org**; needs a GitLab token.
 | `--description=DESCRIPTION` | Merge request body, after the issue reference (default: a one-line note) |
 | `--description-file=DESCRIPTION-FILE` | Read the merge request body from this file instead |
 | `--draft` | Open it as a draft |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--no-footer` | Leave the body empty rather than adding upkeep's own note |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--target=TARGET` | Branch to merge into (default: the base the work branch was started from) |
@@ -779,7 +788,7 @@ Runs no checks — this is for looking at the change in a browser. Use `upkeep c
 upkeep review <module> <mr> [flags]
 ```
 
-Changes **an environment**. Careful: it force-updates the managed mr-<iid> branch, and overwrites the database with --fixture.
+Changes **an environment**; `--json` for one JSON document on stdout. Careful: it force-updates the managed mr-<iid> branch, and overwrites the database with --fixture.
 
 **Options**
 
@@ -787,6 +796,7 @@ Changes **an environment**. Careful: it force-updates the managed mr-<iid> branc
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--fixture=FIXTURE` | Load this named fixture into the database before serving the site |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
@@ -832,7 +842,7 @@ Report cockpit state.
 upkeep status [flags]
 ```
 
-Changes **nothing**.
+Changes **nothing**; `--json` for one JSON document on stdout.
 
 **Options**
 
@@ -840,6 +850,7 @@ Changes **nothing**.
 | --- | --- |
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--disk` | Itemize disk usage (project trees, materialized snapshots, engine volumes, base artifacts, fixture dumps) with totals |
+| `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 
 ## `upkeep version`

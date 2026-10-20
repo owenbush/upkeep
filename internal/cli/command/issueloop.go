@@ -12,6 +12,7 @@ import (
 	"github.com/owenbush/upkeep/internal/cockpit"
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -371,11 +372,13 @@ the existing MR rather than opening a second.`,
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesRemote,
 		Credential: cli.CredentialRequired,
+		JSON:       true,
 	})
 	cli.AddTargetCore(cmd)
 	cli.AddCockpit(cmd)
 	cli.AddProjectsRoot(cmd)
 	cli.AddVerbose(cmd)
+	cli.AddJSON(cmd)
 	cmd.Flags().String("branch", "", "Publish this branch instead of deriving it")
 	cmd.Flags().String("title", "", "Merge request title (default: from the issue)")
 	cmd.Flags().String("target", "",
@@ -472,6 +475,11 @@ func runPublish(
 	if existing != nil {
 		// Re-running publish after more commits is the normal way to update a
 		// merge request: the push above already moved it.
+		if cli.WantsJSON(cmd) {
+			return workflow.OK, emitJSON(cmd, "publish", publishPayload(
+				module.Name, issue.Nid, branch.Name, route, sha, existing, false, ""), nil)
+		}
+
 		cli.Printf(cmd, "Updated the open merge request for this branch: !%d\n", existing.IID)
 		cli.Println(cmd, existing.WebURL)
 
@@ -505,6 +513,11 @@ func runPublish(
 		return 0, fmt.Errorf(
 			"the branch was pushed, but the merge request could not be opened: %s\n"+
 				"Open it in the browser: %s", failure.Message, failure.BrowserURL)
+	}
+
+	if cli.WantsJSON(cmd) {
+		return workflow.OK, emitJSON(cmd, "publish", publishPayload(
+			module.Name, issue.Nid, branch.Name, route, sha, created, true, target), nil)
 	}
 
 	cli.Printf(cmd, "Opened !%d against %s.\n", created.IID, target)
@@ -544,6 +557,38 @@ func publishTarget(
 		"the branch was pushed, but upkeep does not know what to open the merge request "+
 			"against.\nName it: upkeep publish %s %d --target=<branch> (a branch on the "+
 			"project, like 2.0.x — not a core version)", moduleName, nid)
+}
+
+// publishPayload describes what publish just did.
+//
+// Both exits go through it, because "opened" and "updated" are the same event
+// with one field different — and a consumer told only "success" cannot tell
+// whether a merge request now exists that did not before.
+func publishPayload(
+	module string, nid int, branch string, route publishRoute, sha string,
+	mr *gitlab.MergeRequest, created bool, target string,
+) report.PublishPayload {
+	payload := report.PublishPayload{
+		Module:       module,
+		Issue:        nid,
+		Branch:       branch,
+		Destination:  route.Where,
+		SHA:          sha,
+		Created:      created,
+		TargetBranch: target,
+	}
+	if mr != nil {
+		payload.MergeRequest = &report.MergeRequestRef{
+			IID:          mr.IID,
+			Title:        mr.Title,
+			Draft:        mr.Draft,
+			SourceBranch: mr.SourceBranch,
+			WebURL:       mr.WebURL,
+			HeadSHA:      mr.HeadSHA,
+		}
+	}
+
+	return payload
 }
 
 // publishRoute is where a published branch goes, and what the merge request

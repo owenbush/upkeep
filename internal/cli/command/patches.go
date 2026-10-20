@@ -13,6 +13,7 @@ import (
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/patches"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -46,11 +47,13 @@ see upkeep explain "empty MR".`,
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesNothing,
 		Credential: cli.CredentialNone,
+		JSON:       true,
 	})
 	cli.AddCockpit(cmd)
 	cmd.Flags().String("module", "", "Only scan this module (default: all registered modules)")
 	cmd.Flags().Bool("without-mr", false,
 		"Only issues no merge request carries — omit those where a patch sits alongside a real MR")
+	cli.AddJSON(cmd)
 	cli.AddModuleFlagCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, _ []string) (int, error) {
@@ -122,6 +125,12 @@ func runPatches(cmd *cobra.Command, clients cli.GitlabClients, issues IssueClien
 	}
 
 	cli.ReportScanWarnings(cmd, issues.Warnings())
+
+	// Before the empty check: a run that found nothing still owes a document.
+	if cli.WantsJSON(cmd) {
+		return workflow.OK, emitJSON(cmd, "patches",
+			report.Contributions(reported, nil), issues.Warnings())
+	}
 
 	if len(reported) == 0 {
 		cli.Progressf(cmd,

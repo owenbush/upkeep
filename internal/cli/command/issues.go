@@ -13,6 +13,7 @@ import (
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/patches"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -48,12 +49,14 @@ To begin work on one: upkeep start <module> <issue>.`,
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesNothing,
 		Credential: cli.CredentialNone,
+		JSON:       true,
 	})
 	cli.AddCockpit(cmd)
 	cmd.Flags().String("status", "",
 		"Only this status: active, review, needs-work, rtbc, postponed (default: every open status)")
 	cmd.Flags().Bool("unclaimed", false,
 		"Only issues nobody has contributed to yet — the work that has not started")
+	cli.AddJSON(cmd)
 	cli.AddModuleCompletion(cmd)
 	registerStatusCompletion(cmd)
 
@@ -111,6 +114,15 @@ func runIssues(
 	}
 
 	cli.ReportScanWarnings(cmd, issues.Warnings())
+
+	// Before the empty check, deliberately. A run that found nothing still
+	// owes a document: stdout going silent would leave a consumer unable to
+	// tell "no open issues" from "the command did not get that far", which is
+	// the distinction the whole envelope exists to make.
+	if cli.WantsJSON(cmd) {
+		return workflow.OK, emitJSON(cmd, "issues",
+			report.Contributions(contributions, nextIssueCommand), issues.Warnings())
+	}
 
 	if len(contributions) == 0 {
 		cli.Progressf(cmd, "No matching open issues on %s.", module.Name)

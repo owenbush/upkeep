@@ -137,9 +137,10 @@ func render(root *cobra.Command) string {
 		"declarations, so it cannot\ndisagree with the binary.\n\n")
 	out.WriteString("A blank **Can lose** means nothing is lost by running it, which is " +
 		"most of the\nsurface. `--fixture` **overwrites the environment's database** " +
-		"wherever it is offered.\n\n")
-	out.WriteString("| Command | Changes | Needs a token | `--fixture` | Can lose |\n")
-	out.WriteString("| --- | --- | --- | --- | --- |\n")
+		"wherever it is offered.\n`--json` emits one JSON document on stdout instead of " +
+		"a table, for the commands a\nprogram reads.\n\n")
+	out.WriteString("| Command | Changes | Needs a token | `--json` | `--fixture` | Can lose |\n")
+	out.WriteString("| --- | --- | --- | --- | --- | --- |\n")
 	for _, cmd := range documented {
 		traits, declared := cli.TraitsOf(cmd)
 		if !declared {
@@ -149,6 +150,10 @@ func render(root *cobra.Command) string {
 		if traits.Fixture {
 			fixture = "yes"
 		}
+		structured := "–"
+		if traits.JSON {
+			structured = "yes"
+		}
 		token := "–"
 		if traits.Credential == cli.CredentialRequired {
 			token = "**yes**"
@@ -157,8 +162,8 @@ func render(root *cobra.Command) string {
 		if destroys == "" {
 			destroys = "–"
 		}
-		fmt.Fprintf(&out, "| [`%s`](#%s) | %s | %s | %s | %s |\n",
-			cmd.Name(), anchor(cmd.Name()), traits.Changes, token, fixture, destroys)
+		fmt.Fprintf(&out, "| [`%s`](#%s) | %s | %s | %s | %s | %s |\n",
+			cmd.Name(), anchor(cmd.Name()), traits.Changes, token, structured, fixture, destroys)
 	}
 	out.WriteString("\n")
 
@@ -195,6 +200,9 @@ func renderCommand(out *bytes.Buffer, cmd *cobra.Command) {
 		fmt.Fprintf(out, "\nChanges **%s**", traits.Changes)
 		if traits.Credential == cli.CredentialRequired {
 			out.WriteString("; needs a GitLab token")
+		}
+		if traits.JSON {
+			out.WriteString("; `--json` for one JSON document on stdout")
 		}
 		if traits.Destroys != "" {
 			fmt.Fprintf(out, ". Careful: it %s", traits.Destroys)

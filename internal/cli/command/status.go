@@ -10,6 +10,7 @@ import (
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/maintenance"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -37,12 +38,14 @@ func NewStatus(volumes Volumes, sizer maintenance.Sizer) *cobra.Command {
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesNothing,
 		Credential: cli.CredentialNone,
+		JSON:       true,
 	})
 	cmd.Flags().Bool("disk", false,
 		"Itemize disk usage (project trees, materialized snapshots, engine volumes, "+
 			"base artifacts, fixture dumps) with totals")
 	cli.AddCockpit(cmd)
 	cli.AddProjectsRoot(cmd)
+	cli.AddJSON(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
 		return runStatus(cmd, volumes, sizer)
@@ -83,6 +86,15 @@ func runStatus(cmd *cobra.Command, volumes Volumes, sizer maintenance.Sizer) (in
 		}
 	}
 	items = append(items, maintenance.ItemsForVolumes(items, volumes.Volumes())...)
+
+	// One document either way: --disk changes how much detail a person wants,
+	// and a consumer always wants the items. The summary a person gets instead
+	// is arithmetic over the same list.
+	if cli.WantsJSON(cmd) {
+		return workflow.OK, emitJSON(cmd, "status",
+			report.Inventory(where.Root, projectsRoot, len(modules), items, protection),
+			scanner.Warnings())
+	}
 
 	if !cli.Switched(cmd, "disk") {
 		cli.Printf(cmd, "Cockpit: %s (%d registered module(s))\n", where.Root, len(modules))

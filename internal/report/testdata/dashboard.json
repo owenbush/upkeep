@@ -1,0 +1,24 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "dashboard",
+  "warnings": [],
+  "data": {
+    "modules": [
+      {
+        "module": "pathauto",
+        "branches": [
+          "8.x-1.x"
+        ],
+        "merge_requests": 1,
+        "patch_issues": 0,
+        "ready_auto": 1,
+        "review": 0,
+        "blocked": 0,
+        "unchecked": 0,
+        "failed": false,
+        "cached_at": "2026-10-19T09:30:00Z"
+      }
+    ]
+  }
+}
