@@ -212,3 +212,40 @@ func TestCoversAsksAboutEveryCoreGiven(t *testing.T) {
 		t.Error("nothing to cover was not covered")
 	}
 }
+
+// States is the structured sibling of Cell and Describe, and uses the same
+// four words so there is only one answer to "what happened on core 11".
+func TestStatesNamesEveryCoresOutcome(t *testing.T) {
+	evidence := Evidence(map[string]*CachedResult{
+		"10": failedAt(head, check.PhpCs),
+		"11": passedAt(head),
+		"12": passedAt("older11"),
+		"13": nil,
+	}, head)
+
+	states := evidence.States()
+
+	if len(states) != len(evidence.Cores()) {
+		t.Fatalf("states %v for cores %v", states, evidence.Cores())
+	}
+	for core, want := range map[string]string{
+		"10": "fail", "11": "pass", "12": "stale", "13": "unchecked",
+	} {
+		if states[core] != want {
+			t.Errorf("core %s is %q, want %q", core, states[core], want)
+		}
+	}
+}
+
+// Evidence about nothing yields an empty map rather than nil, so a consumer
+// can iterate it without a check.
+func TestStatesOfNothingIsEmptyNotNil(t *testing.T) {
+	states := LocalEvidence{}.States()
+
+	if states == nil {
+		t.Fatal("States returned nil")
+	}
+	if len(states) != 0 {
+		t.Errorf("got %v", states)
+	}
+}

@@ -41,6 +41,13 @@ type Traits struct {
 
 	// Fixture is whether the command honours --fixture.
 	Fixture bool
+
+	// JSON is whether the command honours --json.
+	//
+	// Declared as well as flagged so the reference cannot claim structured
+	// output a command does not have, which for an agent reading the
+	// reference to decide what to call is worse than no reference at all.
+	JSON bool
 }
 
 // Changes names what a command writes to.
@@ -82,6 +89,7 @@ const (
 	annotationCredential = "upkeep.credential"
 	annotationDestroys   = "upkeep.destroys"
 	annotationFixture    = "upkeep.fixture"
+	annotationJSON       = "upkeep.json"
 )
 
 // Describe records what a command does, for the generated reference.
@@ -98,6 +106,9 @@ func Describe(cmd *cobra.Command, traits Traits) {
 	if traits.Fixture {
 		cmd.Annotations[annotationFixture] = "yes"
 	}
+	if traits.JSON {
+		cmd.Annotations[annotationJSON] = "yes"
+	}
 }
 
 // TraitsOf reads back what a command declared, reporting false when it
@@ -113,6 +124,7 @@ func TraitsOf(cmd *cobra.Command) (Traits, bool) {
 		Credential: Credential(cmd.Annotations[annotationCredential]),
 		Destroys:   cmd.Annotations[annotationDestroys],
 		Fixture:    cmd.Annotations[annotationFixture] == "yes",
+		JSON:       cmd.Annotations[annotationJSON] == "yes",
 	}, true
 }
 

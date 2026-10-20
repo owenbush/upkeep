@@ -1,0 +1,15 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "review",
+  "warnings": [],
+  "data": {
+    "module": "pathauto",
+    "core": "11",
+    "iid": 40,
+    "title": "Issue #3597857: Config schema",
+    "site_url": "https://upkeep-pathauto-d11.ddev.site",
+    "login_url": "https://upkeep-pathauto-d11.ddev.site/user/reset/1/abc",
+    "fixture": "smoke"
+  }
+}

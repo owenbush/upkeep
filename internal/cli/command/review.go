@@ -5,6 +5,7 @@ import (
 
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
 
@@ -31,6 +32,7 @@ func NewReview(engines adapter.Factory, clients cli.GitlabClients) *cobra.Comman
 		Credential: cli.CredentialNone,
 		Destroys:   "force-updates the managed mr-<iid> branch, and overwrites the database with --fixture",
 		Fixture:    true,
+		JSON:       true,
 	})
 	addMrSurface(cmd)
 	// The same flag `check` has, for the same reason one core short of the
@@ -40,6 +42,7 @@ func NewReview(engines adapter.Factory, clients cli.GitlabClients) *cobra.Comman
 	cmd.Flags().String("fixture", "",
 		"Load this named fixture into the database before serving the site")
 	cli.AddFixtureCompletion(cmd)
+	cli.AddJSON(cmd)
 	cli.AddModuleCompletion(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
@@ -86,6 +89,18 @@ func runReview(
 	serve, err := engine.Serve(environment)
 	if err != nil {
 		return 0, err
+	}
+
+	if cli.WantsJSON(cmd) {
+		return workflow.OK, emitJSON(cmd, "review", report.ReviewPayload{
+			Module:   context.Module.Name,
+			Core:     context.CoreMajor,
+			IID:      context.MergeRequest.IID,
+			Title:    context.MergeRequest.Title,
+			SiteURL:  serve.URL,
+			LoginURL: serve.LoginURL,
+			Fixture:  cli.Flag(cmd, "fixture"),
+		}, nil)
 	}
 
 	cli.Printf(cmd, "MR !%d (%q) is live for review on Drupal core %s.\n",

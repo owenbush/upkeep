@@ -154,9 +154,14 @@ Four appear nearly everywhere:
 | `--cockpit=<path>` | which cockpit to use, if not `$UPKEEP_COCKPIT` or the current directory |
 | `-v` | every line of the engine's own output, rather than the latest. The way to see a truncated check report in full |
 | `--fixture=<name>` | on the three commands above |
+| `--json` | one JSON document on stdout instead of a table, on the nine commands a program reads |
 
 `upkeep <command> --help` is authoritative for the rest, and
 [the reference](../commands.md) lists them all in one page.
+
+If you are scripting any of this, or pointing an agent at it, read
+[structured output](../reference/json.md) rather than parsing the tables: the
+columns truncate titles and are free to change, and the JSON is a contract.
 
 ## Exit codes
 

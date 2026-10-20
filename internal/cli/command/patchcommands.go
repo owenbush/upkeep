@@ -11,6 +11,7 @@ import (
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/drupal"
 	"github.com/owenbush/upkeep/internal/patches"
+	"github.com/owenbush/upkeep/internal/report"
 	"github.com/owenbush/upkeep/internal/results"
 	"github.com/owenbush/upkeep/internal/workflow"
 )
@@ -120,11 +121,13 @@ was produced.`,
 		Credential: cli.CredentialNone,
 		Destroys:   "force-updates the managed patch-<nid> branch, and overwrites the database with --fixture",
 		Fixture:    true,
+		JSON:       true,
 	})
 	addPatchSurface(cmd)
 	cmd.Flags().String("fixture", "",
 		"Load this named fixture into the database before running checks")
 	cli.AddFixtureCompletion(cmd)
+	cli.AddJSON(cmd)
 
 	cmd.RunE = cli.Run(func(cmd *cobra.Command, args []string) (int, error) {
 		return runPatchCheck(cmd, surface, args[0], args[1])
@@ -167,14 +170,26 @@ func runPatchCheck(
 		return 0, err
 	}
 
-	renderCheckSummary(cmd, run)
+	if cli.WantsJSON(cmd) {
+		if err := emitCheckJSON(cmd, run, report.Subject{
+			Kind:     "patch",
+			Module:   context.Module.Name,
+			Core:     context.CoreMajor,
+			Nid:      context.Issue.Nid,
+			Revision: context.Revision(),
+		}); err != nil {
+			return 0, err
+		}
+	} else {
+		renderCheckSummary(cmd, run)
 
-	if !run.AllPassed() {
-		// The drupal.org API is read-only, so the status change is the
-		// maintainer's to make; naming the issue is the most this can do.
-		cli.Printf(cmd,
-			"Report it at https://www.drupal.org/node/%d — the drupal.org API is read-only, "+
-				"so the status change is a browser action.\n", context.Issue.Nid)
+		if !run.AllPassed() {
+			// The drupal.org API is read-only, so the status change is the
+			// maintainer's to make; naming the issue is the most this can do.
+			cli.Printf(cmd,
+				"Report it at https://www.drupal.org/node/%d — the drupal.org API is read-only, "+
+					"so the status change is a browser action.\n", context.Issue.Nid)
+		}
 	}
 
 	key, err := results.PatchKey(context.Issue.Nid)
@@ -253,8 +268,10 @@ because the patch did not apply.`,
 	cli.Describe(cmd, cli.Traits{
 		Changes:    cli.ChangesWorkingCopy,
 		Credential: cli.CredentialNone,
+		JSON:       true,
 	})
 	addPatchSurface(cmd)
+	cli.AddJSON(cmd)
 	cmd.Flags().String("branch", "",
 		"Work branch to promote onto (default: the drupal.org <nid>-<slug> convention)")
 	// The re-roll door. Without it a patch that no longer applies is a dead
@@ -308,12 +325,33 @@ func runPatchPromote(
 	}
 
 	if !promotion.IsComplete() {
+		if cli.WantsJSON(cmd) {
+			return workflow.Failed, emitJSON(cmd, "patch-promote", report.PromotePayload{
+				Module:    context.Module.Name,
+				Issue:     context.Issue.Nid,
+				Branch:    branch.Name,
+				Committed: false,
+				Rejects:   promotion.Rejected,
+			}, nil)
+		}
+
 		return reportPartialPromotion(cmd, context, branch, promotion), nil
 	}
 
 	sha, err := promotion.RequireSHA()
 	if err != nil {
 		return 0, err
+	}
+
+	if cli.WantsJSON(cmd) {
+		return workflow.OK, emitJSON(cmd, "patch-promote", report.PromotePayload{
+			Module:    context.Module.Name,
+			Issue:     context.Issue.Nid,
+			Branch:    branch.Name,
+			Committed: true,
+			SHA:       sha,
+			Rejects:   []string{},
+		}, nil)
 	}
 
 	cli.Printf(cmd, "%s now carries the patch at %s.\n", branch.Name, shortSHA(sha))

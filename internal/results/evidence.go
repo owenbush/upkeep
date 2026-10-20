@@ -215,6 +215,22 @@ func (e LocalEvidence) Cell() string {
 	return "pass " + strings.Join(passed, ",") + " · ? " + strings.Join(unchecked, ",")
 }
 
+// States is every core with its own state, as data.
+//
+// The structured sibling of Cell and Describe, which render the same facts for
+// a column and for -v. A program wants neither of those strings: Cell encodes
+// worst-case-wins into prose, and Describe is laid out to be read. The
+// vocabulary is the same four words, because inventing a second one for JSON
+// would mean two answers to "what happened on core 11".
+func (e LocalEvidence) States() map[string]string {
+	states := make(map[string]string, len(e.byCore))
+	for _, core := range e.Cores() {
+		states[core] = string(e.stateOf(core))
+	}
+
+	return states
+}
+
 // Describe is every core with its own state, for -v. The detail half of
 // worst-case-plus-detail: the cell says what is wrong, this says where.
 func (e LocalEvidence) Describe() string {

@@ -1,0 +1,32 @@
+{
+  "upkeep": "1.0.0",
+  "schema": 1,
+  "command": "check",
+  "warnings": [],
+  "data": {
+    "subject": {
+      "kind": "merge-request",
+      "module": "pathauto",
+      "core": "11",
+      "iid": 40,
+      "revision": "a1b2c3d4e5f6"
+    },
+    "passed": false,
+    "checks": [
+      {
+        "check": "phpunit",
+        "status": "passed",
+        "exit_code": 0,
+        "seconds": 91.2
+      },
+      {
+        "check": "phpcs",
+        "status": "failed",
+        "exit_code": 1,
+        "seconds": 1.2,
+        "output": "FILE: src/Thing.php\n  12 | ERROR | Missing doc comment"
+      }
+    ],
+    "fixture": "smoke"
+  }
+}
