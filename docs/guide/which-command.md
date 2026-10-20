@@ -105,6 +105,22 @@ Those are the only commands that need a **GitLab token**. Everything else reads
 anonymously, because git.drupalcode.org serves a public project's merge
 requests, refs, forks and raw files without one.
 
+**They also need somebody present.** `publish` and `needs-work` refuse when
+there is no terminal to confirm at, unless you pass `--yes`; `merge` refuses
+outright, because an approval it consumes is one only a human can give. So a
+script, a pipe or an agent cannot open a merge request or comment on somebody's
+issue by accident:
+
+```bash
+echo | upkeep publish pathauto 3223746
+# Error: publishing pushes your branch and opens a merge request on
+# drupal.org under your name, and there is no terminal here to confirm
+# at. Re-run with --yes if that is what you meant
+```
+
+`needs-work --dry-run` is exempt, since it prints the comment and posts
+nothing.
+
 **Five can lose something.** Nothing else can:
 
 | Command | What it can lose |

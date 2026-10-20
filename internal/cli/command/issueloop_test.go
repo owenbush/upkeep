@@ -443,7 +443,7 @@ func TestPublishPushesToTheForkAndOpensAcrossProjects(t *testing.T) {
 
 	code, stdout, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -491,7 +491,7 @@ func TestPublishRefusesBeforeProvisioningWhenThereIsNoFork(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -522,7 +522,7 @@ func TestPublishRefusesBeforeProvisioningWithoutPushAccess(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -548,7 +548,7 @@ func TestPublishProceedsWhenPushAccessIsUnknown(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -569,7 +569,7 @@ func TestPublishReportsTheOpenMergeRequestRatherThanDuplicatingIt(t *testing.T) 
 
 	code, stdout, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -596,7 +596,7 @@ func TestPublishTargetsTheRecordedBaseThenTheProjectDefault(t *testing.T) {
 	recorded.recorded = "3.0.x"
 	scene := aForkScene(t)
 	runIssueLoop(t, recorded, someIssues(), scriptedClients{client: scene.client()},
-		cli.NoBrowser{}, "publish", "pathauto", "3223746", "--cockpit="+root)
+		cli.NoBrowser{}, "publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 	if got := scene.createdSeen["target_branch"]; got != "3.0.x" {
 		t.Errorf("the recorded base did not win: %v", got)
 	}
@@ -604,7 +604,7 @@ func TestPublishTargetsTheRecordedBaseThenTheProjectDefault(t *testing.T) {
 	// And --target outranks both.
 	named := aForkScene(t)
 	runIssueLoop(t, recorded, someIssues(), scriptedClients{client: named.client()},
-		cli.NoBrowser{}, "publish", "pathauto", "3223746", "--cockpit="+root, "--target=1.0.x")
+		cli.NoBrowser{}, "publish", "--yes", "pathauto", "3223746", "--cockpit="+root, "--target=1.0.x")
 	if got := named.createdSeen["target_branch"]; got != "1.0.x" {
 		t.Errorf("--target did not win: %v", got)
 	}
@@ -620,7 +620,7 @@ func TestPublishSaysTheBranchWasPushedWhenItCannotTarget(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -646,7 +646,7 @@ func TestPublishOffersTheBrowserWhenTheApiRefusesTheMergeRequest(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -666,14 +666,14 @@ func TestPublishMarksADraftOnce(t *testing.T) {
 
 	scene := aForkScene(t)
 	runIssueLoop(t, aWorkingEngine(), someIssues(), scriptedClients{client: scene.client()},
-		cli.NoBrowser{}, "publish", "pathauto", "3223746", "--cockpit="+root, "--draft")
+		cli.NoBrowser{}, "publish", "--yes", "pathauto", "3223746", "--cockpit="+root, "--draft")
 	if got, _ := scene.createdSeen["title"].(string); !strings.HasPrefix(got, "Draft: ") {
 		t.Errorf("title %q", got)
 	}
 
 	already := aForkScene(t)
 	runIssueLoop(t, aWorkingEngine(), someIssues(), scriptedClients{client: already.client()},
-		cli.NoBrowser{}, "publish", "pathauto", "3223746", "--cockpit="+root,
+		cli.NoBrowser{}, "publish", "--yes", "pathauto", "3223746", "--cockpit="+root,
 		"--draft", "--title=Draft: mine")
 	if got := already.createdSeen["title"]; got != "Draft: mine" {
 		t.Errorf("the prefix was doubled: %v", got)
@@ -689,7 +689,7 @@ func TestPublishRefusesWithoutACredentialBeforePushing(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -913,22 +913,22 @@ func TestTheIssueLoopNamesTheStepThatFailed(t *testing.T) {
 			expects: "could not fetch MR !9",
 		},
 		"publish cannot resolve the project": {
-			args:    []string{"publish", "pathauto", "3223746"},
+			args:    []string{"publish", "--yes", "pathauto", "3223746"},
 			breaks:  func(s *forkScene) { s.projectStatus = http.StatusInternalServerError },
 			expects: "pathauto",
 		},
 		"publish cannot read the issue fork": {
-			args:    []string{"publish", "pathauto", "3223746"},
+			args:    []string{"publish", "--yes", "pathauto", "3223746"},
 			breaks:  func(s *forkScene) { s.forkStatus = http.StatusInternalServerError },
 			expects: "issue fork for #3223746 could not be read",
 		},
 		"publish cannot list the branch's merge requests": {
-			args:    []string{"publish", "pathauto", "3223746"},
+			args:    []string{"publish", "--yes", "pathauto", "3223746"},
 			breaks:  func(s *forkScene) { s.openMR = "not json" },
 			expects: "could not be listed",
 		},
 		"the issue fork advertises no SSH URL": {
-			args:    []string{"publish", "pathauto", "3223746"},
+			args:    []string{"publish", "--yes", "pathauto", "3223746"},
 			breaks:  func(s *forkScene) { s.forkSSHURL = "" },
 			expects: "no SSH URL",
 		},
@@ -1008,7 +1008,7 @@ func TestPublishPublishesFromTheEnvironmentHoldingTheBranch(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -1035,7 +1035,7 @@ func TestPublishRefusesWhenNoEnvironmentIsOnTheBranch(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -1065,7 +1065,7 @@ func TestPublishRefusesWhenTwoEnvironmentsHoldTheBranch(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d, want %d", code, workflow.Infrastructure)
@@ -1090,7 +1090,7 @@ func TestAnExplicitCoreWinsOverWhereTheBranchIs(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: aForkScene(t).client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--version=11", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--version=11", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -1134,7 +1134,7 @@ func TestPublishUsesTheCanonicalProjectWhenNoForkCanExist(t *testing.T) {
 
 	code, stdout, stderr := runIssueLoop(t, engine, aMigratedIssueSource(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -1180,7 +1180,7 @@ func TestTheCanonicalPublishDescriptionPairsWithItsIssue(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), aMigratedIssueSource(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
 	}
@@ -1214,7 +1214,7 @@ func TestPublishPrefersTheForkEvenOnAMigratedProject(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, aMigratedIssueSource(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -1240,7 +1240,7 @@ func TestPublishRefusesTheCanonicalProjectWithoutPushAccess(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, engine, aMigratedIssueSource(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Errorf("exit %d", code)
@@ -1274,7 +1274,7 @@ func TestAMissingForkStillHandsOffForADrupalOrgProject(t *testing.T) {
 	// moved does.
 	code, _, stderr := runIssueLoop(t, engine, someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 
 	if code != workflow.Infrastructure {
 		t.Fatalf("exit %d", code)
@@ -1302,7 +1302,7 @@ func TestThePublishedDescriptionAlwaysOpensWithTheReference(t *testing.T) {
 			root := anEnvironmentCockpit(t)
 			scene := aForkScene(t)
 
-			args := append([]string{"publish", "pathauto", "3223746", "--cockpit=" + root}, tc.flags...)
+			args := append([]string{"publish", "--yes", "pathauto", "3223746", "--cockpit=" + root}, tc.flags...)
 			if code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 				scriptedClients{client: scene.client()}, cli.NoBrowser{}, args...); code != workflow.OK {
 				t.Fatalf("exit %d (%s)", code, stderr)
@@ -1330,7 +1330,7 @@ func TestAGivenDescriptionReplacesTheFooter(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root,
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root,
 		"--description=## What\n\nThe alias cache was never invalidated.")
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
@@ -1353,7 +1353,7 @@ func TestNoFooterLeavesTheReferenceAlone(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root, "--no-footer")
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root, "--no-footer")
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
 	}
@@ -1375,7 +1375,7 @@ func TestTheDefaultDescriptionStillCarriesTheNote(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root)
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
 	}
@@ -1399,7 +1399,7 @@ func TestTheDescriptionCanComeFromAFile(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root, "--description-file="+path)
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root, "--description-file="+path)
 	if code != workflow.OK {
 		t.Fatalf("exit %d (%s)", code, stderr)
 	}
@@ -1421,7 +1421,7 @@ func TestTwoDescriptionSourcesIsARefusal(t *testing.T) {
 
 	code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 		scriptedClients{client: scene.client()}, cli.NoBrowser{},
-		"publish", "pathauto", "3223746", "--cockpit="+root,
+		"publish", "--yes", "pathauto", "3223746", "--cockpit="+root,
 		"--description=inline", "--description-file=/nonexistent")
 
 	if code != workflow.Infrastructure {
@@ -1455,7 +1455,7 @@ func TestAnUnusableDescriptionFileIsARefusal(t *testing.T) {
 
 			code, _, stderr := runIssueLoop(t, aWorkingEngine(), someIssues(),
 				scriptedClients{client: scene.client()}, cli.NoBrowser{},
-				"publish", "pathauto", "3223746", "--cockpit="+root, "--description-file="+tc.path)
+				"publish", "--yes", "pathauto", "3223746", "--cockpit="+root, "--description-file="+tc.path)
 
 			if code != workflow.Infrastructure {
 				t.Errorf("exit %d", code)

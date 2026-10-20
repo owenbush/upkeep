@@ -252,3 +252,50 @@ func TestChooseManyWithNoOptionsAsksNothing(t *testing.T) {
 		t.Errorf("it asked anyway: %q", asked)
 	}
 }
+
+// /dev/null is not a human.
+//
+// The regression test for a hole this had from the start: the check asked
+// whether stdin's mode carried os.ModeCharDevice, and /dev/null is
+// `crw-rw-rw-`. So a process whose stdin was /dev/null — what CI steps and
+// plenty of agent runners hand a child — was read as somebody typing. `merge`
+// survived it by accident, going on to read EOF and fall to the do-nothing
+// default; the outward-write gate would simply not have existed in the case it
+// was built for.
+func TestDevNullIsNotATerminal(t *testing.T) {
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Skipf("no %s on this platform: %v", os.DevNull, err)
+	}
+	t.Cleanup(func() { _ = devNull.Close() })
+
+	if isTerminalReader(devNull) {
+		t.Errorf("%s was read as a terminal", os.DevNull)
+	}
+}
+
+// Nor is a pipe, a buffer, or a closed file.
+func TestOnlyARealTerminalCounts(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	t.Cleanup(func() { _ = read.Close(); _ = write.Close() })
+
+	if isTerminalReader(read) {
+		t.Error("a pipe was read as a terminal")
+	}
+	if isTerminalReader(strings.NewReader("typed\n")) {
+		t.Error("a string reader was read as a terminal")
+	}
+}
+
+// InteractiveInput asks the same question of a command's stdin.
+func TestInteractiveInputFollowsTheStream(t *testing.T) {
+	cmd := &cobra.Command{Use: "demo"}
+	cmd.SetIn(strings.NewReader(""))
+
+	if InteractiveInput(cmd) {
+		t.Error("a buffer was read as a terminal")
+	}
+}

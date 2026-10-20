@@ -366,7 +366,10 @@ it is an ordinary MR that dashboard, check and merge already handle.
   upkeep publish pathauto 3223746 --draft
 
 Opens merge requests; never merges one. Re-running after more commits updates
-the existing MR rather than opening a second.`,
+the existing MR rather than opening a second.
+
+This writes to drupal.org under your name, so with no terminal to confirm at it
+refuses unless --yes is passed.`,
 		Args: cobra.ExactArgs(2),
 	}
 	cli.Describe(cmd, cli.Traits{
@@ -379,6 +382,7 @@ the existing MR rather than opening a second.`,
 	cli.AddProjectsRoot(cmd)
 	cli.AddVerbose(cmd)
 	cli.AddJSON(cmd)
+	addWriteConfirmation(cmd, "opening a merge request")
 	cmd.Flags().String("branch", "", "Publish this branch instead of deriving it")
 	cmd.Flags().String("title", "", "Merge request title (default: from the issue)")
 	cmd.Flags().String("target", "",
@@ -411,6 +415,14 @@ func runPublish(
 	// The node id is checked before the credential is: a typo in the argument
 	// should not read as "you have no GitLab token".
 	if _, err := issueNid(rawNid); err != nil {
+		return 0, err
+	}
+
+	// And before the credential too: "there is nobody here to confirm" is a
+	// more basic refusal than a missing token, and it costs no round trip.
+	if err := assertDeliberateWrite(cmd,
+		"publishing pushes your branch and opens a merge request on drupal.org under your "+
+			"name"); err != nil {
 		return 0, err
 	}
 
