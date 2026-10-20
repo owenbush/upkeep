@@ -43,7 +43,6 @@ Conventions worth knowing before the list:
 | [`prune`](#upkeep-prune) | Reclaim disposable state; dry-run unless --yes |
 | [`publish`](#upkeep-publish) | Push an issue's work branch and open a merge request for it |
 | [`review`](#upkeep-review) | Apply a merge request to a running site and print its browsable URL |
-| [`skill`](#upkeep-skill) | Print the agent skill, for installing into an agent that drives upkeep |
 | [`start`](#upkeep-start) | Start (or resume) work on a drupal.org issue |
 | [`status`](#upkeep-status) | Report cockpit state; --disk itemizes real measured disk usage |
 | [`version`](#upkeep-version) | Print the upkeep version |
@@ -89,7 +88,6 @@ program reads.
 | [`prune`](#upkeep-prune) | the cockpit | – | – | – | deletes environments, cached results and fixture snapshots, with --yes |
 | [`publish`](#upkeep-publish) | drupal.org | **yes** | yes | – | – |
 | [`review`](#upkeep-review) | an environment | – | yes | yes | force-updates the managed mr-<iid> branch, and overwrites the database with --fixture |
-| [`skill`](#upkeep-skill) | nothing | – | – | – | – |
 | [`start`](#upkeep-start) | your working copy | – | – | – | – |
 | [`status`](#upkeep-status) | nothing | – | yes | – | – |
 | [`version`](#upkeep-version) | nothing | – | – | – | – |
@@ -807,28 +805,6 @@ Changes **an environment**; `--json` for one JSON document on stdout. Careful: i
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
-
-## `upkeep skill`
-
-Prints upkeep's agent skill: what an AI agent needs to know to use this tool
-without doing something it should not.
-
-  mkdir -p ~/.claude/skills/upkeep && upkeep skill > ~/.claude/skills/upkeep/SKILL.md
-
-Or install it from the repository, which is the discoverable route:
-
-  npx skills add owenbush/upkeep
-
-The version printed here is the one this binary was built with, so it cannot
-describe commands you do not have.
-
-stdout carries the document alone, so the redirect above works.
-
-```
-upkeep skill
-```
-
-Changes **nothing**.
 
 ## `upkeep start`
 

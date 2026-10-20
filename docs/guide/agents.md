@@ -12,27 +12,29 @@ What it needed adding was structured output and a published skill.
 
 ## Installing the skill
 
-Two routes, from one file.
-
 ```bash
 npx skills add owenbush/upkeep
 ```
 
-That is the discoverable one: the skill lives at `skills/upkeep/SKILL.md` in
-the repository, which is where the [skills.sh](https://skills.sh) CLI looks.
+That is the route, whatever you use. The [skills CLI](https://skills.sh) knows
+where each of seventy-odd harnesses keeps its skills, detects which ones you
+have installed, and takes `--agent` if you want to choose. upkeep deliberately
+does not try to do that job: it would mean carrying a table of directories for
+every agent on the market and keeping it current.
+
+Check what a repository offers before installing anything:
 
 ```bash
-mkdir -p ~/.claude/skills/upkeep
-upkeep skill > ~/.claude/skills/upkeep/SKILL.md
+npx skills add owenbush/upkeep --list
 ```
 
-That one comes from the binary you have. Prefer it if you are not on the latest
-release: the repository's copy describes whatever is on the default branch,
-which may name commands your binary does not have, and a skill an agent cannot
-follow is worse than none.
+**Without Node, or offline**, the skill ships inside the release archive at
+`skills/upkeep/SKILL.md`. Copy it to wherever your agent reads skills from —
+your harness's own documentation is the authority on that path, and the skills
+CLI's [agents table](https://github.com/vercel-labs/skills/blob/main/docs/agents.md)
+lists them if you would rather look it up.
 
-Put it in `<project>/.claude/skills/upkeep/` instead if you want it for one
-project rather than everywhere.
+The file is also in the repository at the same path, so a clone has it too.
 
 ## What the skill tells it
 

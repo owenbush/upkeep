@@ -1094,40 +1094,45 @@ and was learned the hard way.
   merging — is deliberately absent under the DA one-approval stance. It is in
   git history if it is ever worth reviving; reviving it means solving "what
   makes this stay in step with the core", not porting the code.
-- **The agent skill is published, and the guard is not in it.**
+- **The agent skill is published, and upkeep does not install it.**
   `skills/upkeep/SKILL.md` is the flat layout the skills.sh CLI documents
   (`skills/<name>/SKILL.md` in a standard discovery location), so
-  `npx skills add owenbush/upkeep` finds it. Required frontmatter is `name`
-  (lowercase, hyphens, ≤64) and `description` (≤1024, and it is the *routing
-  signal*, so it is keyword-rich and says when to use the skill rather than
-  only what it does); `metadata.internal` must stay unset, since it hides the
-  skill from discovery. A test holds all of that, plus the body under 500
-  lines, because none of those are upkeep's rules and nothing else would keep
-  them true. **Only one skill directory**: `.claude/skills/` is also a
-  discovery location, so a second there would publish two skills from one
-  repository.
-  The same file is embedded and printed by `upkeep skill`, which exists because
-  the npx route takes whatever is on the default branch — for somebody on a
-  release that is a newer tool than they are running, and a skill naming
-  commands the binary lacks is worse than none. `go:embed` cannot reach above
-  its own package and there was no Go file at the module root, so `skills.go`
-  lives there; it costs one `coverage.sh` exclusion with its reason, in the
-  shape of the `internal/invariant` entry. A symlink from `skills/` into
-  `internal/` was rejected twice over: `go:embed` ignores symlinks, and a
-  symlink in a release archive is the bug that nearly shipped the LICENSE as a
-  dangling link.
+  `npx skills add owenbush/upkeep` finds it — verified against the real CLI,
+  which clones the *default branch* and reads the frontmatter, so merging is
+  what publishes a skill and a release has nothing to do with it. Required
+  fields are `name` (lowercase, hyphens, ≤64) and `description` (≤1024, and it
+  is the *routing signal*, so it says when to use the skill rather than only
+  what it does); `metadata.internal` must stay unset, since it hides the skill
+  from discovery. **Only one skill directory**, because `.claude/skills/` is
+  also a discovery location and a second there would publish two skills from
+  one repository.
+  **There is deliberately no `upkeep skill` command.** One was built and
+  removed: it printed the embedded file for redirecting into place, and every
+  example written around it hardcoded one agent's directory. The skills CLI
+  handles **seventy-odd harnesses**, auto-detects which are installed and takes
+  `--agent`; upkeep could only compete by carrying that table and keeping it
+  current, which is not its job — and the command cost a `go:embed` package at
+  the module root, a coverage exclusion, and a thirty-first command on a
+  surface already reported as overwhelming. What survives of the idea is the
+  useful half: the skill ships **inside the release archive** beside the
+  LICENSE, for the case npx cannot serve (no Node, no network), costing one
+  file rather than a command that pretends to know your agent's layout.
   **What the skill carries is judgement, not a command list** — that is
   `docs/guide/which-command.md`. Where to stop, which branches get destroyed,
   what an exit code means, what costs minutes, and the two things an agent
   otherwise reports wrongly and confidently (a green pipeline is not a clean
-  one; CI tests the merge ref, not the branch). A test asserts it still names
-  `publish`, `needs-work` and `merge`, because a file that lost those would
-  still install, still read well, and no longer do its job.
+  one; CI tests the merge ref, not the branch).
+  **Its shape is an invariant**, in `internal/invariant/skill_test.go`, because
+  nothing in the binary reads the file any more: the frontmatter standard, the
+  body length, that it names no particular agent, and that the stop section
+  still *lists* all three outward commands. Pinned to the bullets rather than
+  the names — the section also explains the `--yes` behaviour, so every name
+  survives deleting the list itself, which a mutation run found twice.
   **The enforcement is in the binary.** A skill is instructions and
   instructions can be misread, so `publish` and `needs-work` refuse without a
   terminal and `merge` refuses outright. An agent passing `--yes` to get past
-  one unasked is the agent at fault, not the gate being awkward — which is a
-  thing worth being able to say plainly, and only true because the gate exists.
+  one unasked is the agent at fault, not the gate being awkward — a thing worth
+  being able to say plainly, and only true because the gate exists.
 - **Shell completion** — `upkeep completion <shell>` is cobra's own,
   and command names complete for free. What does not is *values*, so
   `UpkeepCommand::complete()` suggests the registry's module machine names for
