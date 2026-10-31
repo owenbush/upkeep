@@ -201,8 +201,118 @@ func TestNoUpstreamIsNotTheSameAsNothingToPush(t *testing.T) {
 	if !status.HasLocalWork() {
 		t.Error("a copy with no upstream did not read as carrying work")
 	}
-	if !slices.Contains(status.Describe(), "No upstream tracking branch configured") {
+	if !slices.Contains(
+		status.Describe(),
+		`Branch "2.0.x" has no upstream, so unpushed commits cannot be counted`,
+	) {
 		t.Errorf("reasons %v", status.Describe())
+	}
+}
+
+// TestAManagedBranchWithoutAnUpstreamIsNotLocalWork is the bug this guard had
+// from the start: mr-<iid> and patch-<nid> are cut locally and never pushed, so
+// they cannot have an upstream, so every working copy that had been through a
+// check read as carrying work for ever after. That blocked the stale-environment
+// teardown, which is the recovery a base-artifact rebuild is supposed to trigger.
+func TestAManagedBranchWithoutAnUpstreamIsNotLocalWork(t *testing.T) {
+	for _, branch := range []string{"mr-1", "mr-3597808", "patch-3603341"} {
+		status := WorkingCopyStatus{CurrentBranch: branch, CommitsAhead: NoUpstream}
+
+		if status.HasLocalWork() {
+			t.Errorf("%q read as carrying work: %v", branch, status.Describe())
+		}
+		if len(status.Describe()) != 0 {
+			t.Errorf("%q described reasons it does not have: %v", branch, status.Describe())
+		}
+	}
+}
+
+// TestAManagedBranchStillRefusesWhenSomebodyIsMidEdit holds the other half: the
+// exemption is for the missing upstream only, and uncommitted changes are the
+// signal that means somebody is working in there right now.
+func TestAManagedBranchStillRefusesWhenSomebodyIsMidEdit(t *testing.T) {
+	for name, status := range map[string]WorkingCopyStatus{
+		"unstaged": {CurrentBranch: "mr-1", CommitsAhead: NoUpstream, HasUnstagedChanges: true},
+		"staged":   {CurrentBranch: "mr-1", CommitsAhead: NoUpstream, HasStagedChanges: true},
+		"untracked": {
+			CurrentBranch: "patch-3603341", CommitsAhead: NoUpstream, HasUntrackedFiles: true,
+		},
+	} {
+		if !status.HasLocalWork() {
+			t.Errorf("%s: a dirty managed branch did not read as carrying work", name)
+		}
+	}
+}
+
+// TestTheRecoveryItSuggestsActuallyClearsTheRefusal runs the suggestion rather
+// than comparing it to a string, which is how the untracked-core refusal is
+// held too. A message naming a command that does not resolve the thing it was
+// offered for is worse than no message, and a string comparison would pass
+// just as happily on a command that never worked.
+//
+// The dirty case is the one that can be executed without a remote: the others
+// want an origin to push to.
+func TestTheRecoveryItSuggestsActuallyClearsTheRefusal(t *testing.T) {
+	dir := aRepo(t)
+	write(t, dir, "pathauto.module", "<?php // half an edit\n")
+	write(t, dir, "untracked.txt", "and something new\n")
+
+	status := inspect(t, dir)
+	if !status.HasLocalWork() {
+		t.Fatal("a dirty working copy did not read as carrying work")
+	}
+
+	steps := status.Recovery(dir)
+	if len(steps) == 0 {
+		t.Fatal("no recovery offered for a dirty working copy")
+	}
+
+	// steps[0] is the cd; take the first command it leads to, drop the
+	// explanatory comment, and run it in that directory.
+	command, _, _ := strings.Cut(steps[1], "#")
+	fields := strings.Fields(command)
+	if len(fields) == 0 || fields[0] != "git" {
+		t.Fatalf("first command is not git: %q", steps[1])
+	}
+	cmd := exec.Command(fields[0], fields[1:]...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("the suggested recovery failed: %s\n%v\n%s", command, err, out)
+	}
+
+	if after := inspect(t, dir); after.IsDirty() {
+		t.Errorf("ran %q and the copy is still dirty: %v", command, after.Describe())
+	}
+}
+
+// TestTheRefusalNamesSomethingToRun is what the reports asked for: the old
+// message said "Push or stash your work" and named neither the directory nor a
+// command, and the working copy is nested inside an engine project directory
+// nobody navigates to by hand.
+func TestTheRefusalNamesSomethingToRun(t *testing.T) {
+	dir := "/projects/upkeep-sdc-showcase-d11/module"
+
+	for name, status := range map[string]WorkingCopyStatus{
+		"dirty":       {CurrentBranch: "2.0.x", HasUnstagedChanges: true},
+		"unpushed":    {CurrentBranch: "2.0.x", CommitsAhead: 3},
+		"no upstream": {CurrentBranch: "2.0.x", CommitsAhead: NoUpstream},
+		"own branch":  {CurrentBranch: "my-fix", CommitsAhead: NoUpstream},
+		"detached":    {CurrentBranch: "", CommitsAhead: NoUpstream},
+	} {
+		steps := status.Recovery(dir)
+		if len(steps) < 2 {
+			t.Errorf("%s: no recovery offered for %v", name, status.Describe())
+
+			continue
+		}
+		if steps[0] != "cd "+dir {
+			t.Errorf("%s: recovery does not open by saying where: %q", name, steps[0])
+		}
+		for _, step := range steps[1:] {
+			if !strings.HasPrefix(step, "git ") {
+				t.Errorf("%s: step is not a command to run there: %q", name, step)
+			}
+		}
 	}
 }
 
@@ -245,12 +355,16 @@ func TestWhichBranchesCountAsSomebodysOwn(t *testing.T) {
 		"7.x-2.x": false,
 		// A legacy *tag* is nobody's branch, and being on one means a
 		// detached HEAD anyway.
-		"8.x-1.4":                         true,
-		"2.x":                             false,
-		"11.x":                            false,
-		"mr-12":                           false,
-		"mr-3597808":                      false,
-		"patch-3603341":                   true,
+		"8.x-1.4":    true,
+		"2.x":        false,
+		"11.x":       false,
+		"mr-12":      false,
+		"mr-3597808": false,
+		// Managed, like mr-*: upkeep cuts it, resets it with `checkout -B` on
+		// every apply, and refuses it as a base. It read as somebody's own
+		// branch because this asked a local "mr-" regex rather than
+		// IsManagedBranch, which has always named both prefixes.
+		"patch-3603341":                   false,
 		"main":                            true,
 		"3603341-drupal-12-compatibility": true,
 		"":                                true,

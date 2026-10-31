@@ -40,9 +40,12 @@ func (d *DdevContrib) EnsureEnv(module cockpit.Module, coreMajor string) (Enviro
 			status := InspectWorkingCopy(moduleDir, d.runner)
 			if status.HasLocalWork() {
 				return Environment{}, fmt.Errorf(
-					"environment %s is stale and needs re-provisioning, but the module working copy "+
-						"has local work:\n  %s\nPush or stash your work, then re-run",
-					projectName, strings.Join(status.Describe(), "\n  "),
+					"environment %s is stale and needs re-provisioning, which would destroy "+
+						"the module working copy at\n  %s\nand it has local work:\n  %s\n\n"+
+						"Clear it with:\n  %s\nthen re-run.",
+					projectName, moduleDir,
+					strings.Join(status.Describe(), "\n  "),
+					strings.Join(status.Recovery(moduleDir), "\n  "),
 				)
 			}
 		}
@@ -81,9 +84,11 @@ func (d *DdevContrib) Teardown(module cockpit.Module, coreMajor string) error {
 		status := InspectWorkingCopy(moduleDir, d.runner)
 		if status.HasLocalWork() {
 			return fmt.Errorf(
-				"refusing to tear down %s: the module working copy has local work:\n  %s\n"+
-					"Push or stash your work first",
-				projectName, strings.Join(status.Describe(), "\n  "),
+				"refusing to tear down %s: the module working copy at\n  %s\n"+
+					"has local work:\n  %s\n\nClear it with:\n  %s\nthen re-run.",
+				projectName, moduleDir,
+				strings.Join(status.Describe(), "\n  "),
+				strings.Join(status.Recovery(moduleDir), "\n  "),
 			)
 		}
 	}

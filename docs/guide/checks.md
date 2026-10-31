@@ -210,6 +210,35 @@ opens the MR on the canonical project, which is the maintainer's flow.
 Contributors without push access need a drupal.org issue fork, which
 drupal.org's own UI creates.
 
+## When a check cannot find a class it should find
+
+A check that fails on `Class ... not found`, for a class that belongs to a
+package the module declares in `require-dev`, is usually not a defect in the
+contribution. Look further up the run for this:
+
+```
+Could not install the module's own dev dependencies (drupal/paragraphs).
+```
+
+upkeep installs the module's own `require-dev` on every check, because a
+module's phpcs and phpstan configuration can reference its own packages. When
+that install fails the checks still run, deliberately, so a linting dependency
+cannot take down phpunit and the install check. phpstan then reports every
+symbol it could not resolve.
+
+The usual cause is that a Drupal core security advisory has landed since the
+base artifacts for that core were built. Composer will not load a core affected
+by an advisory, and every install into a seeded tree is a partial update that
+cannot move core, so the resolve fails. Rebuild that core's artifacts and the
+environments re-provision themselves:
+
+```bash
+upkeep base-artifacts:build --version=11 --force
+```
+
+[Base artifacts](../base-artifacts.md) has the mechanism and the other causes.
+Composer's own output names whichever one it is, and reaching it needs `-v`.
+
 ## When a failing check's output is cut
 
 The console echoes the tail of a failed check's output, and says so when it

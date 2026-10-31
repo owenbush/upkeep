@@ -185,6 +185,78 @@ somebody can be offered. A staging directory left behind by a build that was
 killed outright is removed by the next build for that core, which is the next
 moment anyone is demonstrably not relying on it.
 
+### A Drupal core security release
+
+This is the commonest reason you will need to rebuild, and the symptom does not
+look like a core problem at all.
+
+Composer refuses to *load* a package affected by a published security advisory.
+That is its `policy.advisories.block` setting, and it is on by default.
+Everything upkeep puts into a seeded tree goes in with `composer require`: the
+module itself, the module's own `require-dev`, the check toolchain, drush. Each
+of those is a **partial** update, so `drupal/core-recommended` stays locked at
+whatever version the base artifacts resolved to, and composer is not permitted
+to move it.
+
+So on the day an advisory lands against the core your artifacts were built on,
+those installs stop resolving:
+
+```
+Problem 1
+  - drupal/core-recommended is locked to version 11.4.6 and an update of this
+    package was not requested.
+  - drupal/core-recommended 11.4.6 requires drupal/core 11.4.6 -> found
+    drupal/core[11.4.6] but these were not loaded, because they are affected by
+    security advisories ("SA-CORE-2026-016", "SA-CORE-2026-013", ...).
+```
+
+Which install you see it on depends on the environment. A reused one already
+has the module linked and the toolchain present, so the first composer call of
+the run is the module's dev requirements and the failure reaches you as a check
+that cannot find a class:
+
+```
+Could not install the module's own dev dependencies (drupal/paragraphs). Its
+phpcs or phpstan configuration may reference a sniff or extension that is now
+missing; the check will name it if so.
+...
+  120    Class Drupal\paragraphs\ParagraphInterface not found.
+```
+
+A fresh provision has more composer calls ahead of that one, so it fails
+sooner, while wiring the module or installing the check toolchain.
+
+**The fix is to rebuild that core's artifacts.**
+
+```bash
+upkeep base-artifacts:build --version=11 --force
+```
+
+A rebuild is a fresh `composer create-project`, so it resolves against
+packagist as it stands today and takes the patched release. Every environment
+seeded from the old set then trips the seed skew check in section 4 and
+re-provisions itself on the next `check` or `review`. There is nothing else to
+run.
+
+Three things are worth knowing when you meet this.
+
+The install failure is reported as a **warning rather than a refusal**, on
+purpose: a package needed only for linting must not take down phpunit, the
+install check and the smoke test. The consequence is that composer's own
+output, which is the only thing that names the real cause, is behind `-v`.
+
+The warning's suggested cause is a missing sniff or extension. That is the
+common case and it is not this one, so a dev dependency that will not install
+and that you cannot otherwise explain is worth checking against the current
+core release before anything else. `upkeep base-artifacts:status` prints the
+version each set resolved to and when it was built.
+
+Composer will also offer you `policy.advisories.ignore-id` and
+`policy.advisories.block: false`. Both work, and neither is the right trade
+here. The advisory is accurate, a patched core exists, and a rebuild gets you
+it; suppressing the check leaves every environment you own on a core with a
+known vulnerability in order to avoid a command that takes a few minutes.
+
 ### You do not need to raise the stability as the major matures
 
 A composer stability is a **minimum**, not a pin, and pre-release versions sort
