@@ -31,6 +31,7 @@ internal/cockpit              94.9
 internal/config              100.0
 internal/dashboard            97.0
 internal/drupal               79.2
+internal/drupalorgcli         91.2
 internal/filesystem           87.2
 internal/gate                 97.3
 internal/gitlab               90.3
@@ -38,7 +39,7 @@ internal/maintenance         100.0
 internal/naming              100.0
 internal/notes               100.0
 internal/patches              96.0
-internal/proc                 93.4
+internal/proc                 93.9
 internal/report               96.7
 internal/results              96.0
 internal/security             93.9
