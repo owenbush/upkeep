@@ -54,7 +54,7 @@ var controlSequence = regexp.MustCompile(
 		`|\x1b[@-Z\\-_]`,
 )
 
-// plainText reduces a child's line to the text in it.
+// PlainText reduces a child's line to the text in it.
 //
 // The status line borrows one line of somebody else's output, and anything in
 // that line which sets a colour or moves a cursor is an instruction about a
@@ -74,7 +74,9 @@ var controlSequence = regexp.MustCompile(
 // Stripping rather than trying to balance the sequences also makes
 // statusWidth mean what it says: a hundred visible columns, rather than a
 // hundred bytes of which forty were escape codes.
-func plainText(line string) string {
+// Exported for output relayed from elsewhere — a CI job's trace, in
+// mr:logs — which carries the same colours and cursor moves.
+func PlainText(line string) string {
 	line = controlSequence.ReplaceAllString(line, "")
 
 	return strings.Map(func(r rune) rune {
@@ -91,7 +93,7 @@ func plainText(line string) string {
 
 // Line receives one line of a child's output.
 func (s *LiveStatus) Line(line string) {
-	line = plainText(strings.TrimRight(line, "\r\n"))
+	line = PlainText(strings.TrimRight(line, "\r\n"))
 
 	if s.verbose {
 		fmt.Fprintln(s.out, line)

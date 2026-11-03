@@ -1,0 +1,38 @@
+{
+    "project_path": "project/content_sync",
+    "merge_requests": [
+        {
+            "iid": 14,
+            "title": "3232205-drush-commands-d10 changed folder structure, dependency injection,...",
+            "source_branch": "3232205-drush-commands-d10",
+            "target_branch": "4.0.x",
+            "state": "merged",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/14",
+            "is_mergeable": true,
+            "author": "Guido_S",
+            "updated_at": "2024-09-25T06:02:13.885Z"
+        },
+        {
+            "iid": 10,
+            "title": "Resolve #3330173: PHP 8.1 and Drupal 10 compatibility.",
+            "source_branch": "3330173-drupal-10-compatibility-new",
+            "target_branch": "3.0.x",
+            "state": "merged",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/10",
+            "is_mergeable": true,
+            "author": "Matroskeen",
+            "updated_at": "2024-09-25T03:00:38.798Z"
+        },
+        {
+            "iid": 8,
+            "title": "Issue #3346571: Missing schema for module's defined configuration",
+            "source_branch": "3.0.x",
+            "target_branch": "4.0.x",
+            "state": "merged",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/8",
+            "is_mergeable": true,
+            "author": "ibustos",
+            "updated_at": "2024-09-25T05:08:37.304Z"
+        }
+    ]
+}

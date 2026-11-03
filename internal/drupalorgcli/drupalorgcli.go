@@ -106,6 +106,7 @@ type Option func(*invocation)
 
 type invocation struct {
 	noFormat bool
+	dir      string
 }
 
 // WithoutFormat omits `--format=json --no-interaction`, for commands that
@@ -179,7 +180,7 @@ func (r *Runner) RunRaw(ctx context.Context, args []string, opts ...Option) ([]b
 		credentials = map[string]string{TokenEnvVar: token}
 	}
 
-	outcome := proc.Exec(ctx, append([]string{bin}, argv...), credentials)
+	outcome := proc.ExecIn(ctx, inv.dir, append([]string{bin}, argv...), credentials)
 	if ctx.Err() != nil {
 		return nil, cancelled(args, ctx.Err())
 	}

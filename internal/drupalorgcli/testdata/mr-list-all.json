@@ -1,0 +1,49 @@
+{
+    "project_path": "project/content_sync",
+    "merge_requests": [
+        {
+            "iid": 22,
+            "title": "Automated Project Update Bot fixes",
+            "source_branch": "project-update-bot-only",
+            "target_branch": "5.0.x",
+            "state": "opened",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/22",
+            "is_mergeable": true,
+            "author": "Project-Update-Bot",
+            "updated_at": "2026-10-23T23:06:50.425Z"
+        },
+        {
+            "iid": 15,
+            "title": "Draft: Resolve #3476592 \"Issues enabling module\"",
+            "source_branch": "3476592-issues-enabling-module",
+            "target_branch": "4.0.x",
+            "state": "closed",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/15",
+            "is_mergeable": false,
+            "author": "Blanca.Esqueda",
+            "updated_at": "2024-09-25T04:49:55.202Z"
+        },
+        {
+            "iid": 14,
+            "title": "3232205-drush-commands-d10 changed folder structure, dependency injection,...",
+            "source_branch": "3232205-drush-commands-d10",
+            "target_branch": "4.0.x",
+            "state": "merged",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/14",
+            "is_mergeable": true,
+            "author": "Guido_S",
+            "updated_at": "2024-09-25T06:02:13.885Z"
+        },
+        {
+            "iid": 5,
+            "title": "Update README.txt",
+            "source_branch": "3321524-replace-readme.txt-with",
+            "target_branch": "3.0.x",
+            "state": "opened",
+            "web_url": "https://git.drupalcode.org/project/content_sync/-/merge_requests/5",
+            "is_mergeable": true,
+            "author": "nitapawar",
+            "updated_at": "2022-11-15T12:46:59.050Z"
+        }
+    ]
+}

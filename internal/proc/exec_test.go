@@ -2,6 +2,7 @@ package proc
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,5 +47,21 @@ func TestExecReportsAChildThatNeverRanOrWasCancelled(t *testing.T) {
 
 	if empty := Exec(context.Background(), nil, nil); empty.Err == nil {
 		t.Error("an empty command ran")
+	}
+}
+
+// ExecIn starts the child where it is told to, for a child that acts on the
+// repository it runs inside.
+func TestExecInStartsTheChildInTheGivenDirectory(t *testing.T) {
+	dir := t.TempDir()
+
+	out := ExecIn(context.Background(), dir, sh(`pwd -P`), nil)
+
+	want, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out.Stdout)); got != want {
+		t.Errorf("child ran in %q, want %q", got, want)
 	}
 }

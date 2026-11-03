@@ -34,6 +34,13 @@ type Outcome struct {
 // DRUPALORG_GITLAB_TOKEN and offers no other way that keeps the token out of
 // argv.
 func Exec(ctx context.Context, command []string, credentials map[string]string) Outcome {
+	return ExecIn(ctx, "", command, credentials)
+}
+
+// ExecIn is Exec with the child started in dir ("" is this process's working
+// directory), for a child that acts on the repository it is run inside —
+// drupalorg-cli's issue:setup-remote and issue:checkout.
+func ExecIn(ctx context.Context, dir string, command []string, credentials map[string]string) Outcome {
 	if len(command) == 0 {
 		return Outcome{Err: errNothingToRun}
 	}
@@ -48,6 +55,7 @@ func Exec(ctx context.Context, command []string, credentials map[string]string) 
 	redactor := security.NewRedactor(secrets...)
 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd.Dir = dir
 	cmd.Env = env
 	killWholeGroup(cmd)
 
