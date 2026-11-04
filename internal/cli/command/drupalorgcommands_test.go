@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -288,6 +289,51 @@ func TestTheDrupalorgCommandSurface(t *testing.T) {
 	for name := range gated {
 		if !found[name] {
 			t.Errorf("%s is not registered", name)
+		}
+	}
+}
+
+// The table that builds these commands is the contract the live check holds
+// drupalorg-cli to (go run ./cmd/livecheck --cli-contract), so here it is held
+// to the help 0.10.3 printed, recorded in drupalorgcli's testdata.
+func TestTheWrappedCommandsMatchTheRecordedCLIHelp(t *testing.T) {
+	signatures := DrupalorgSignatures()
+	if len(signatures) != 10 {
+		t.Fatalf("%d wrapped commands, want 10: %v", len(signatures), signatures)
+	}
+
+	help := map[string]drupalorgcli.Signature{}
+	for _, want := range signatures {
+		if !want.Accepts("no-interaction") {
+			t.Errorf("%s: upkeep's expectation leaves out --no-interaction", want.Command)
+		}
+		raw, err := os.ReadFile(filepath.Join("..", "..", "drupalorgcli", "testdata", "help",
+			strings.ReplaceAll(want.Command, ":", "_")+".txt"))
+		if err != nil {
+			t.Fatalf("%s: no recorded help: %v", want.Command, err)
+		}
+		got, err := drupalorgcli.ParseHelp(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", want.Command, err)
+		}
+		help[want.Command] = got
+		if diffs := drupalorgcli.Compare(want, got); diffs != nil {
+			t.Errorf("%v", diffs)
+		}
+	}
+
+	// And a deliberately wrong expectation is caught, naming the command and
+	// the argument: relabel with its labels made optional.
+	for _, want := range signatures {
+		if want.Command != "issue:relabel" {
+			continue
+		}
+		want.Args = slices.Clone(want.Args)
+		want.Args[1].Shape = drupalorgcli.Variadic
+		diffs := drupalorgcli.Compare(want, help[want.Command])
+		if len(diffs) != 1 || !strings.Contains(diffs[0], "issue:relabel") ||
+			!strings.Contains(diffs[0], `"labels"`) {
+			t.Errorf("a broken expectation was reported as %v", diffs)
 		}
 	}
 }
