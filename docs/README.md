@@ -36,6 +36,7 @@ module — registered or not.
 
 - [Command reference](commands.md) — every command, generated from the CLI itself
 - [Exit codes](reference/exit-codes.md) — the 0/1/2 contract
+- [drupalorg-cli](reference/drupalorg-cli.md) — where upkeep uses it, where it does not, and the evidence for each
 - [Disk housekeeping](reference/disk.md) — where the space goes, and reclaiming it
 - [Upgrading a cockpit](reference/upgrading.md)
 - [Structured output](reference/json.md) — `--json`, the envelope, and the exit-code contract

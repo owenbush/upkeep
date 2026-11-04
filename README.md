@@ -43,7 +43,9 @@ assign and label commands (`issue:fork`, `issue:get-access`, `issue:assign`,
 `issue:relabel`, `issue:setup-remote`, `issue:fork-checkout`) also need **PHP
 and [drupalorg-cli](https://github.com/mglaman/drupalorg-cli) 0.10.3+** on your
 `PATH`, or at `UPKEEP_DRUPALORG_BIN`. Everything else works without it. See
-[Install](docs/guide/install.md).
+[Install](docs/guide/install.md), and [drupalorg-cli: where upkeep uses it, and
+where it does not](docs/reference/drupalorg-cli.md) for why upkeep wraps the
+CLI for these and keeps its own clients for everything it reads.
 
 ## Documentation
 

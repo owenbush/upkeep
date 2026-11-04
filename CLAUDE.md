@@ -680,6 +680,8 @@ and was learned the hard way.
   nothing on its own.
 - `internal/drupalorgcli/` — the single way upkeep runs
   [drupalorg-cli](https://github.com/mglaman/drupalorg-cli) (a PHP phar).
+  The user-facing account of the split, with the evidence, is
+  `docs/reference/drupalorg-cli.md`; keep the two in step.
   **The CLI is used only where upkeep has no native path**, and today that
   means ten workflow actions and nothing else. The binary is
   `UPKEEP_DRUPALORG_BIN`, else `drupalorg` on PATH; **0.10.3 or newer is

@@ -30,6 +30,9 @@ upkeep looks for `drupalorg` on your `PATH`. To use a binary somewhere else,
 set `UPKEEP_DRUPALORG_BIN` to its path. If it is missing or too old, those ten
 commands refuse with a message saying so, and nothing else changes.
 
+Why only these ten: [drupalorg-cli: where upkeep uses it, and where it does
+not](../reference/drupalorg-cli.md).
+
 > **Note for Colima / Docker Desktop users:** environments are bind-mounted
 > into the container runtime's VM, and macOS providers only share your home
 > directory by default. The projects root (where environments live) must
