@@ -337,3 +337,35 @@ func TestTheWrappedCommandsMatchTheRecordedCLIHelp(t *testing.T) {
 		}
 	}
 }
+
+// Every posting action is in the agent skill's stop list. The skill is what
+// tells an agent which commands speak in public under the maintainer's name;
+// a gated command missing from it is one an agent has no reason to stop
+// before. Read from the table, so adding a posting action without listing it
+// fails here (internal/invariant pins the list's original three).
+func TestTheAgentSkillListsEveryPostingAction(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "skills", "upkeep", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	heading := "## Stop before anything that writes to drupal.org"
+	start := strings.Index(body, heading)
+	if start < 0 {
+		t.Fatalf("the skill has no %q section", heading)
+	}
+	section := body[start+len(heading):]
+	if next := strings.Index(section, "\n## "); next >= 0 {
+		section = section[:next]
+	}
+
+	for _, action := range drupalorgActions {
+		listed := strings.Contains(section, "\n- `"+action.name+"` — ")
+		if action.posts && !listed {
+			t.Errorf("%s posts on drupal.org but the skill's stop list does not name it", action.name)
+		}
+		if !action.posts && listed {
+			t.Errorf("%s posts nothing but the skill's stop list names it", action.name)
+		}
+	}
+}
