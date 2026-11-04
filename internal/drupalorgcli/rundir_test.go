@@ -17,7 +17,7 @@ func TestRunRawInRunsTheChildInTheGivenDirectory(t *testing.T) {
 	dir := t.TempDir()
 
 	out, failure := New(nil, 0).RunRawIn(context.Background(), dir,
-		[]string{"issue:setup-remote", "123"}, WithoutFormat())
+		[]string{"issue:setup-remote", "123"})
 	if failure != nil {
 		t.Fatalf("failure: %+v", failure)
 	}

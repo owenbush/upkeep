@@ -2,10 +2,16 @@
 // (github.com/mglaman/drupalorg-cli).
 //
 // It finds the binary (UPKEEP_DRUPALORG_BIN, else `drupalorg` on PATH),
-// refuses anything older than MinVersion once per process, runs commands with
-// `--format=json --no-interaction`, hands the child the GitLab token through
+// refuses anything older than MinVersion once per process, runs the command
+// exactly as the caller built it, hands the child the GitLab token through
 // DRUPALORG_GITLAB_TOKEN only, and reports every non-success as a
 // *gitlab.Failure so callers keep switching on conditions, not strings.
+//
+// Nothing here decodes the CLI's JSON, and that is a finding rather than an
+// omission: plan 1 compared every merge-request read against the native
+// client and none reached parity (missing fields, invalid JSON for a title
+// containing '<'), so upkeep only runs the CLI for actions it has no native
+// path for, and relays their text.
 //
 // # Token handling
 //
@@ -37,15 +43,12 @@
 //	non-zero exit, "unauthorized", "invalid token"…   Unauthorized       0
 //	non-zero exit, "not found"                        NotFound           0
 //	any other non-zero exit                           RequestRejected    0
-//	exit 0, JSON wanted, stdout empty or not JSON     MalformedResponse  0
 //
 // Status is set only when the output actually named one.
 package drupalorgcli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -65,7 +68,7 @@ const (
 	BinEnvVar = "UPKEEP_DRUPALORG_BIN"
 	// TokenEnvVar is where drupalorg-cli reads its GitLab token from.
 	TokenEnvVar = "DRUPALORG_GITLAB_TOKEN"
-	// MinVersion is the oldest release whose JSON upkeep understands.
+	// MinVersion is the oldest release upkeep has been verified against.
 	MinVersion = "0.10.3"
 	// DefaultMaxConcurrent matches DrupalOrgClient::MAX_CONCURRENT.
 	DefaultMaxConcurrent = 8
@@ -98,74 +101,21 @@ func New(resolver *gitlab.TokenResolver, maxConcurrent int) *Runner {
 	return &Runner{resolver: resolver, sem: make(chan struct{}, maxConcurrent)}
 }
 
-// Capacity is how many children may run at once.
-func (r *Runner) Capacity() int { return cap(r.sem) }
-
-// Option adjusts one invocation.
-type Option func(*invocation)
-
-type invocation struct {
-	noFormat bool
-	dir      string
+// RunRaw runs `drupalorg <args...>` and returns its stdout.
+func (r *Runner) RunRaw(ctx context.Context, args []string) ([]byte, *gitlab.Failure) {
+	return r.run(ctx, "", args)
 }
 
-// WithoutFormat omits `--format=json --no-interaction`, for commands that
-// do not accept --format (local git commands such as issue:setup-remote and
-// issue:checkout).
-func WithoutFormat() Option {
-	return func(i *invocation) { i.noFormat = true }
-}
-
-// Check runs the once-per-process binary and version gate on its own, so a
-// command can fail early before doing other work.
-func Check() *gitlab.Failure {
-	_, failure := gate.check()
-
-	return failure
-}
-
-// Run executes the command and decodes its JSON stdout into out. A nil out
-// skips decoding and only checks the exit status.
-func (r *Runner) Run(ctx context.Context, args []string, out any, opts ...Option) *gitlab.Failure {
-	stdout, failure := r.RunRaw(ctx, args, opts...)
-	if failure != nil || out == nil {
-		return failure
-	}
-
-	if len(bytes.TrimSpace(stdout)) == 0 {
-		return &gitlab.Failure{
-			Kind:    gitlab.MalformedResponse,
-			Message: fmt.Sprintf("drupalorg %s succeeded but printed no JSON.", commandName(args)),
-		}
-	}
-	if err := json.Unmarshal(stdout, out); err != nil {
-		return &gitlab.Failure{
-			Kind: gitlab.MalformedResponse,
-			Message: fmt.Sprintf(
-				"drupalorg %s printed output that is not the expected JSON (%v): %s",
-				commandName(args), err, excerpt(stdout),
-			),
-		}
-	}
-
-	return nil
-}
-
-// RunRaw executes the command and returns its stdout.
-func (r *Runner) RunRaw(ctx context.Context, args []string, opts ...Option) ([]byte, *gitlab.Failure) {
+func (r *Runner) run(ctx context.Context, dir string, args []string) ([]byte, *gitlab.Failure) {
 	bin, failure := gate.check()
 	if failure != nil {
 		return nil, failure
 	}
 
-	var inv invocation
-	for _, opt := range opts {
-		opt(&inv)
-	}
-
-	argv := slices.Clone(args)
-	if !inv.noFormat {
-		argv = append(argv, "--format=json", "--no-interaction")
+	// Asked before the slot, so an already-cancelled run never races a free
+	// slot against ctx.Done() in the select below.
+	if ctx.Err() != nil {
+		return nil, cancelled(args, ctx.Err())
 	}
 
 	select {
@@ -180,7 +130,7 @@ func (r *Runner) RunRaw(ctx context.Context, args []string, opts ...Option) ([]b
 		credentials = map[string]string{TokenEnvVar: token}
 	}
 
-	outcome := proc.ExecIn(ctx, inv.dir, append([]string{bin}, argv...), credentials)
+	outcome := proc.ExecIn(ctx, dir, append([]string{bin}, args...), credentials)
 	if ctx.Err() != nil {
 		return nil, cancelled(args, ctx.Err())
 	}

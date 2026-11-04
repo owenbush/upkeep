@@ -189,9 +189,9 @@ func runDrupalorg(
 		failure *gitlab.Failure
 	)
 	if dir == "" {
-		out, failure = runner.RunRaw(cmd.Context(), argv, drupalorgcli.WithoutFormat())
+		out, failure = runner.RunRaw(cmd.Context(), argv)
 	} else {
-		out, failure = runner.RunRawIn(cmd.Context(), dir, argv, drupalorgcli.WithoutFormat())
+		out, failure = runner.RunRawIn(cmd.Context(), dir, argv)
 	}
 	if failure != nil {
 		return 0, errors.New(failure.Message)

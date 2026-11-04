@@ -2,12 +2,14 @@ package drupalorgcli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/owenbush/upkeep/internal/gitlab"
 )
@@ -85,7 +87,7 @@ func TestTheVersionGate(t *testing.T) {
 			tc.setup(t)
 			r := runnerWithToken(t, "")
 
-			failure := r.Run(context.Background(), []string{"project:issues", "x"}, nil)
+			_, failure := r.RunRaw(context.Background(), []string{"project:issues", "x"})
 			if tc.wantErr == nil {
 				if failure != nil {
 					t.Fatalf("gate refused: %s", failure.Message)
@@ -113,12 +115,12 @@ func TestTheVersionIsCheckedOncePerProcess(t *testing.T) {
 	r := runnerWithToken(t, "")
 
 	for range 3 {
-		if failure := r.Run(context.Background(), []string{"mr:list", "x"}, nil); failure != nil {
+		if _, failure := r.RunRaw(context.Background(), []string{"mr:list", "x"}); failure != nil {
 			t.Fatalf("run: %s", failure.Message)
 		}
 	}
 	// A second runner in the same process shares the verdict.
-	if failure := runnerWithToken(t, "").Run(context.Background(), []string{"mr:list", "x"}, nil); failure != nil {
+	if _, failure := runnerWithToken(t, "").RunRaw(context.Background(), []string{"mr:list", "x"}); failure != nil {
 		t.Fatalf("run: %s", failure.Message)
 	}
 
@@ -145,9 +147,13 @@ func TestTheTokenTravelsOnlyInTheChildEnvironment(t *testing.T) {
 	t.Setenv(gitlab.DefaultEnvVar, "glpat-inherited-upkeep-token")
 	r := runnerWithToken(t, testToken)
 
-	var got echoed
-	if failure := r.Run(context.Background(), []string{"mr:list", "my_module"}, &got); failure != nil {
+	out, failure := r.RunRaw(context.Background(), []string{"issue:label", "--no-interaction", "--", "project/m#1", "x"})
+	if failure != nil {
 		t.Fatalf("run: %s", failure.Message)
+	}
+	var got echoed
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("stub output %q: %v", out, err)
 	}
 
 	seen, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "token-seen"))
@@ -163,7 +169,8 @@ func TestTheTokenTravelsOnlyInTheChildEnvironment(t *testing.T) {
 	if got.Upkeep != "" {
 		t.Error("child inherited UPKEEP_GITLAB_TOKEN; only DRUPALORG_GITLAB_TOKEN should carry it")
 	}
-	if got.Args != "mr:list my_module --format=json --no-interaction" {
+	// The argv is exactly what the caller built: nothing is appended.
+	if got.Args != "issue:label --no-interaction -- project/m#1 x" {
 		t.Errorf("argv = %q", got.Args)
 	}
 }
@@ -173,24 +180,11 @@ func TestNoTokenMeansNoTokenVariable(t *testing.T) {
 	t.Setenv(TokenEnvVar, "")
 	r := runnerWithToken(t, "")
 
-	if failure := r.Run(context.Background(), []string{"mr:list", "x"}, &echoed{}); failure != nil {
+	if _, failure := r.RunRaw(context.Background(), []string{"mr:list", "x"}); failure != nil {
 		t.Fatalf("run: %s", failure.Message)
 	}
 	if seen, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "token-seen")); len(seen) != 0 {
 		t.Errorf("child DRUPALORG_GITLAB_TOKEN = %q, want unset", seen)
-	}
-}
-
-func TestLocalCommandsCanOmitTheFormatFlags(t *testing.T) {
-	stub(t, "0.10.3", `echo "$*"`)
-	r := runnerWithToken(t, "")
-
-	out, failure := r.RunRaw(context.Background(), []string{"issue:setup-remote", "123"}, WithoutFormat())
-	if failure != nil {
-		t.Fatalf("run: %s", failure.Message)
-	}
-	if got := strings.TrimSpace(string(out)); got != "issue:setup-remote 123" {
-		t.Errorf("argv = %q", got)
 	}
 }
 
@@ -220,8 +214,6 @@ func TestFailuresMapOntoTheGitlabTaxonomy(t *testing.T) {
 			gitlab.RequestRejected, 0, "The query argument is required."},
 		{"token echoed in stderr is scrubbed", `echo "bad token $DRUPALORG_GITLAB_TOKEN rejected" >&2; exit 2`,
 			gitlab.RequestRejected, 0, "[REDACTED]"},
-		{"success that is not JSON", `echo 'Done!'`, gitlab.MalformedResponse, 0, "mr:list"},
-		{"success with no output", `true`, gitlab.MalformedResponse, 0, "mr:list"},
 	}
 
 	for _, tc := range cases {
@@ -229,8 +221,7 @@ func TestFailuresMapOntoTheGitlabTaxonomy(t *testing.T) {
 			stub(t, "0.10.3", tc.body)
 			r := runnerWithToken(t, testToken)
 
-			var out any
-			failure := r.Run(context.Background(), []string{"mr:list", "x"}, &out)
+			_, failure := r.RunRaw(context.Background(), []string{"mr:list", "x"})
 			if failure == nil {
 				t.Fatal("no failure")
 			}
@@ -256,7 +247,7 @@ func TestACancelledRunIsATransportError(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	failure := r.Run(ctx, []string{"mr:list", "x"}, nil)
+	_, failure := r.RunRaw(ctx, []string{"mr:list", "x"})
 	if failure == nil || failure.Kind != gitlab.TransportError {
 		t.Fatalf("failure = %+v, want TransportError", failure)
 	}
@@ -277,7 +268,7 @@ func TestConcurrentRunsAreBounded(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 6 {
 		wg.Go(func() {
-			if failure := r.Run(context.Background(), []string{"mr:list", "x"}, nil); failure != nil {
+			if _, failure := r.RunRaw(context.Background(), []string{"mr:list", "x"}); failure != nil {
 				t.Errorf("run: %s", failure.Message)
 			}
 		})
@@ -290,7 +281,89 @@ func TestConcurrentRunsAreBounded(t *testing.T) {
 			t.Fatalf("%d children ran at once, limit %d", n, limit)
 		}
 	}
-	if New(nil, 0).Capacity() != DefaultMaxConcurrent || DefaultMaxConcurrent != 8 {
+	if cap(New(nil, 0).sem) != DefaultMaxConcurrent || DefaultMaxConcurrent != 8 {
 		t.Errorf("default concurrency is not 8")
 	}
+}
+
+// The edges of a run, each a way the child can fail to give a usable answer.
+// Every one must come back as a typed failure naming the command, never as a
+// success and never as a panic.
+func TestTheEdgesOfARun(t *testing.T) {
+	t.Run("cancelled while waiting for a slot", func(t *testing.T) {
+		stub(t, "0.10.3", "true")
+		r := New(nil, 1)
+		r.sem <- struct{}{} // every slot taken
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+
+		if _, failure := r.RunRaw(ctx, []string{"issue:fork"}); failure == nil || failure.Kind != gitlab.TransportError {
+			t.Fatalf("failure = %+v, want TransportError", failure)
+		}
+	})
+
+	t.Run("cancelled while the child runs", func(t *testing.T) {
+		stub(t, "0.10.3", "sleep 5")
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		if _, failure := New(nil, 0).RunRaw(ctx, []string{"issue:fork"}); failure == nil || failure.Kind != gitlab.TransportError {
+			t.Fatalf("failure = %+v, want TransportError", failure)
+		}
+	})
+
+	cases := []struct {
+		name     string
+		body     string
+		args     []string
+		wantKind gitlab.FailureKind
+		wantText []string
+	}{
+		{"killed by a signal", `kill -9 $$`, []string{"issue:fork"}, gitlab.TransportError, []string{"issue:fork", "did not complete"}},
+		{"failed in silence", `exit 3`, []string{"issue:fork"}, gitlab.RequestRejected, []string{"exit 3", "no output"}},
+		{"no command named", `exit 1`, nil, gitlab.RequestRejected, []string{"(no command)"}},
+		{"long output is cut on a character", `printf 'é%.0s' $(seq 600); exit 1`, []string{"issue:fork"}, gitlab.RequestRejected, []string{"…"}},
+		{"401 with no resolver names the default sources", "echo 'resulted in a `401 Unauthorized` response' >&2; exit 1",
+			[]string{"issue:fork"}, gitlab.Unauthorized, []string{gitlab.DefaultEnvVar}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub(t, "0.10.3", tc.body)
+
+			_, failure := New(nil, 0).RunRaw(context.Background(), tc.args)
+			if failure == nil || failure.Kind != tc.wantKind {
+				t.Fatalf("failure = %+v, want %v", failure, tc.wantKind)
+			}
+			for _, want := range tc.wantText {
+				if !strings.Contains(failure.Message, want) {
+					t.Errorf("message %q lacks %q", failure.Message, want)
+				}
+			}
+			if strings.ContainsRune(failure.Message, '�') {
+				t.Errorf("message split a character: %q", failure.Message)
+			}
+		})
+	}
+}
+
+func TestTheBinaryIsFoundOnPathAndMustSayItsVersion(t *testing.T) {
+	t.Run("found on PATH when no override is set", func(t *testing.T) {
+		path := stub(t, "0.10.3", "echo ok")
+		t.Setenv(BinEnvVar, "")
+		t.Setenv("PATH", filepath.Dir(path)+":/usr/bin:/bin")
+
+		if out, failure := New(nil, 0).RunRaw(context.Background(), []string{"issue:fork"}); failure != nil || strings.TrimSpace(string(out)) != "ok" {
+			t.Fatalf("out = %q, failure = %+v", out, failure)
+		}
+	})
+
+	t.Run("a binary that prints no version line is refused", func(t *testing.T) {
+		path := stub(t, "0.10.3", "")
+		_ = os.WriteFile(path, []byte("#!/bin/sh\necho 'something else entirely'\n"), 0o755)
+
+		_, failure := New(nil, 0).RunRaw(context.Background(), []string{"issue:fork"})
+		if failure == nil || !strings.Contains(failure.Message, "version line") {
+			t.Fatalf("failure = %+v, want the missing-version-line refusal", failure)
+		}
+	})
 }

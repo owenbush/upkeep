@@ -31,7 +31,7 @@ internal/cockpit              94.9
 internal/config              100.0
 internal/dashboard            97.0
 internal/drupal               79.2
-internal/drupalorgcli         94.5
+internal/drupalorgcli        100.0
 internal/filesystem           87.2
 internal/gate                 97.3
 internal/gitlab               90.5
