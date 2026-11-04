@@ -7,9 +7,31 @@ What upkeep needs, how to install it from a clone, and how to get tab completion
 - ddev >= 1.24.10 with a working container provider
 - A [git.drupalcode.org](https://git.drupalcode.org) personal access token —
   only to merge, comment or publish; reading needs none (next section)
+- Optional: PHP and [drupalorg-cli](https://github.com/mglaman/drupalorg-cli)
+  0.10.3+, only for the ten issue-fork/access/assign/label commands (below)
 
 upkeep is a single static binary. It needs no runtime installed: no PHP, no
 Composer, no Go unless you are building it yourself.
+
+**One optional exception.** Ten commands are thin wrappers around
+[drupalorg-cli](https://github.com/mglaman/drupalorg-cli) — the issue-fork,
+access, assign and label actions listed in
+[Work on an issue](./issue-loop.md#forks-access-assignees-and-labels). Those
+need **PHP and drupalorg-cli 0.10.3 or newer**. Everything else, `mr:logs`
+included, works without it.
+
+```bash
+# download drupalorg.phar from https://github.com/mglaman/drupalorg-cli/releases
+sudo install -m 0755 drupalorg.phar /usr/local/bin/drupalorg
+drupalorg --version          # Drupal.org CLI 0.10.3 or newer
+```
+
+upkeep looks for `drupalorg` on your `PATH`. To use a binary somewhere else,
+set `UPKEEP_DRUPALORG_BIN` to its path. If it is missing or too old, those ten
+commands refuse with a message saying so, and nothing else changes.
+
+Why only these ten: [drupalorg-cli: where upkeep uses it, and where it does
+not](../reference/drupalorg-cli.md).
 
 > **Note for Colima / Docker Desktop users:** environments are bind-mounted
 > into the container runtime's VM, and macOS providers only share your home

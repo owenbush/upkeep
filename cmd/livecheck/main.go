@@ -5,6 +5,9 @@
 // and it asserts shapes rather than values. What it is for is the thing the
 // unit suite structurally cannot do — prove that the narrowing, the pairing
 // and the row model survive contact with data nobody wrote down.
+//
+//	go run ./cmd/livecheck [module]        the domain core, against a module
+//	go run ./cmd/livecheck --cli-contract  drupalorg-cli's command signatures
 package main
 
 import (
@@ -23,6 +26,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == cliContractFlag {
+		os.Exit(cliContract())
+	}
+
 	module := "pathauto"
 	if len(os.Args) > 1 {
 		module = os.Args[1]

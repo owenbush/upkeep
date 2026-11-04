@@ -317,10 +317,11 @@ and was learned the hard way.
   environment serves every issue for a (module x core) and a generic `fork`
   remote would be silently re-pointed. `mergeRequestForBranch(..., from: $fork)`
   narrows by source project: branch names are `<nid>-<slug>` and so collide
-  across every fork of an issue. **upkeep does not create the fork** —
-  drupal.org mints it *and* links it to the issue, so it is a browser handoff
-  like the issue status and the credit; publish refuses before pushing
-  anything. Origin is never pushed to or altered, so fetch stays anonymous and
+  across every fork of an issue. **`publish` does not create the fork** —
+  drupal.org mints it *and* links it to the issue, so publish refuses before
+  pushing anything and names the browser handoff. Asking for one is a separate,
+  deliberate act: `upkeep issue:fork` posts drupalorg-cli's `/do:fork` under
+  your name, behind the write gate. Origin is never pushed to or altered, so fetch stays anonymous and
   read-only work needs no key.
 - **Publishing follows the fork where there is one, and the project where
   there cannot be.** `publishRouteFor` resolves the destination: the issue fork
@@ -386,8 +387,10 @@ and was learned the hard way.
   effects land on somebody else's project — a merge request under your name, a
   comment a contributor will read and act on — so a script, a pipe or an agent
   could reach either, and the mistake is not a broken build but a wrong thing
-  said in public. Both now refuse without a terminal **unless `--yes`**, which
-  is already this tool's word for "I meant this" (`prune`). A flag rather than
+  said in public. Both now refuse without a terminal **unless `--yes`**, and so
+  do the eight drupalorg-cli commands that post (`issue:fork`, `get-access`,
+  the assign and label families), through the same `assertDeliberateWrite` —
+  `--yes` is already this tool's word for "I meant this" (`prune`). A flag rather than
   `merge`'s hard refusal, and the difference is the stance: a merge consumes an
   approval only a human can give, while a publish is an action a human can
   authorise in advance. `merge` keeps its own refusal and gains no `--yes`.
@@ -428,8 +431,10 @@ and was learned the hard way.
   advertises is git.drupal.org; a URL built by swapping the scheme points at a
   host that does not answer. SSH rather than the PAT because **upkeep never
   hands git a credential**: every way of doing that writes the token to
-  `.git/config`, to a credential store, or to argv `ps` can read, and each
-  would be a second exception to the no-token-in-children rule. A refused push
+  `.git/config`, to a credential store, or to argv `ps` can read. The one
+  sanctioned hand-over (`proc.Exec`'s explicit credentials map, used only for
+  drupalorg-cli — see `internal/drupalorgcli/`) does not cover git, and
+  extending it to git would mean one of those three places. A refused push
   names the SSH-key recovery, against the host actually in the remote, because
   git's own message suggests a password and GitLab will never accept one.
 - **A truncated check report says it was truncated, and is cut on a line
@@ -638,6 +643,19 @@ and was learned the hard way.
   other 4xx/5xx, `MalformedResponse`, `TransportError`, `ResourceMissing`).
   Client methods return an `ApiFailure` rather than throwing, so callers
   `match` on the condition. Never log or print a token.
+  **`mr:logs` is native and reads the pipeline where it ran.**
+  `PipelineJobs` and `JobTrace` address the project in `Pipeline.ProjectID`
+  (GitLab's `project_id` on the head pipeline), not the merge request's
+  target: an issue-fork MR's pipeline runs in the fork, and the target
+  project answers 404 for the same pipeline id. That is exactly drupalorg-cli
+  0.10.3's `mr:logs` bug (content_sync !22: pipeline 1013844 is in project
+  250962, the CLI asks 55211), and since nearly every drupal.org MR comes from
+  a fork it fails on the ordinary case — so this one capability was written
+  natively rather than wrapped. `mrlogs.go`'s `pipelineLocation` falls back to
+  `SourceProjectID`, then the project, when GitLab omits it. Jobs allowed to
+  fail are printed and labelled, because drupal.org's phpcs and phpstan jobs
+  are, and "passed with warnings" is a pipeline with failed jobs somebody wants
+  to read. Anonymous, like every read.
 - `internal/drupal/` — drupal.org API client and issue models (status, priority,
   file attachments, MR ↔ issue references). Two api-d7 shapes are load-bearing
   and both cost an extra request: `field_project_machine_name` exists on
@@ -660,6 +678,64 @@ and was learned the hard way.
   surface it through `UpkeepCommand::reportScanWarnings()`. Both clients set
   a whole-request deadline as well as an idle one: an idle timeout bounds
   nothing on its own.
+- `internal/drupalorgcli/` — the single way upkeep runs
+  [drupalorg-cli](https://github.com/mglaman/drupalorg-cli) (a PHP phar).
+  The user-facing account of the split, with the evidence, is
+  `docs/reference/drupalorg-cli.md`; keep the two in step.
+  **The CLI is used only where upkeep has no native path**, and today that
+  means ten workflow actions and nothing else. The binary is
+  `UPKEEP_DRUPALORG_BIN`, else `drupalorg` on PATH; **0.10.3 or newer is
+  required, checked once per process** (`versionGate`), and a missing binary,
+  missing PHP or old release is one `TransportError` naming the install route
+  and the override. Commands run **exactly as the caller built them** — no
+  injected `--format`, no reordering — with concurrency bounded at 8, the same
+  as the native clients. The exit/output → `gitlab.Failure` mapping table is
+  the package comment in `drupalorgcli.go`; the CLI has no structured error
+  channel, so the rules read Guzzle's `` `404 Not Found` `` text first and the
+  CLI's own prose after, first match wins, and `Status` is set only when the
+  output actually named one.
+  **The token is handed over, and this is the one place that happens.** The
+  resolved `gitlab.TokenResolver` token reaches the child only as
+  `DRUPALORG_GITLAB_TOKEN`, through `proc.Exec`/`ExecIn`'s explicit
+  credentials map — never in argv, never `UPKEEP_GITLAB_TOKEN` (which is still
+  scrubbed), only when one resolved, and redacted from both streams before
+  this package reads them, so no failure message can quote it. With none, the
+  CLI falls back to `glab`'s configured token, which is its business.
+  **Nothing moved to the CLI, and that is a measured result, not a pending
+  one.** Plan 1 ran a live parity harness over the four MR reads
+  (`OpenMergeRequests`, `MergedMergeRequests`, `MergeRequest`,
+  `HeadPipeline`) on content_sync, pathauto, token and jumplinks, and all four
+  failed: `mr:list`/`mr:status` cannot supply AuthorID, Description,
+  SourceProjectID, MergedAt, HeadSHA, DetailedMergeStatus, diff refs or the
+  pipeline's ProjectID — which bot recognition, MR↔issue pairing, "already
+  landed", evidence keying, the gate's no-changes reason and `mr:logs` read;
+  `mr:list` emits invalid JSON (`\<`) for any title containing `<`, so one
+  title took down every read of pathauto; `mr:status` collapses statuses
+  (`skipped` → `canceled`); and the CLI ran 2.6–9× slower (two PHP processes
+  per single-MR read). The CLI-backed reader, its fixtures and the harness
+  were then deleted by decision, so **upkeep parses no CLI JSON** — it relays
+  the CLI's text to the person who asked. `drupal.Issue` and
+  `ProjectIssues` were never candidates (no attachments, a title-only search,
+  nothing for GitLab-native issues). A capability moves to the CLI only after
+  a live diff of what its callers read comes back clean; the upstream gaps
+  are drafted in the plan directory, unfiled.
+  **The wrapped commands are one table**, `drupalorgActions` in
+  `internal/cli/command/drupalorgcommands.go`, which builds both the cobra
+  commands and the signatures `go run ./cmd/livecheck --cli-contract` checks
+  against `drupalorg help <cmd>` (read-only), so what upkeep passes and what it
+  checks the CLI takes cannot drift. Eight post on drupal.org under your name
+  and go through the write gate (a terminal or `--yes`): `issue:fork`,
+  `issue:get-access`, `issue:assign`, `issue:unassign`, `issue:reassign`,
+  `issue:label`, `issue:unlabel`, `issue:relabel`. Those always pass
+  `project/<machine>#<nid>`, never a bare number, because a migrated
+  project's iids continue drupal.org's nids and a bare number names
+  *something* on both sides. Two act locally in the module working copy of an
+  existing environment and are not gated: `issue:setup-remote`, and
+  `issue:fork-checkout`, which runs the CLI's `issue:checkout` under a name
+  that leaves upkeep's own `checkout` alone. Every run passes
+  `--no-interaction` and puts the arguments after `--`, so a label starting
+  with a dash is not an option. `mr:logs` is **not** here — see
+  `internal/gitlab/`.
 - `internal/gate/` — fast-lane gate classification (READY-AUTO / REVIEW / BLOCKED).
   **`BLOCKED` is set by red CI and by nothing else** — the gate never inspects
   mergeability, so it does not mean merge conflicts whatever older docs said.
@@ -1165,6 +1241,16 @@ so it bites only a working copy that has done both. `rm -rf vendor` puts the
 Go side right; `composer install` puts the PHP side back. It resolves for good
 when `internal/` goes.
 
+**`docs/commands.md` is generated and CI checks it** (`go run ./cmd/docgen`
+writes it, `--check` fails when it is stale), so a new command lands with
+its regenerated reference.
+
+**Live checks are not gates.** `go run ./cmd/livecheck [module]` drives the
+domain core against real data, and `go run ./cmd/livecheck --cli-contract`
+holds the installed drupalorg-cli to the signatures of the ten commands
+upkeep wraps (via `drupalorg help`, posting nothing). Both need the network,
+so run them before a release or a drupalorg-cli upgrade rather than per push.
+
 CI also runs `go test -race ./...`, the invariant tests named separately so a
 red build is legible, and a `go mod tidy` job — which earned its place
 immediately by catching cobra and yaml.v3 marked `// indirect` when both are
@@ -1371,6 +1457,11 @@ mentioning ddev is fine and a string literal is not. Growing
 - `UPKEEP_GITLAB_TOKEN` is never forwarded to a child process
   (`security.ScrubbedEnvironment`), and process output is passed
   through `security.Redactor` before it is logged, rendered or cached.
+  **A child receives a credential only through `proc.Exec`'s explicit
+  credentials map**, named at the call site, never inherited, never in argv,
+  and redacted from everything returned. Exactly one caller uses it:
+  drupalorg-cli, as `DRUPALORG_GITLAB_TOKEN`. git never gets a token. A second
+  caller is a decision to write down here, not a convenience.
 - **Every suppression requires a written justification** — a comment on the
   line above saying what is being suppressed and why it cannot be fixed. That
   applies to `//nolint`, a `t.Skip` that is not conditional on the environment,
