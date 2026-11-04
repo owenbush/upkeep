@@ -55,6 +55,47 @@ merging stays behind `merge --fast-lane`'s per-MR prompt.
 read-only (a POST answers 403), so that will always be a browser action —
 `upkeep issue` gets you there in one step.
 
+## Forks, access, assignees and labels
+
+The issue-side chores drupal.org does through `/do:` slash commands are
+available as upkeep commands. They take the module first, like everything
+else, and run [drupalorg-cli](./install.md#requirements), so they need PHP and
+drupalorg-cli 0.10.3+.
+
+```bash
+upkeep issue:fork pathauto 3223746              # posts /do:fork
+upkeep issue:get-access pathauto 3223746        # posts /do:get-access
+upkeep issue:assign pathauto 3223746            # assigns you; or name users
+upkeep issue:label pathauto 3223746 "Needs tests"
+```
+
+`issue:unassign`, `issue:reassign`, `issue:unlabel` and `issue:relabel` take
+the same shape. **The `re-` ones replace** the current assignees or labels
+rather than adding to them.
+
+These post on drupal.org under your name. Like `publish`, they refuse without
+a terminal to confirm at unless you pass `--yes`, and they need a
+[token](./gitlab-token.md). upkeep always passes the issue qualified by the
+module's project (`project/pathauto#3223746`), so a number can never land on
+another project's issue that happens to share it.
+
+Two more act only on your machine, inside the module working copy of an
+environment that already exists (`upkeep env:path` names it). They do not
+provision one:
+
+```bash
+upkeep issue:setup-remote pathauto 3223746      # add the issue fork as a git remote
+upkeep issue:fork-checkout pathauto 3223746     # check out a branch from the fork
+```
+
+`issue:fork-checkout` is drupalorg-cli's `issue:checkout`. It has a different
+name so it does not collide with `upkeep checkout <module> <iid>`, which takes
+over a merge request ([taking over an MR](./taking-over-an-mr.md)).
+
+`upkeep mr:logs <module> <iid>` is related but does not use drupalorg-cli. It
+prints the end of each failed CI job's log, reading the pipeline from the
+issue fork where it actually ran, and needs no token.
+
 ## Projects whose issue queue has moved to GitLab
 
 drupal.org is moving issue queues into GitLab, one project at a time. Where a

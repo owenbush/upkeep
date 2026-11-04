@@ -21,9 +21,9 @@ module — registered or not.
 
 ## Daily flow
 
-- [Which command do I want?](guide/which-command.md) — thirty commands by what you are trying to do, what each changes, and what can lose work
+- [Which command do I want?](guide/which-command.md) — forty-one commands by what you are trying to do, what each changes, and what can lose work
 - [The dashboard](guide/dashboard.md) — everything open, and what a row represents
-- [Work on an issue](guide/issue-loop.md) — `issues` → `start` → `publish`
+- [Work on an issue](guide/issue-loop.md) — `issues` → `start` → `publish`; forks, access, assignees and labels
 - [Work on somebody else's MR](guide/taking-over-an-mr.md) — `checkout` → `check --working-copy` → `publish`
 - [Patch contributions](guide/patches.md) — the work a merge-request view cannot see
 - [Running checks](guide/checks.md) — the isolated flow, and how it matches drupal.org CI

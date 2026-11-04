@@ -37,6 +37,14 @@ Reading git.drupalcode.org needs no credential. A
 [token](docs/guide/gitlab-token.md) is for writing: merging, commenting and
 publishing.
 
+**Runtime requirements:** ddev for environments. The ten issue-fork, access,
+assign and label commands (`issue:fork`, `issue:get-access`, `issue:assign`,
+`issue:unassign`, `issue:reassign`, `issue:label`, `issue:unlabel`,
+`issue:relabel`, `issue:setup-remote`, `issue:fork-checkout`) also need **PHP
+and [drupalorg-cli](https://github.com/mglaman/drupalorg-cli) 0.10.3+** on your
+`PATH`, or at `UPKEEP_DRUPALORG_BIN`. Everything else works without it. See
+[Install](docs/guide/install.md).
+
 ## Documentation
 
 **Getting started**
@@ -54,7 +62,7 @@ publishing.
 | | |
 | --- | --- |
 | [The dashboard](docs/guide/dashboard.md) | Everything open, and what a row represents |
-| [Work on an issue](docs/guide/issue-loop.md) | `issues` → `start` → `publish` |
+| [Work on an issue](docs/guide/issue-loop.md) | `issues` → `start` → `publish`; forks, access, assignees and labels |
 | [Patch contributions](docs/guide/patches.md) | The work a merge-request view cannot see |
 | [Running checks](docs/guide/checks.md) | The isolated flow, and how it matches drupal.org CI |
 | [Review, merge and release notes](docs/guide/review-and-merge.md) | Looking at it, merging it, writing it up |

@@ -40,6 +40,16 @@ chmod 600 ~/.config/upkeep/drupal-pat
 then paste the token into that file (a single line). Upkeep never prints the
 token.
 
+**The drupalorg-cli commands use the same token.** `issue:fork`,
+`issue:get-access`, the assign family and the label family run
+[drupalorg-cli](./install.md#requirements), and upkeep hands it the token it
+resolved above as `DRUPALORG_GITLAB_TOKEN`, in that one process's environment:
+never on the command line, and scrubbed from anything it prints. Those commands
+post a comment on the issue's GitLab work item, so the token has to be allowed
+to do that; the classic `api` scope covers it. If upkeep resolves no token,
+drupalorg-cli falls back to `glab`'s configured one for git.drupalcode.org.
+`issue:setup-remote`, `issue:fork-checkout` and `mr:logs` need no token.
+
 Verify connectivity (also useful any time you want a quick look at a
 module's open MRs and head pipeline):
 

@@ -1,6 +1,6 @@
 # Which command do I want?
 
-Thirty commands, organised by what you are trying to do rather than by name.
+Forty-one commands, organised by what you are trying to do rather than by name.
 
 The [command reference](../commands.md) lists every command, every flag and
 what each one changes. This page is the other question: *given where I am, what
@@ -38,6 +38,7 @@ remember that the dashboard tells you what to type.
 | You want | Run |
 | --- | --- |
 | A verdict on a merge request | `upkeep check <module> <iid>` |
+| The logs of its failed CI jobs | `upkeep mr:logs <module> <iid>` |
 | A verdict on a specific core version | `upkeep check <module> <iid> --version=12` |
 | To look at it in a browser, with a login | `upkeep review <module> <iid>` |
 | A verdict on a patch posted to an issue | `upkeep patch:check <module> <nid>` |
@@ -63,6 +64,23 @@ and looking at the thing are different acts, and you usually want both.
 [Work on an issue →](./issue-loop.md) ·
 [Take over an MR →](./taking-over-an-mr.md) ·
 [Working in an environment →](./environments.md)
+
+### Act on an issue on drupal.org
+
+These wrap [drupalorg-cli](./install.md#requirements), so they need PHP and
+drupalorg-cli 0.10.3+.
+
+| You want | Run |
+| --- | --- |
+| An issue fork for an issue | `upkeep issue:fork <module> <nid>` |
+| Push access to that fork | `upkeep issue:get-access <module> <nid>` |
+| To assign it to yourself (or name users) | `upkeep issue:assign <module> <nid> [users...]` |
+| To unassign, or replace the assignees | `upkeep issue:unassign` / `issue:reassign <module> <nid> <users...>` |
+| To add, remove or replace labels | `upkeep issue:label` / `issue:unlabel` / `issue:relabel <module> <nid> <labels...>` |
+| The fork as a git remote in the module working copy | `upkeep issue:setup-remote <module> <nid>` |
+| A fork branch checked out in the working copy | `upkeep issue:fork-checkout <module> <nid> [branch]` |
+
+[Forks, access, assignees and labels →](./issue-loop.md#forks-access-assignees-and-labels)
 
 ### Set upkeep up, or keep it tidy
 
@@ -92,21 +110,26 @@ answer is this:
 `api:probe`, `modules`, `issue`, `version`, `base-artifacts:status` — is safe to
 run at any time, in any state.
 
-**Four commands write to drupal.org**, and only those four:
+**Eleven commands write to drupal.org**, and only those:
 
 | Command | What it does out there |
 | --- | --- |
 | `publish` | pushes your branch and opens a merge request |
 | `merge` | merges one, after asking you about it |
 | `needs-work` | posts a comment |
+| `issue:fork`, `issue:get-access` | posts `/do:fork` or `/do:get-access` on the issue |
+| `issue:assign`, `issue:unassign`, `issue:reassign` | changes who the issue is assigned to |
+| `issue:label`, `issue:unlabel`, `issue:relabel` | changes the issue's labels |
 | `modules:add` | nothing — but it reads *your* memberships, so it needs a token |
 
-Those are the only commands that need a **GitLab token**. Everything else reads
+(`modules:add` is in the table for its token, not because it writes.) Those
+are the only commands that need a **GitLab token**. Everything else reads
 anonymously, because git.drupalcode.org serves a public project's merge
 requests, refs, forks and raw files without one.
 
-**They also need somebody present.** `publish` and `needs-work` refuse when
-there is no terminal to confirm at, unless you pass `--yes`; `merge` refuses
+**They also need somebody present.** `publish`, `needs-work` and the eight
+`issue:` commands above refuse when there is no terminal to confirm at, unless
+you pass `--yes`; `merge` refuses
 outright, because an approval it consumes is one only a human can give. So a
 script, a pipe or an agent cannot open a merge request or comment on somebody's
 issue by accident:
@@ -118,10 +141,17 @@ echo | upkeep publish pathauto 3223746
 # at. Re-run with --yes if that is what you meant
 ```
 
+```bash
+echo | upkeep issue:label pathauto 3223746 "Needs tests"
+# Error: issue:label labels project/pathauto#3223746 under your name, and
+# there is no terminal here to confirm at. Re-run with --yes if that is what
+# you meant
+```
+
 `needs-work --dry-run` is exempt, since it prints the comment and posts
 nothing.
 
-**Five can lose something.** Nothing else can:
+**Seven can lose something.** Nothing else can:
 
 | Command | What it can lose |
 | --- | --- |
@@ -129,6 +159,7 @@ nothing.
 | `merge` | nothing local, but the merge itself is not undoable from here |
 | `modules:untrack` | the module's core list, which is recorded nowhere else |
 | `base-artifacts:build --force` | that core's existing artifact set |
+| `issue:reassign`, `issue:relabel` | the issue's current assignees or labels, which they replace |
 | `exec` | anything the command you hand it does |
 
 Plus one category rather than a command: `check`, `review`, `patch:apply` and
