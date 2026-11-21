@@ -28,12 +28,23 @@ Conventions worth knowing before the list:
 | [`explain`](#upkeep-explain) | Explain a term from upkeep's output |
 | [`init`](#upkeep-init) | Scaffold a new cockpit |
 | [`issue`](#upkeep-issue) | Show and open the drupal.org issue linked to a merge request |
+| [`issue:assign`](#upkeep-issueassign) | Assign users to an issue (default: you) |
+| [`issue:fork`](#upkeep-issuefork) | Create the issue fork for an issue (posts /do:fork) |
+| [`issue:fork-checkout`](#upkeep-issuefork-checkout) | Check out an issue fork's branch in the module working copy |
+| [`issue:get-access`](#upkeep-issueget-access) | Request push access to an issue fork (posts /do:get-access) |
+| [`issue:label`](#upkeep-issuelabel) | Add labels to an issue |
+| [`issue:reassign`](#upkeep-issuereassign) | Replace an issue's assignees |
+| [`issue:relabel`](#upkeep-issuerelabel) | Replace an issue's labels |
+| [`issue:setup-remote`](#upkeep-issuesetup-remote) | Add an issue fork's git remote to the module working copy |
+| [`issue:unassign`](#upkeep-issueunassign) | Unassign users from an issue (default: you) |
+| [`issue:unlabel`](#upkeep-issueunlabel) | Remove labels from an issue |
 | [`issues`](#upkeep-issues) | List a module's open drupal.org issues and what has been contributed to each |
 | [`merge`](#upkeep-merge) | Fast-lane merge: prompt per READY-AUTO merge request |
 | [`modules`](#upkeep-modules) | List the modules registered in the cockpit module registry |
 | [`modules:add`](#upkeep-modulesadd) | Register maintained modules from your git.drupalcode.org project memberships |
 | [`modules:track`](#upkeep-modulestrack) | Change which Drupal core majors a registered module is tracked for |
 | [`modules:untrack`](#upkeep-modulesuntrack) | Stop watching a module: remove its entry from the cockpit module registry |
+| [`mr:logs`](#upkeep-mrlogs) | Print the logs of a merge request's failed CI jobs |
 | [`needs-work`](#upkeep-needs-work) | Post local check results as a comment on the merge request |
 | [`notes`](#upkeep-notes) | Draft paste-ready Markdown release notes: merged MRs since the module's last tag |
 | [`patch:apply`](#upkeep-patchapply) | Download a patch from a drupal.org issue and apply it in the module environment |
@@ -73,12 +84,23 @@ program reads.
 | [`explain`](#upkeep-explain) | nothing | – | – | – | – |
 | [`init`](#upkeep-init) | the cockpit | – | – | – | – |
 | [`issue`](#upkeep-issue) | nothing | – | – | – | – |
+| [`issue:assign`](#upkeep-issueassign) | drupal.org | **yes** | – | – | – |
+| [`issue:fork`](#upkeep-issuefork) | drupal.org | **yes** | – | – | – |
+| [`issue:fork-checkout`](#upkeep-issuefork-checkout) | your working copy | – | – | – | – |
+| [`issue:get-access`](#upkeep-issueget-access) | drupal.org | **yes** | – | – | – |
+| [`issue:label`](#upkeep-issuelabel) | drupal.org | **yes** | – | – | – |
+| [`issue:reassign`](#upkeep-issuereassign) | drupal.org | **yes** | – | – | replaces the issue's current assignees |
+| [`issue:relabel`](#upkeep-issuerelabel) | drupal.org | **yes** | – | – | replaces the issue's current labels |
+| [`issue:setup-remote`](#upkeep-issuesetup-remote) | your working copy | – | – | – | – |
+| [`issue:unassign`](#upkeep-issueunassign) | drupal.org | **yes** | – | – | – |
+| [`issue:unlabel`](#upkeep-issueunlabel) | drupal.org | **yes** | – | – | – |
 | [`issues`](#upkeep-issues) | nothing | – | yes | – | – |
 | [`merge`](#upkeep-merge) | drupal.org | **yes** | – | – | merges the merge request, which nothing here can undo |
 | [`modules`](#upkeep-modules) | nothing | – | – | – | – |
 | [`modules:add`](#upkeep-modulesadd) | the cockpit | **yes** | – | – | – |
 | [`modules:track`](#upkeep-modulestrack) | the cockpit | – | – | – | – |
 | [`modules:untrack`](#upkeep-modulesuntrack) | the cockpit | – | – | – | removes the module's entry, and its core list is recorded nowhere else |
+| [`mr:logs`](#upkeep-mrlogs) | nothing | – | – | – | – |
 | [`needs-work`](#upkeep-needs-work) | drupal.org | **yes** | – | – | – |
 | [`notes`](#upkeep-notes) | nothing | – | – | – | – |
 | [`patch:apply`](#upkeep-patchapply) | an environment | – | – | – | force-updates the managed patch-<nid> branch |
@@ -363,6 +385,198 @@ Changes **nothing**.
 | `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
 | `--no-open` | Do not open the drupal.org issue in the browser |
 
+## `upkeep issue:assign`
+
+Assign users to an issue (default: you), through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:assign <module> <issue> [users...] [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:fork`
+
+Create the issue fork for an issue (posts /do:fork), through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:fork <module> <issue> [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:fork-checkout`
+
+Check out an issue fork's branch in the module working copy, through drupalorg-cli's issue:checkout.
+
+Runs inside the module working copy of an existing environment — the directory `upkeep env:path` names, plus /module. It does not provision one.
+
+```
+upkeep issue:fork-checkout <module> <issue> [branch] [flags]
+```
+
+Changes **your working copy**.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
+| `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
+
+## `upkeep issue:get-access`
+
+Request push access to an issue fork (posts /do:get-access), through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:get-access <module> <issue> [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:label`
+
+Add labels to an issue, through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:label <module> <issue> <labels...> [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:reassign`
+
+Replace an issue's assignees, through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:reassign <module> <issue> <users...> [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token. Careful: it replaces the issue's current assignees.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:relabel`
+
+Replace an issue's labels, through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:relabel <module> <issue> <labels...> [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token. Careful: it replaces the issue's current labels.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:setup-remote`
+
+Add an issue fork's git remote to the module working copy, through drupalorg-cli's issue:setup-remote.
+
+Runs inside the module working copy of an existing environment — the directory `upkeep env:path` names, plus /module. It does not provision one.
+
+```
+upkeep issue:setup-remote <module> <issue> [flags]
+```
+
+Changes **your working copy**.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
+| `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
+
+## `upkeep issue:unassign`
+
+Unassign users from an issue (default: you), through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:unassign <module> <issue> [users...] [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
+## `upkeep issue:unlabel`
+
+Remove labels from an issue, through drupalorg-cli.
+
+The issue is passed qualified by the module's project, so it cannot land on another project's issue of the same number. This posts on drupal.org under your name, so it needs a terminal to confirm at, or --yes.
+
+```
+upkeep issue:unlabel <module> <issue> <labels...> [flags]
+```
+
+Changes **drupal.org**; needs a GitLab token.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
+
 ## `upkeep issues`
 
 Every open issue on a module, whether or not anyone has contributed to it —
@@ -507,6 +721,28 @@ upkeep modules:untrack <module> [flags]
 ```
 
 Changes **the cockpit**. Careful: it removes the module's entry, and its core list is recorded nowhere else.
+
+**Options**
+
+| Option | What it does |
+| --- | --- |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+
+## `upkeep mr:logs`
+
+Prints the end of each failed job's log from a merge request's latest pipeline,
+including jobs that are allowed to fail.
+
+  upkeep mr:logs content_sync 22
+
+Reads the pipeline where it ran — the issue fork, for a merge request from
+one — and needs no token.
+
+```
+upkeep mr:logs <module> <mr> [flags]
+```
+
+Changes **nothing**.
 
 **Options**
 

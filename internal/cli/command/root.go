@@ -7,6 +7,7 @@ import (
 
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
+	"github.com/owenbush/upkeep/internal/drupalorgcli"
 	"github.com/owenbush/upkeep/internal/maintenance"
 )
 
@@ -30,6 +31,9 @@ type Surface struct {
 	Sizer      maintenance.Sizer
 	Downloader *http.Client
 	Browser    cli.Browser
+	// DrupalOrg runs drupalorg-cli. Nil gets a runner with no token of its
+	// own, which then uses the CLI's fallback (glab's).
+	DrupalOrg *drupalorgcli.Runner
 }
 
 // NewRoot assembles the command tree.
@@ -63,6 +67,12 @@ func NewRoot(surface Surface) *cobra.Command {
 	root.Flags().Bool("version", false, "")
 	_ = root.Flags().MarkHidden("version")
 
+	drupalOrg := surface.DrupalOrg
+	if drupalOrg == nil {
+		drupalOrg = drupalorgcli.New(nil, 0)
+	}
+	root.AddCommand(NewDrupalorgCommands(engines, drupalOrg)...)
+
 	root.AddCommand(
 		NewAPIProbe(clients),
 		NewBaseArtifactsBuild(engines),
@@ -79,6 +89,7 @@ func NewRoot(surface Surface) *cobra.Command {
 		NewMerge(clients, surface.Prompts),
 		NewCheckout(surface.Engines, clients),
 		NewModules(),
+		NewMrLogs(clients),
 		NewModulesAdd(clients, surface.Prompts),
 		NewModulesTrack(),
 		NewModulesUntrack(),

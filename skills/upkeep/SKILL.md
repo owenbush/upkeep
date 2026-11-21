@@ -67,17 +67,25 @@ parse anything to know it failed.
 
 ## Stop before anything that writes to drupal.org
 
-Three commands act in public under the maintainer's name:
+These commands act in public under the maintainer's name:
 
 - `publish` — pushes a branch and opens a merge request
 - `needs-work` — posts a comment a contributor will read and act on
 - `merge` — merges a merge request
+- `issue:fork` — creates the issue fork (posts `/do:fork`)
+- `issue:get-access` — requests push access to the issue fork
+- `issue:assign` — assigns people to an issue
+- `issue:unassign` — unassigns people from an issue
+- `issue:reassign` — replaces an issue's assignees
+- `issue:label` — adds labels to an issue
+- `issue:unlabel` — removes labels from an issue
+- `issue:relabel` — replaces an issue's labels
 
 **Do not run these unless the person asked for that specific action in this
 session.** Prepare the work, then report the exact command for them to run.
 
-`publish` and `needs-work` refuse without a terminal unless `--yes` is passed,
-and `merge` refuses outright. Treat those refusals as correct rather than as
+`publish`, `needs-work` and the `issue:` commands above refuse without a
+terminal unless `--yes` is passed, and `merge` refuses outright. Treat those refusals as correct rather than as
 something to work around: passing `--yes` to get past one is the agent
 equivalent of forging a signature.
 

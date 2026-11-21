@@ -118,8 +118,9 @@ func TestTheSkillNamesNoParticularAgent(t *testing.T) {
 	}
 }
 
-// The section telling an agent where to stop still lists all three outward
-// commands.
+// The section telling an agent where to stop still lists the three original
+// outward commands (the gated issue: commands are checked against their own
+// table in internal/cli/command).
 //
 // A file that lost this list would still install, still read well, and no
 // longer do the one job it exists for. Pinned to the bullets rather than to

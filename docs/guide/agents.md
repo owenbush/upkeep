@@ -68,7 +68,10 @@ echo | upkeep publish pathauto 3223746
 
 `merge` refuses outright, with no flag to pass: the approval it consumes is one
 only a human can give. `publish` and `needs-work` take `--yes`, because
-deliberate scripted publishing is a reasonable thing to want.
+deliberate scripted publishing is a reasonable thing to want. So do the eight
+`issue:` commands that post on drupal.org (`issue:fork`, `issue:get-access`,
+and the assign and label families): they refuse the same way without a
+terminal.
 
 If an agent passes `--yes` to get past one of those without being asked to,
 that is the agent doing something wrong, not the gate being inconvenient.

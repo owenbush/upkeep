@@ -18,6 +18,8 @@ import (
 	"github.com/owenbush/upkeep/internal/adapter"
 	"github.com/owenbush/upkeep/internal/cli"
 	"github.com/owenbush/upkeep/internal/cli/command"
+	"github.com/owenbush/upkeep/internal/drupalorgcli"
+	"github.com/owenbush/upkeep/internal/gitlab"
 	"github.com/owenbush/upkeep/internal/maintenance"
 	"github.com/owenbush/upkeep/internal/proc"
 	"github.com/owenbush/upkeep/internal/security"
@@ -38,8 +40,8 @@ func main() {
 	// "every child" is the rule and an exception is how a rule stops holding.
 	quiet := proc.New(nil, nil, redactor)
 
-	clients := cli.NewResolvedClients(
-		func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) })
+	warn := func(note string) { fmt.Fprintln(os.Stderr, "Warning: "+note) }
+	clients := cli.NewResolvedClients(warn)
 
 	os.Exit(cli.Execute(command.NewRoot(command.Surface{
 		Engines: adapter.NewDdevContribFactory(redactor),
@@ -54,5 +56,7 @@ func main() {
 		Sizer:      maintenance.DiskSizer(quiet),
 		Downloader: &http.Client{Timeout: patchDownloadTimeout},
 		Browser:    cli.SystemBrowser{},
+		// drupalorg-cli is handed upkeep's own token, resolved the same way.
+		DrupalOrg: drupalorgcli.New(gitlab.NewTokenResolver("", "", warn), 0),
 	}), os.Stderr))
 }

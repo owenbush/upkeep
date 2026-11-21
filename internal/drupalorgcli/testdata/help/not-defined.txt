@@ -1,0 +1,27 @@
+
+                                        
+  Command "issue:nope" is not defined.  
+                                        
+  Did you mean one of these?            
+      issue:apply                       
+      issue:assign                      
+      issue:branch                      
+      issue:checkout                    
+      issue:fork                        
+      issue:get-access                  
+      issue:get-fork                    
+      issue:interdiff                   
+      issue:label                       
+      issue:link                        
+      issue:patch                       
+      issue:reassign                    
+      issue:relabel                     
+      issue:search                      
+      issue:setup-remote                
+      issue:show                        
+      issue:unassign                    
+      issue:unlabel                     
+                                        
+
+help [--format FORMAT] [--raw] [--] [<command_name>]
+

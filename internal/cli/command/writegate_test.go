@@ -130,6 +130,10 @@ func TestMergeHasNoWayPastItsOwnRefusal(t *testing.T) {
 // needlessly awkward.
 func TestOnlyOutwardCommandsAreGated(t *testing.T) {
 	expected := map[string]bool{"publish": true, "needs-work": true}
+	// The drupalorg-cli actions that post on an issue under your name.
+	for _, action := range drupalorgActions {
+		expected[action.name] = action.posts
+	}
 
 	for _, cmd := range documentedCommands(t) {
 		gated := cmd.Flags().Lookup("yes") != nil

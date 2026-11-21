@@ -69,6 +69,12 @@ type Pipeline struct {
 	RawStatus string
 	SHA       string
 	WebURL    string
+	// ProjectID is the project the pipeline ran in. For a merge request from
+	// an issue fork that is the fork, not the project the merge request
+	// targets, and the fork is where its jobs are. Read live only; a cached
+	// snapshot does not carry it (ToAPIMap leaves it out, so snapshot files
+	// are unchanged), and 0 means not known.
+	ProjectID int
 }
 
 func pipelineFrom(p payload) Pipeline {
@@ -80,6 +86,7 @@ func pipelineFrom(p payload) Pipeline {
 		RawStatus: raw,
 		SHA:       p.str("sha", ""),
 		WebURL:    p.str("web_url", ""),
+		ProjectID: p.intOr("project_id", 0),
 	}
 }
 
