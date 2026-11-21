@@ -45,8 +45,18 @@ func ModuleDevRequirements(moduleDir string) []string {
 	return modulePackages(moduleDir, "require-dev")
 }
 
-// ModuleRequirements is the package names in the module's own require, which
-// are what the site needs for the module to run.
+// ModuleRequirements is the module's own require, as composer require
+// arguments — `name:constraint`, or the bare name where the module gave no
+// constraint — which are what the site needs for the module to run.
+//
+// **The constraint travels with the name.** Requiring a bare name lets
+// composer pick whatever release it likes best, which is the newest *stable*
+// one: wrong in two directions. A module asking for drupal/votingapi ^3 got
+// either nothing at all (votingapi has never had a stable release, so a bare
+// require cannot resolve in a stable project) or would have got a 4.x the
+// module never asked for, had one been stable. CI installs the module with its
+// own constraints, and a check that resolves a different dependency than CI
+// does is answering a different question.
 //
 // **drupal/core is dropped, and that is the point.** The module is wired in by
 // a symlink rather than installed as a package, so its declared core
@@ -65,20 +75,43 @@ func ModuleDevRequirements(moduleDir string) []string {
 // with no override and no diagnosis.
 func ModuleRequirements(moduleDir string) []string {
 	kept := []string{}
-	for _, name := range modulePackages(moduleDir, "require") {
-		if name != "drupal/core" {
-			kept = append(kept, name)
+	for _, requirement := range moduleRequirements(moduleDir, "require") {
+		if requirement.name == "drupal/core" {
+			continue
+		}
+		if requirement.constraint == "" {
+			kept = append(kept, requirement.name)
+		} else {
+			kept = append(kept, requirement.name+":"+requirement.constraint)
 		}
 	}
 
 	return kept
 }
 
-// modulePackages reads one requirement block out of the module's manifest.
+// modulePackages reads the package names out of one requirement block of the
+// module's manifest.
 func modulePackages(moduleDir, block string) []string {
+	packages := []string{}
+	for _, requirement := range moduleRequirements(moduleDir, block) {
+		packages = append(packages, requirement.name)
+	}
+
+	return packages
+}
+
+// requirement is one package entry of a composer requirement block. The
+// constraint is empty when the manifest gave something that is not a string.
+type requirement struct {
+	name       string
+	constraint string
+}
+
+// moduleRequirements reads one requirement block out of the module's manifest.
+func moduleRequirements(moduleDir, block string) []requirement {
 	contents, err := os.ReadFile(filepath.Join(moduleDir, "composer.json"))
 	if err != nil {
-		return []string{}
+		return []requirement{}
 	}
 
 	// Ordered, so the packages are required in the order the module lists
@@ -86,29 +119,36 @@ func modulePackages(moduleDir, block string) []string {
 	// the module wrote.
 	var manifest orderedJSON
 	if err := json.Unmarshal(contents, &manifest); err != nil || !manifest.isObject {
-		return []string{}
+		return []requirement{}
 	}
 
 	raw, present := manifest.values[block]
 	if !present {
-		return []string{}
+		return []requirement{}
 	}
 
 	var required orderedJSON
 	if err := json.Unmarshal(raw, &required); err != nil || !required.isObject {
-		return []string{}
+		return []requirement{}
 	}
 
-	packages := []string{}
+	requirements := []requirement{}
 	for _, name := range required.keys {
 		// A package name always has a vendor. php, ext-* and lib-* do not, and
 		// that is exactly the test the PHP side uses.
-		if strings.Contains(name, "/") {
-			packages = append(packages, name)
+		if !strings.Contains(name, "/") {
+			continue
 		}
+		// A constraint that is not a string is not one composer would accept
+		// either; the name alone is still worth requiring.
+		var constraint string
+		if err := json.Unmarshal(required.values[name], &constraint); err != nil {
+			constraint = ""
+		}
+		requirements = append(requirements, requirement{name: name, constraint: strings.TrimSpace(constraint)})
 	}
 
-	return packages
+	return requirements
 }
 
 // DevRequirementsUnavailable is what to say when they cannot be installed.

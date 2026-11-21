@@ -365,6 +365,14 @@ func (d *DdevContrib) installModuleDevRequirements(environment Environment) {
 		"ddev", "composer", "require", "--dev", "--with-all-dependencies", "--no-interaction",
 	}, packages...)
 
+	// The same stability a module's runtime dependencies need: a dev
+	// dependency with no stable release would otherwise fail here exactly as
+	// they did. Failing to set it is the same warning as failing to install.
+	if err := d.acceptPreReleaseDependencies(environment.ProjectPath); err != nil {
+		d.log(DevRequirementsUnavailable(packages))
+
+		return
+	}
 	if _, installed := d.runner.TryRun(command, environment.ProjectPath, 0); !installed {
 		d.log(DevRequirementsUnavailable(packages))
 	}

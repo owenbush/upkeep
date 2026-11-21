@@ -245,8 +245,21 @@ and was learned the hard way.
   than enforced a second time inside composer with no diagnosis. The
   dependency sync is the half of the pin worth keeping — an MR can add a
   dependency, and without it the checks fail on a missing class rather than on
-  the contribution. **The ownership check runs whether or not anything was
-  installed**: composer puts those dependencies into the same
+  the contribution. **Each dependency is required with the module's own
+  constraint** (`drupal/votingapi:^3`, not a bare name), because CI installs
+  it that way and a bare name gets composer's newest *stable* choice — nothing
+  at all for a project that has never had a stable release, or a major the
+  module never asked for. **And the environment accepts pre-release
+  dependencies** — `minimum-stability: dev` with `prefer-stable: true`, written
+  by `acceptPreReleaseDependencies` into the *environment's* composer.json
+  before the first require, never into the base artifact set. Composer honours
+  stability flags only in the root, so no module can ask for a beta itself;
+  without this, liquid_voting (drupal/votingapi has only ever published betas
+  and alphas) could not be provisioned at all, and every command needing an
+  environment was blocked for it. prefer-stable is what keeps it safe — a
+  stable release still wins wherever one satisfies the constraint — and the
+  module's dev dependencies get the same before theirs. **The ownership check
+  runs whether or not anything was installed**: composer puts those dependencies into the same
   `modules/contrib`, and `composer/installers` will write over a path it thinks
   it owns — a real directory there is a copy git does not own, so an apply
   would mutate one tree while the checks read the other. `internal/adapter/wiring.go`
