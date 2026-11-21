@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,6 +89,9 @@ func (d *DdevContrib) linkWorkingCopy(projectPath, moduleName string) error {
 func (d *DdevContrib) syncModuleDependencies(projectPath, moduleName string) error {
 	packages := ModuleRequirements(moduleWorkingCopy(projectPath))
 	if len(packages) > 0 {
+		if err := d.acceptPreReleaseDependencies(projectPath); err != nil {
+			return err
+		}
 		d.log("Installing the module's own dependencies (" + strings.Join(packages, ", ") + ") ...")
 		command := append([]string{"ddev", "composer", "require"}, packages...)
 		if _, err := d.runner.Run(append(command, "--no-interaction"), projectPath, 0); err != nil {
@@ -100,6 +104,65 @@ func (d *DdevContrib) syncModuleDependencies(projectPath, moduleName string) err
 	// against a container round trip saved — so there is no reason to make the
 	// guarantee conditional on there having been work to do.
 	return d.assertModuleIsLinked(projectPath, moduleName)
+}
+
+// acceptPreReleaseDependencies lets the environment resolve a dependency that
+// has never had a stable release, without letting anything else go unstable.
+//
+// A seeded tree declares composer's default minimum-stability, `stable`, and
+// a module may depend on a project that has only ever published betas:
+// liquid_voting requires drupal/votingapi ^3, whose newest are 3.0.0-beta6 and
+// 4.0.0-alpha1. No constraint resolves that in a stable project — composer's
+// `@beta` flag is honoured only in the root, so the module's own composer.json
+// cannot ask for it — and every environment for such a module failed to
+// provision, which blocked start, check, review, checkout and publish with no
+// flag to get past it.
+//
+// `dev` plus `prefer-stable`, the pair Builder.persistStability records for a
+// pre-release core and for the same reason: prefer-stable is what makes `dev`
+// safe, since a stable release still wins wherever one satisfies the
+// constraint. drupal.org CI resolves a module's dependencies the same way.
+// Written to the *environment's* composer.json only, never the base artifact
+// set, so a released core's tree stays byte-identical. Asked of the file
+// first, so an environment that already says so — one seeded from a
+// pre-release tree, or any after its first sync — costs no container round
+// trip.
+func (d *DdevContrib) acceptPreReleaseDependencies(projectPath string) error {
+	if acceptsPreReleaseDependencies(projectPath) {
+		return nil
+	}
+
+	for _, setting := range [][]string{
+		{"ddev", "composer", "config", "minimum-stability", "dev"},
+		{"ddev", "composer", "config", "prefer-stable", "true"},
+	} {
+		if _, err := d.runner.Run(setting, projectPath, 0); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// acceptsPreReleaseDependencies reports whether the project's composer.json
+// already pairs minimum-stability dev with prefer-stable. Unreadable reads as
+// no: the settings are then written, which is harmless where they already
+// held.
+func acceptsPreReleaseDependencies(projectPath string) bool {
+	contents, err := os.ReadFile(filepath.Join(projectPath, "composer.json"))
+	if err != nil {
+		return false
+	}
+
+	var manifest struct {
+		MinimumStability string `json:"minimum-stability"`
+		PreferStable     bool   `json:"prefer-stable"`
+	}
+	if err := json.Unmarshal(contents, &manifest); err != nil {
+		return false
+	}
+
+	return manifest.MinimumStability == "dev" && manifest.PreferStable
 }
 
 // assertModuleIsLinked holds the ownership constraint after anything composer

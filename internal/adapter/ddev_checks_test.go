@@ -1032,3 +1032,37 @@ func TestARunAgainstADeclaredCoreDrawsNoPreviewWarning(t *testing.T) {
 		t.Errorf("it warned about a core the module declares:\n%s", strings.Join(*said, "\n"))
 	}
 }
+
+// A dev dependency with no stable release gets the same treatment as a
+// runtime one, and before the require that would otherwise refuse it.
+func TestDevRequirementsAcceptPreReleasesFirst(t *testing.T) {
+	environment := withManifest(t, withToolchain(t, anEnvironment(t)),
+		`{"require-dev":{"phpcompatibility/php-compatibility":"^9"}}`)
+
+	runner := newRunner()
+	if _, err := engineWith(runner).RunChecks(environment, []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	stability := runner.indexOfCommand("composer config minimum-stability dev")
+	require := runner.indexOfCommand("composer require --dev", "phpcompatibility/php-compatibility")
+	if stability < 0 || require < 0 || require < stability {
+		t.Errorf("the environment did not accept pre-releases before the dev require:\n%s",
+			runner.transcript())
+	}
+}
+
+// And a setting that cannot be written is the same warning as an install that
+// fails: no require is attempted, and the checks still run.
+func TestDevRequirementsWarnWhenStabilityCannotBeSet(t *testing.T) {
+	environment := withManifest(t, withToolchain(t, anEnvironment(t)),
+		`{"require-dev":{"phpcompatibility/php-compatibility":"^9"}}`)
+
+	runner := newRunner().fails("composer config minimum-stability")
+	if _, err := engineWith(runner).RunChecks(environment, []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("the checks were refused over a linting dependency: %v", err)
+	}
+	if runner.didRun("composer require --dev", "phpcompatibility/php-compatibility") {
+		t.Errorf("a dev require ran after the setting failed:\n%s", runner.transcript())
+	}
+}

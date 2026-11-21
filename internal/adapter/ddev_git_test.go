@@ -852,7 +852,12 @@ func TestPushingADirtyWorkingCopyIsRefused(t *testing.T) {
 func requiring(t *testing.T, environment Environment, requires string) {
 	t.Helper()
 
-	manifest := `{"name":"drupal/pathauto","require":{"drupal/core":"^10 || ^11",` + requires + `}}`
+	// An empty list must still be valid JSON: it used to leave a trailing
+	// comma, so "requires nothing" was really "manifest unreadable".
+	if requires != "" {
+		requires = "," + requires
+	}
+	manifest := `{"name":"drupal/pathauto","require":{"drupal/core":"^10 || ^11"` + requires + `}}`
 	path := filepath.Join(environment.ProjectPath, moduleDir, "composer.json")
 	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
@@ -1496,5 +1501,147 @@ func TestAMergeRequestCheckoutResolvesTheBranchsDependencies(t *testing.T) {
 	}
 	if checkout > resolve {
 		t.Errorf("dependencies were resolved before the branch moved:\n%s", runner.transcript())
+	}
+}
+
+// The module's own constraints travel with its dependencies, in the order it
+// wrote them; drupal/core and platform requirements do not travel at all.
+//
+// A bare name lets composer choose the newest stable release, which is either
+// nothing (a project with no stable release) or a major the module never
+// asked for. liquid_voting 2.0.x is the shape that found it.
+func TestModuleRequirementsCarryTheModulesOwnConstraints(t *testing.T) {
+	environment := anEnvironment(t)
+	manifest := `{"require":{"drupal/core":"^10 || ^11","php":">=8.1",` +
+		`"drupal/votingapi":"^3","drupal/views_data_export":" ^1 ","drupal/odd":{"not":"a string"}}}`
+	if err := os.WriteFile(
+		filepath.Join(environment.ProjectPath, moduleDir, "composer.json"), []byte(manifest), 0o644,
+	); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got := ModuleRequirements(filepath.Join(environment.ProjectPath, moduleDir))
+	want := []string{"drupal/votingapi:^3", "drupal/views_data_export:^1", "drupal/odd"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("requirements = %q, want %q", got, want)
+	}
+}
+
+// siteManifest writes the environment's own composer.json.
+func siteManifest(t *testing.T, environment Environment, manifest string) {
+	t.Helper()
+
+	if err := os.WriteFile(
+		filepath.Join(environment.ProjectPath, "composer.json"), []byte(manifest), 0o644,
+	); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+// A dependency with no stable release resolves: the environment accepts
+// pre-release dependencies, preferring stable, before anything is required.
+//
+// Without it a module depending on drupal/votingapi (only ever betas and
+// alphas) could not be provisioned at all, and start, check, review, checkout
+// and publish were all blocked for it with no way past.
+func TestADependencyWithNoStableReleaseCanBeResolved(t *testing.T) {
+	runner := newRunner()
+	environment := anEnvironment(t)
+	siteManifest(t, environment, `{"name":"drupal/recommended-project"}`)
+	requiring(t, environment, `"drupal/votingapi":"^3"`)
+
+	if err := engineWith(runner).syncModuleDependencies(
+		environment.ProjectPath, environment.ModuleName,
+	); err != nil {
+		t.Fatalf("sync: %v\n%s", err, runner.transcript())
+	}
+
+	stability := runner.indexOfCommand("composer config minimum-stability dev")
+	preferStable := runner.indexOfCommand("composer config prefer-stable true")
+	require := runner.indexOfCommand("composer require drupal/votingapi:^3")
+	if stability < 0 || preferStable < 0 || require < 0 {
+		t.Fatalf("missing a step:\n%s", runner.transcript())
+	}
+	// Both settings before the require, or the require is the one that fails.
+	if require < stability || require < preferStable {
+		t.Errorf("the dependency was required before the environment could accept it:\n%s",
+			runner.transcript())
+	}
+}
+
+// An environment that already says so is not asked again: one seeded from a
+// pre-release tree, or any after its first sync. Every branch switch syncs, so
+// re-writing it would be a container round trip per switch for nothing.
+func TestAnEnvironmentAlreadyAcceptingPreReleasesIsNotReconfigured(t *testing.T) {
+	runner := newRunner()
+	environment := anEnvironment(t)
+	siteManifest(t, environment, `{"minimum-stability":"dev","prefer-stable":true}`)
+	requiring(t, environment, `"drupal/votingapi":"^3"`)
+
+	if err := engineWith(runner).syncModuleDependencies(
+		environment.ProjectPath, environment.ModuleName,
+	); err != nil {
+		t.Fatalf("sync: %v\n%s", err, runner.transcript())
+	}
+
+	if runner.didRun("composer config") {
+		t.Errorf("an environment that already accepted pre-releases was reconfigured:\n%s",
+			runner.transcript())
+	}
+	if !runner.didRun("composer require drupal/votingapi:^3") {
+		t.Errorf("the dependency was not required:\n%s", runner.transcript())
+	}
+}
+
+// dev without prefer-stable is not enough, and is the dangerous half: it
+// would let composer prefer a dev version of everything.
+func TestDevWithoutPreferStableIsCompleted(t *testing.T) {
+	runner := newRunner()
+	environment := anEnvironment(t)
+	siteManifest(t, environment, `{"minimum-stability":"dev"}`)
+	requiring(t, environment, `"drupal/votingapi":"^3"`)
+
+	if err := engineWith(runner).syncModuleDependencies(
+		environment.ProjectPath, environment.ModuleName,
+	); err != nil {
+		t.Fatalf("sync: %v\n%s", err, runner.transcript())
+	}
+
+	if !runner.didRun("composer config prefer-stable true") {
+		t.Errorf("prefer-stable was not set:\n%s", runner.transcript())
+	}
+}
+
+// A setting that cannot be written fails the sync before anything is
+// required, rather than carrying on into the failure it exists to prevent.
+func TestAStabilitySettingThatCannotBeWrittenFailsTheSync(t *testing.T) {
+	runner := newRunner()
+	runner.fails("composer config minimum-stability")
+	environment := anEnvironment(t)
+	requiring(t, environment, `"drupal/votingapi":"^3"`)
+
+	if err := engineWith(runner).syncModuleDependencies(
+		environment.ProjectPath, environment.ModuleName,
+	); err == nil {
+		t.Fatalf("it carried on:\n%s", runner.transcript())
+	}
+	if runner.didRun("composer require") {
+		t.Errorf("a require ran after the setting failed:\n%s", runner.transcript())
+	}
+}
+
+// Nothing to install still costs nothing: no stability setting either.
+func TestNoDependenciesMeansNoStabilitySetting(t *testing.T) {
+	runner := newRunner()
+	environment := anEnvironment(t)
+	requiring(t, environment, "")
+
+	if err := engineWith(runner).syncModuleDependencies(
+		environment.ProjectPath, environment.ModuleName,
+	); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if runner.didRun("composer") {
+		t.Errorf("composer ran for a module requiring only core:\n%s", runner.transcript())
 	}
 }
