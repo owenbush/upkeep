@@ -9,25 +9,6 @@ import (
 	"github.com/owenbush/upkeep/internal/check"
 )
 
-// The engine's JavaScript checks are commands of its own, with nothing to
-// configure and nothing to scope.
-func TestTheJavaScriptChecksAreTheEnginesOwnCommands(t *testing.T) {
-	for _, one := range []check.Type{check.EsLint, check.StyleLint} {
-		runner := newRunner()
-
-		result, err := engineWith(runner).RunChecks(anEnvironment(t), []check.Type{one})
-		if err != nil {
-			t.Fatalf("run: %v", err)
-		}
-		if result.Results[0].Status != check.Passed {
-			t.Errorf("%s: status %q", one, result.Results[0].Status)
-		}
-		if !runner.didRun("ddev " + string(one)) {
-			t.Errorf("%s did not run as the engine's own command:\n%s", one, runner.transcript())
-		}
-	}
-}
-
 // A check that stops making progress is a timed-out result carrying what it
 // said before it stopped — never a hang, and never a plain red.
 func TestEveryCheckTimesOutRatherThanHanging(t *testing.T) {

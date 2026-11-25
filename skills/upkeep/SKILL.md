@@ -112,7 +112,8 @@ git checkout is at `<that path>/module`, and that is where a commit goes.
 ## Checks cost minutes, not seconds
 
 `check` provisions an environment if there is not one, applies the subject, and
-runs PHPUnit, PHPStan, PHPCS, an install check and a smoke test. Do not put it
+runs PHPUnit, PHPStan, PHPCS, ESLint, Stylelint, CSpell, an install check and a
+smoke test. Do not put it
 in a loop and do not re-run it to see the same answer twice — read the JSON you
 already have.
 

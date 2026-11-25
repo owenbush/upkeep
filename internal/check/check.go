@@ -25,6 +25,8 @@ const (
 	PhpStan   Type = "phpstan"
 	EsLint    Type = "eslint"
 	StyleLint Type = "stylelint"
+	// CSpell is the spell check drupal.org CI runs over a project's files.
+	CSpell Type = "cspell"
 	// ModuleInstall is the module installing and enabling cleanly.
 	ModuleInstall Type = "module_install"
 	// FunctionalSmoke is the front page returning HTTP 200 with the module

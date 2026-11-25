@@ -61,10 +61,23 @@ func (d *DdevContrib) RunChecks(environment Environment, checks []check.Type) (c
 		d.log(RejectedExtrasWarning(rejected))
 	}
 
+	// Core's node modules are installed once, before the first front-end
+	// check, so a failed install is reported by each of them rather than
+	// retried by each of them.
+	nodeFailure := ""
+	if slices.ContainsFunc(checks, func(one check.Type) bool { return slices.Contains(FrontendChecks, one) }) {
+		if rejected := ReadFrontendSettings(
+			moduleWorkingCopy(environment.ProjectPath), environment.ModuleName,
+		).Rejected; len(rejected) > 0 {
+			d.log(RejectedExtrasWarning(rejected))
+		}
+		nodeFailure = d.ensureNodeModules(environment)
+	}
+
 	results := make([]check.Result, 0, len(checks))
 	for _, one := range checks {
 		d.log(fmt.Sprintf("Running check: %s ...", one))
-		results = append(results, d.runCheck(environment, one))
+		results = append(results, d.runCheck(environment, one, nodeFailure))
 	}
 
 	return check.RunResult{Results: results}, nil
@@ -77,7 +90,7 @@ func (d *DdevContrib) RunChecks(environment Environment, checks []check.Type) (c
 // is reported as unavailable naming itself, rather than falling through to a
 // command that does not exist. Keeping the command lines in the arms is what
 // makes that possible without a second, partial match somewhere downstream.
-func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Result {
+func (d *DdevContrib) runCheck(environment Environment, one check.Type, nodeFailure string) check.Result {
 	switch one {
 	case check.Deprecation:
 		return d.runDeprecationCheck(environment)
@@ -98,8 +111,8 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 
 		return d.runCommandCheck(environment, one, phpunit)
 
-	case check.EsLint, check.StyleLint:
-		return d.runCommandCheck(environment, one, []string{"ddev", string(one)})
+	case check.EsLint, check.StyleLint, check.CSpell:
+		return d.runFrontendCheck(environment, one, nodeFailure)
 
 	// Both of these are configured by a file the module may ship, and both
 	// discover it from the working directory — so they run against the

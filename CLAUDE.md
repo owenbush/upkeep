@@ -130,6 +130,35 @@ and was learned the hard way.
   What was *checked and ruled out*: `--standard=<file>` versus CI's
   working-directory discovery makes no difference, tested with real phpcs on a
   ruleset carrying `<arg name="extensions">` — identical findings either way.
+- **CI's front-end jobs run too, against a scratch copy** (#74).
+  `internal/adapter/frontend.go`. eslint, stylelint and cspell failed CI on
+  liquid_voting while upkeep ran none of them (eslint and stylelint existed as
+  check types that called ddev-drupal-contrib's own commands, outside the
+  default suite — and those commands `cd` to a directory named after the ddev
+  site, which upkeep's project names never match). They now run CI's scripts
+  from gitlab_templates' main.yml, nearly verbatim, and **reproduced CI exactly
+  on the commit CI failed** (liquid_voting `bb2d08b`, pipeline 1061124: eslint
+  50 errors, stylelint 142, cspell 261 issues in 66 of 153 files — the same
+  numbers). **The copy is the design**: CI's jobs write into the project
+  (`*.min.js` appended to `.eslintignore`, core's `.prettierrc.json` linked,
+  `.prettierignore` written, `.cspell.json` rewritten by prepare-cspell.php),
+  harmless on a disposable checkout and fatal in a working copy upkeep commits
+  and pushes from. So each job copies the module to
+  `<project>/.upkeep-lint/<module>` — outside the docroot, so Drupal never
+  discovers a second copy — and runs there. These scripts **may `cd`**: unlike
+  phpcs and phpstan below, the node tools discover their config from the
+  working directory and the copy has no `vendor/` to break.
+  `$DDEV_COMPOSER_ROOT` joins the container-variable allowlist (verified in a
+  real container). The unquoted `./**/*.css` is deliberate: globs expand in the
+  inner shell after the `cd`, and without globstar that is CSS one directory
+  down — CI's behaviour exactly, quirk included (liquid_voting's
+  `components/*/x.css` are not linted, there or here). `_WEB_ROOT=../../web`
+  points prepare-cspell.php's core dictionaries back at the site from the copy.
+  CI's file rules (`**/*.js`/`**/*.yml` for eslint, `**/*.css` for stylelint)
+  give `no-tests`; `SKIP_*` gives unavailable; a failed `yarn install` is a
+  **failure** of each job, never unavailable, because CI would have run them.
+  Node modules are installed on first use, not by the base artifact build,
+  which would put hundreds of megabytes into every environment.
 - **phpstan and phpcs run from inside the module, as CI does.**
   `internal/adapter/ddev_checks.go`. Both discover their configuration from the *current
   working directory*, and upkeep ran them from the project root — where the
