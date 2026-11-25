@@ -576,6 +576,15 @@ func publishTarget(
 // Both exits go through it, because "opened" and "updated" are the same event
 // with one field different — and a consumer told only "success" cannot tell
 // whether a merge request now exists that did not before.
+//
+// The merge request's head_sha is the commit just pushed, never the one the
+// API returned. GitLab updates a merge request from a push asynchronously, so
+// the listing read straight after it still carries the *previous* head — the
+// same document would then say sha X and head_sha Y while `git ls-remote`
+// already shows X (#76). The push is the authority: it was not forced and it
+// succeeded, so the branch the merge request follows is at that commit.
+// Polling the API until it caught up was the alternative, and it buys a wait
+// and a timeout to report a value this already knows.
 func publishPayload(
 	module string, nid int, branch string, route publishRoute, sha string,
 	mr *gitlab.MergeRequest, created bool, target string,
@@ -596,7 +605,7 @@ func publishPayload(
 			Draft:        mr.Draft,
 			SourceBranch: mr.SourceBranch,
 			WebURL:       mr.WebURL,
-			HeadSHA:      mr.HeadSHA,
+			HeadSHA:      sha,
 		}
 	}
 
