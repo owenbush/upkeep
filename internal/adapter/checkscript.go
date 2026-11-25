@@ -85,22 +85,73 @@ func ConfigProbe(modulePath, name string) string {
 // so a module's config keeps meaning what it means from here.
 //
 // modulePath is the module's in-container path, already quoted. ownConfig is
-// the config the module ships, or "" when it ships none.
-func PhpstanScript(modulePath, ownConfig, extra string) string {
+// the config the module ships, or "" when it ships none. phpVersionID is the
+// PHP version to analyse for, as PHP_VERSION_ID (80300), or 0 to leave it to
+// PHPStan — see PhpstanTarget.
+func PhpstanScript(modulePath, ownConfig, extra string, phpVersionID int) string {
 	if ownConfig != "" {
-		return suffixed(
-			fmt.Sprintf("phpstan analyze %s -c %s/%s", modulePath, modulePath, ownConfig), extra)
+		config := modulePath + "/" + ownConfig
+		steps := targeting(config, phpVersionID)
+
+		return strings.Join(append(steps, suffixed(
+			fmt.Sprintf("phpstan analyze %s -c %s", modulePath, configFor(config, phpVersionID)),
+			extra)), " && ")
 	}
 
-	return strings.Join([]string{
+	return strings.Join(append([]string{
 		// Braced, because && and || bind equally and left to right:
 		// ungrouped, a failed download falls through to the next step's || and
 		// the analysis runs against a config nobody fetched.
 		fmt.Sprintf("{ test -e phpstan.neon || curl -sSOL %s/phpstan.neon; }", templatesBase),
 		"sed -i 's/BASELINE_PLACEHOLDER/phpstan-baseline.neon/g' phpstan.neon",
 		"{ test -e phpstan-baseline.neon || touch phpstan-baseline.neon; }",
-		suffixed(fmt.Sprintf("phpstan analyze %s -c phpstan.neon", modulePath), extra),
-	}, " && ")
+	}, append(targeting("phpstan.neon", phpVersionID), suffixed(
+		fmt.Sprintf("phpstan analyze %s -c %s", modulePath, configFor("phpstan.neon", phpVersionID)),
+		extra))...), " && ")
+}
+
+// The two files PhpstanTarget writes at the project root.
+const (
+	phpstanPhpVersionFile = "upkeep-php-version.neon"
+	phpstanWrapperFile    = "upkeep-phpstan.neon"
+)
+
+// PhpstanTarget pins the PHP version PHPStan analyses for, without touching
+// the configuration it was given.
+//
+// CI runs PHPStan on the minimum PHP the target core supports (gitlab_templates'
+// _TARGET_PHP defaults to CORE_PHP_MIN), and PHPStan's default target is the
+// PHP it runs on. An environment on a newer PHP therefore analyses for a
+// different language: phpstan-drupal reports readonly properties on classes
+// using DependencySerializationTrait only below 8.4, so liquid_voting's 22
+// CI errors were zero on the environment's 8.4 (#74).
+//
+// Two files, in this order, because a later include overrides an earlier one:
+// the pinned version first, then the real configuration — so a module that
+// sets phpVersion itself still gets its own value, as it does in CI. Each is
+// one line of inline neon, so no newline has to survive `ddev exec`.
+func PhpstanTarget(config string, phpVersionID int) []string {
+	return []string{
+		fmt.Sprintf("echo 'parameters: {phpVersion: %d}' > %s", phpVersionID, phpstanPhpVersionFile),
+		fmt.Sprintf("printf 'includes: [%s, %%s]' %s > %s",
+			phpstanPhpVersionFile, config, phpstanWrapperFile),
+	}
+}
+
+func targeting(config string, phpVersionID int) []string {
+	if phpVersionID == 0 {
+		return nil
+	}
+
+	return PhpstanTarget(config, phpVersionID)
+}
+
+func configFor(config string, phpVersionID int) string {
+	if phpVersionID == 0 {
+		return config
+	}
+
+	return phpstanWrapperFile
 }
 
 // PhpcsScript runs PHPCS against the module, with whichever ruleset applies.

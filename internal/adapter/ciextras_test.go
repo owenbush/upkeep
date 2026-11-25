@@ -243,3 +243,29 @@ func TestTheDeclaredConstraintIsReadFromTheWorkingCopy(t *testing.T) {
 		t.Errorf("it invented a constraint: %q", got)
 	}
 }
+
+func TestCorePHPMinimumIsReadFromCoresOwnRequirement(t *testing.T) {
+	for require, want := range map[string]struct {
+		id    int
+		label string
+	}{
+		">=8.3.0":  {80300, "8.3"},
+		">=8.1":    {80100, "8.1"},
+		">= 8.5.0": {80500, "8.5"},
+		"^8.3":     {0, ""},
+		"":         {0, ""},
+	} {
+		dir := t.TempDir()
+		lock := `{"packages":[{"name":"drupal/core","version":"11.4.11","require":{"php":"` + require + `"}}]}`
+		if err := os.WriteFile(filepath.Join(dir, "composer.lock"), []byte(lock), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if id, label := CorePHPMinimum(dir); id != want.id || label != want.label {
+			t.Errorf("%q: got %d %q, want %d %q", require, id, label, want.id, want.label)
+		}
+	}
+
+	if id, _ := CorePHPMinimum(t.TempDir()); id != 0 {
+		t.Errorf("no lock gave %d", id)
+	}
+}

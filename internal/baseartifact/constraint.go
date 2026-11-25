@@ -67,10 +67,10 @@ func AssertStability(stability string) error {
 // The maintenance-free half. Building against a pre-release is a decision —
 // hence the flag — but everything *downstream* of that decision should follow
 // the tree that was actually built rather than ask again. The environment
-// records the base artifact's resolved core version (e.g. 12.0.0-alpha1), so
-// the toolchain constraint is derived from it: drupal/core-dev:^12 also
-// resolves to nothing while 12 is in alpha, and would have failed the first
-// check on an environment built with --stability=alpha.
+// records the base artifact's resolved core version (e.g. 12.0.0-alpha1), and
+// what is installed into it later — drush — derives its stability from that.
+// (The check toolchain no longer needs this: it pins drupal/core-dev to the
+// exact installed version, which carries its own stability.)
 //
 // Composer's own parsing rules answer this, so there is no table of majors or
 // suffixes to keep current — 13, 14 and anything after them work with no
@@ -81,27 +81,6 @@ func StabilityOf(coreVersion string) string {
 	}
 
 	return ""
-}
-
-// PackageFor is a toolchain package constraint carrying whatever stability
-// that core version implies: drupal/core-dev:^12@alpha from 12.0.0-alpha1, and
-// plain drupal/core-dev:^11 from a release.
-//
-// Only templates that interpolate the core major get the suffix. The stability
-// belongs to *core's* constraint, and drupal/coder@alpha — with no version
-// constraint at all — would tell composer that any alpha of a package
-// unrelated to the seeded core is acceptable.
-func PackageFor(packageTemplate, coreMajor, coreVersion string) string {
-	if !strings.Contains(packageTemplate, "%s") {
-		return packageTemplate
-	}
-
-	constraint := fmt.Sprintf(packageTemplate, coreMajor)
-	if stability := StabilityOf(coreVersion); stability != "" {
-		return constraint + "@" + stability
-	}
-
-	return constraint
 }
 
 // UnresolvableHint is what to add to a failed resolve, when the run asked for

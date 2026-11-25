@@ -4,7 +4,8 @@ Upkeep is a maintenance orchestrator CLI for contributed Drupal modules. From
 one "cockpit" directory it tracks every module you maintain across the Drupal
 core versions you support, shows every open contribution with its CI and
 local-check state on a single dashboard, runs each MR through a fully isolated
-check flow (PHPUnit, PHPStan, PHPCS, install, smoke) in a disposable
+check flow (PHPUnit, PHPStan, PHPCS, ESLint, Stylelint, CSpell, install,
+smoke) in a disposable
 per-module-per-core environment, and — for compat MRs that pass every gate —
 offers a human-approved fast-lane merge.
 

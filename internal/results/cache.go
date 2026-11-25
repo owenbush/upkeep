@@ -282,7 +282,7 @@ func read(file string) *CachedResult {
 // know is a miss rather than a result with an invented type.
 func knownType(value string) (check.Type, bool) {
 	for _, known := range []check.Type{
-		check.PhpUnit, check.PhpCs, check.PhpStan, check.EsLint, check.StyleLint,
+		check.PhpUnit, check.PhpCs, check.PhpStan, check.EsLint, check.StyleLint, check.CSpell,
 		check.ModuleInstall, check.FunctionalSmoke, check.Deprecation,
 	} {
 		if string(known) == value {

@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/owenbush/upkeep/internal/baseartifact"
 	"github.com/owenbush/upkeep/internal/check"
 )
 
@@ -61,10 +61,23 @@ func (d *DdevContrib) RunChecks(environment Environment, checks []check.Type) (c
 		d.log(RejectedExtrasWarning(rejected))
 	}
 
+	// Core's node modules are installed once, before the first front-end
+	// check, so a failed install is reported by each of them rather than
+	// retried by each of them.
+	nodeFailure := ""
+	if slices.ContainsFunc(checks, func(one check.Type) bool { return slices.Contains(FrontendChecks, one) }) {
+		if rejected := ReadFrontendSettings(
+			moduleWorkingCopy(environment.ProjectPath), environment.ModuleName,
+		).Rejected; len(rejected) > 0 {
+			d.log(RejectedExtrasWarning(rejected))
+		}
+		nodeFailure = d.ensureNodeModules(environment)
+	}
+
 	results := make([]check.Result, 0, len(checks))
 	for _, one := range checks {
 		d.log(fmt.Sprintf("Running check: %s ...", one))
-		results = append(results, d.runCheck(environment, one))
+		results = append(results, d.runCheck(environment, one, nodeFailure))
 	}
 
 	return check.RunResult{Results: results}, nil
@@ -77,7 +90,7 @@ func (d *DdevContrib) RunChecks(environment Environment, checks []check.Type) (c
 // is reported as unavailable naming itself, rather than falling through to a
 // command that does not exist. Keeping the command lines in the arms is what
 // makes that possible without a second, partial match somewhere downstream.
-func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Result {
+func (d *DdevContrib) runCheck(environment Environment, one check.Type, nodeFailure string) check.Result {
 	switch one {
 	case check.Deprecation:
 		return d.runDeprecationCheck(environment)
@@ -98,8 +111,8 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 
 		return d.runCommandCheck(environment, one, phpunit)
 
-	case check.EsLint, check.StyleLint:
-		return d.runCommandCheck(environment, one, []string{"ddev", string(one)})
+	case check.EsLint, check.StyleLint, check.CSpell:
+		return d.runFrontendCheck(environment, one, nodeFailure)
 
 	// Both of these are configured by a file the module may ship, and both
 	// discover it from the working directory — so they run against the
@@ -117,12 +130,21 @@ func (d *DdevContrib) runCheck(environment Environment, one check.Type) check.Re
 		})
 
 	case check.PhpStan:
+		phpVersionID, phpVersion := CorePHPMinimum(environment.ProjectPath)
+		if phpVersionID != 0 {
+			d.log(fmt.Sprintf(
+				"Analysing for PHP %s, the minimum drupal/core supports and the PHP drupal.org CI runs on.",
+				phpVersion,
+			))
+		}
+
 		return d.runCommandCheck(environment, one, []string{
 			"ddev", "exec", "bash", "-c", PhpstanScript(
 				containerModulePath(environment),
 				d.ownConfig(
 					environment, PhpstanConfigs, PhpstanTemplateOverrides, "PHPStan configuration"),
 				d.ciExtras(environment).PhpStan,
+				phpVersionID,
 			),
 		})
 
@@ -279,7 +301,8 @@ func (d *DdevContrib) runDeprecationCheck(environment Environment) check.Result 
 }
 
 // ensureCheckToolchain makes sure the check toolchain is present, probing for
-// the binaries in vendor/bin.
+// the binaries in vendor/bin, and that it is the toolchain CI would install
+// for the core in the environment.
 func (d *DdevContrib) ensureCheckToolchain(environment Environment) error {
 	allPresent := true
 	for _, binary := range []string{"phpunit", "phpstan", "phpcs"} {
@@ -291,18 +314,26 @@ func (d *DdevContrib) ensureCheckToolchain(environment Environment) error {
 	}
 
 	if allPresent {
-		// The toolchain is here, but the *module's* dev dependencies may not
-		// be: an environment provisioned before it declared one, or before
-		// upkeep installed them at all, has the binaries and not the packages.
-		// Falling out here is what made the first version of this fix do
-		// nothing on every existing environment — which is every environment
-		// after the first.
-		d.installModuleDevRequirements(environment)
+		drift := ToolchainDrift(environment.ProjectPath)
+		if drift == "" {
+			// The toolchain is here, but the *module's* dev dependencies may
+			// not be: an environment provisioned before it declared one, or
+			// before upkeep installed them at all, has the binaries and not
+			// the packages. Falling out here is what made the first version
+			// of this fix do nothing on every existing environment — which is
+			// every environment after the first.
+			d.installModuleDevRequirements(environment)
 
-		return nil
+			return nil
+		}
+
+		// Every environment provisioned before #74 carries the drift, and the
+		// binaries being present would otherwise keep it forever.
+		d.log("The check toolchain does not match CI's for this core (" + drift +
+			"); re-provisioning it ...")
+	} else {
+		d.log("Provisioning the check toolchain (core-dev, coder, phpstan-drupal) ...")
 	}
-
-	d.log("Provisioning the check toolchain (core-dev, coder, phpstan-drupal) ...")
 
 	if _, err := d.runner.Run([]string{
 		"ddev", "composer", "config", "--no-plugins",
@@ -316,12 +347,23 @@ func (d *DdevContrib) ensureCheckToolchain(environment Environment) error {
 		return err
 	}
 
+	// An explicit coder requirement — written by the toolchain install before
+	// #74 — would hold coder at ^9 against a core-dev that wants ^8.3, and the
+	// resolve would fail rather than follow core-dev. --no-update, because the
+	// require below resolves everything once.
+	if requiresDev(environment.ProjectPath, "drupal/coder") {
+		if _, err := d.runner.Run([]string{
+			"ddev", "composer", "remove", "--dev", "--no-update", "--no-interaction", "drupal/coder",
+		}, environment.ProjectPath, 0); err != nil {
+			return err
+		}
+	}
+
 	command := []string{
 		"ddev", "composer", "require", "--dev", "--with-all-dependencies", "--no-interaction",
+		CoreDevRequirement(InstalledCoreVersion(environment.ProjectPath, artifactMeta.CoreVersion)),
 	}
-	for _, pkg := range ToolchainPackages {
-		command = append(command, baseartifact.PackageFor(pkg, environment.CoreMajor, artifactMeta.CoreVersion))
-	}
+	command = append(command, ToolchainPackages...)
 	if _, err := d.runner.Run(command, environment.ProjectPath, 0); err != nil {
 		return err
 	}
@@ -329,6 +371,61 @@ func (d *DdevContrib) ensureCheckToolchain(environment Environment) error {
 	d.installModuleDevRequirements(environment)
 
 	return nil
+}
+
+// InstalledCoreVersion is the drupal/core version the project's lock file
+// pins, or seeded — the base artifact's resolved core version — when the lock
+// does not say.
+//
+// The lock first, because it is the core the checks will actually run
+// against; an environment's core can move after it was seeded from the
+// artifact (a core security release, a module that needs a newer minor).
+func InstalledCoreVersion(projectPath, seeded string) string {
+	if version := lockedVersions(projectPath)["drupal/core"]; version != "" {
+		return version
+	}
+
+	return seeded
+}
+
+// ToolchainDrift says how the installed check toolchain differs from the one
+// CI would install for the installed core, or "" when nothing says it does.
+//
+// Positive evidence only: a project whose lock or composer.json cannot be
+// read is not reported. Re-provisioning on a guess would cost a composer
+// resolve on every run of every environment that merely has no lock.
+func ToolchainDrift(projectPath string) string {
+	locked := lockedVersions(projectPath)
+	core, coreDev := locked["drupal/core"], locked["drupal/core-dev"]
+	if core != "" && coreDev != "" && core != coreDev {
+		return fmt.Sprintf("drupal/core-dev %s on drupal/core %s", coreDev, core)
+	}
+
+	if requiresDev(projectPath, "drupal/coder") {
+		return "drupal/coder is required directly instead of through drupal/core-dev"
+	}
+
+	return ""
+}
+
+// requiresDev is whether the project's own composer.json names pkg in
+// require-dev.
+func requiresDev(projectPath, pkg string) bool {
+	contents, err := os.ReadFile(filepath.Join(projectPath, "composer.json"))
+	if err != nil {
+		return false
+	}
+
+	var manifest struct {
+		RequireDev map[string]any `json:"require-dev"`
+	}
+	if err := json.Unmarshal(contents, &manifest); err != nil {
+		return false
+	}
+
+	_, present := manifest.RequireDev[pkg]
+
+	return present
 }
 
 // installModuleDevRequirements installs the module's own dev dependencies into

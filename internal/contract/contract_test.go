@@ -141,9 +141,9 @@ func everyCheckCommand() map[string]string {
 	return map[string]string{
 		"phpstan probe":                  adapter.ConfigProbe(modulePath, "phpstan.neon"),
 		"phpcs probe":                    adapter.ConfigProbe(modulePath, "phpcs.xml.dist"),
-		"phpstan with the module config": adapter.PhpstanScript(modulePath, "phpstan.neon", ""),
+		"phpstan with the module config": adapter.PhpstanScript(modulePath, "phpstan.neon", "", 0),
 		"phpcs with the module ruleset":  adapter.PhpcsScript(modulePath, "phpcs.xml.dist", ""),
-		"phpstan falling back":           adapter.PhpstanScript(modulePath, "", ""),
+		"phpstan falling back":           adapter.PhpstanScript(modulePath, "", "", 0),
 		"phpcs falling back":             adapter.PhpcsScript(modulePath, "", ""),
 	}
 }
@@ -233,7 +233,7 @@ func TestTheModulesOwnRulesetIsWhatRuns(t *testing.T) {
 func TestPhpstanAnalysesTheModule(t *testing.T) {
 	dir := project(t)
 
-	code, output := inContainer(t, dir, adapter.PhpstanScript(modulePath, "phpstan.neon", ""))
+	code, output := inContainer(t, dir, adapter.PhpstanScript(modulePath, "phpstan.neon", "", 0))
 
 	if strings.Contains(output, "not found") || strings.Contains(output, "No files found") {
 		t.Errorf("phpstan analysed nothing:\n%s", output)

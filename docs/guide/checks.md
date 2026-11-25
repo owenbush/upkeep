@@ -76,7 +76,46 @@ dev requirements. If any of them cannot be installed the run carries on with a
 warning — a version conflict in a linting dependency should not take down your
 tests.
 
+## ESLint, Stylelint and CSpell run as CI runs them
+
+The suite includes drupal.org CI's three front-end jobs, run the way
+gitlab_templates runs them: with core's node modules, core's `.eslintrc`,
+`.stylelintrc.json` and `.prettierrc.json`, and your module's own config files
+where it ships them. CSpell uses your `.cspell.json` (or the template default)
+prepared by the template's own `prepare-cspell.php`, so your
+`.cspell-project-words.txt` and `_CSPELL_*` variables apply.
+
+**Your `.gitlab-ci.yml` decides what runs.** `SKIP_ESLINT`, `SKIP_STYLELINT`
+and `SKIP_CSPELL` turn a job off here too, and `_ESLINT_EXTRA`,
+`_STYLELINT_EXTRA` and `_CSPELL_EXTRA` are honoured (`_ESLINT_EXTRA` defaults
+to `--quiet`, as in CI). As in CI, ESLint runs only when the module has `.js`
+or `.yml` files and Stylelint only when it has `.css` files; otherwise the
+check reports `no-tests`.
+
+**Your working copy is never touched.** CI's jobs write into the project as
+they go (a `*.min.js` line in `.eslintignore`, a linked `.prettierrc.json`, a
+rewritten `.cspell.json`). upkeep runs them in a scratch copy at
+`<environment>/.upkeep-lint/<module>` instead, so nothing untracked ends up in
+the branch you publish. Findings name paths inside that copy.
+
+The first front-end check in an environment runs `yarn install` in core, which
+takes a minute or two and needs the network; after that it is a file check.
+
 ## When a check disagrees with CI
+
+Two differences from CI are closed for you rather than reported. **The
+toolchain is the one CI installs for your core**: `drupal/core-dev` is pinned
+to exactly the installed core, and coder comes from it, so an 11.4 environment runs coder 8.3
+as CI does. **PHPStan analyses for the PHP CI runs on**, which is the minimum
+PHP the core supports (8.3 for Drupal 11), whatever PHP the environment runs.
+Each run says which:
+
+```
+Analysing for PHP 8.3, the minimum drupal/core supports and the PHP drupal.org CI runs on.
+```
+
+A module that sets `phpVersion` in its own PHPStan config keeps it. PHPUnit
+still runs on the environment's PHP.
 
 Three things make upkeep's phpcs or phpstan report something CI does not, or
 the reverse. The first is the usual one.

@@ -12,8 +12,8 @@ func everyScript() map[string]string {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
 	scripts := map[string]string{
-		"phpstan, module's own config": PhpstanScript(module, "phpstan.neon", ""),
-		"phpstan, fallback":            PhpstanScript(module, "", ""),
+		"phpstan, module's own config": PhpstanScript(module, "phpstan.neon", "", 0),
+		"phpstan, fallback":            PhpstanScript(module, "", "", 0),
 		"phpcs, module's own ruleset":  PhpcsScript(module, "phpcs.xml.dist", ""),
 		"phpcs, fallback":              PhpcsScript(module, "", ""),
 	}
@@ -87,7 +87,7 @@ func TestEveryScriptIsOneLine(t *testing.T) {
 // fetched.
 func TestTheGuardedStepsAreBraced(t *testing.T) {
 	fallbacks := map[string]string{
-		"phpstan": PhpstanScript(QuoteShellArgument("/m"), "", ""),
+		"phpstan": PhpstanScript(QuoteShellArgument("/m"), "", "", 0),
 		"phpcs":   PhpcsScript(QuoteShellArgument("/m"), "", ""),
 	}
 
@@ -124,7 +124,7 @@ func TestEveryScriptParsesAsShell(t *testing.T) {
 func TestAModulesOwnConfigurationIsNamedRatherThanDiscovered(t *testing.T) {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
-	stan := PhpstanScript(module, "phpstan.neon", "")
+	stan := PhpstanScript(module, "phpstan.neon", "", 0)
 	if !strings.Contains(stan, "-c "+module+"/phpstan.neon") {
 		t.Errorf("phpstan does not name the module's config:\n  %s", stan)
 	}
@@ -148,7 +148,7 @@ func TestTheFallbackConfigIsNeverWrittenIntoTheModule(t *testing.T) {
 	module := QuoteShellArgument("/var/www/html/web/modules/contrib/pathauto")
 
 	for name, script := range map[string]string{
-		"phpstan": PhpstanScript(module, "", ""),
+		"phpstan": PhpstanScript(module, "", "", 0),
 		"phpcs":   PhpcsScript(module, "", ""),
 	} {
 		// curl -O writes to the working directory, which is the project root.
@@ -201,8 +201,8 @@ func TestTheModulesExtraArgumentsReachTheTools(t *testing.T) {
 	for name, script := range map[string]string{
 		"phpcs with its own ruleset":  PhpcsScript(module, "phpcs.xml.dist", "--colors"),
 		"phpcs on the default":        PhpcsScript(module, "", "--colors"),
-		"phpstan with its own config": PhpstanScript(module, "phpstan.neon", "--level=1"),
-		"phpstan on the default":      PhpstanScript(module, "", "--level=1"),
+		"phpstan with its own config": PhpstanScript(module, "phpstan.neon", "--level=1", 0),
+		"phpstan on the default":      PhpstanScript(module, "", "--level=1", 0),
 	} {
 		if !strings.Contains(script, "--colors") && !strings.Contains(script, "--level=1") {
 			t.Errorf("%s dropped the extra arguments: %s", name, script)
@@ -232,10 +232,53 @@ func TestNoExtraArgumentsChangesNothing(t *testing.T) {
 	if PhpcsScript(module, "", "") == "" || strings.HasSuffix(PhpcsScript(module, "", ""), " ") {
 		t.Errorf("a trailing space was added: %q", PhpcsScript(module, "", ""))
 	}
-	if PhpstanScript(module, "x.neon", "") != PhpstanScript(module, "x.neon", "") {
+	if PhpstanScript(module, "x.neon", "", 0) != PhpstanScript(module, "x.neon", "", 0) {
 		t.Error("not deterministic")
 	}
-	if strings.HasSuffix(PhpstanScript(module, "x.neon", ""), " ") {
-		t.Errorf("a trailing space was added: %q", PhpstanScript(module, "x.neon", ""))
+	if strings.HasSuffix(PhpstanScript(module, "x.neon", "", 0), " ") {
+		t.Errorf("a trailing space was added: %q", PhpstanScript(module, "x.neon", "", 0))
+	}
+}
+
+// The pinned version goes in an include *before* the real configuration, so a
+// module that sets phpVersion itself keeps its own value, as in CI. Verified
+// against PHPStan 2's dump-parameters when this was written.
+func TestPhpstanAnalysesForThePinnedPHPVersion(t *testing.T) {
+	module := QuoteShellArgument("/m")
+
+	for name, script := range map[string]string{
+		"own config": PhpstanScript(module, "phpstan.neon", "--level=1", 80300),
+		"default":    PhpstanScript(module, "", "--level=1", 80300),
+	} {
+		version := strings.Index(script, "echo 'parameters: {phpVersion: 80300}' > upkeep-php-version.neon")
+		wrapper := strings.Index(script, "printf 'includes: [upkeep-php-version.neon, %s]'")
+		analyse := strings.Index(script, "phpstan analyze '/m' -c upkeep-phpstan.neon --level=1")
+		if version < 0 || wrapper < version || analyse < wrapper {
+			t.Errorf("%s: the analysis is not pinned in order:\n%s", name, script)
+		}
+	}
+
+	if got := PhpstanScript(module, "phpstan.neon", "", 80300); !strings.Contains(
+		got, "printf 'includes: [upkeep-php-version.neon, %s]' '/m'/phpstan.neon > upkeep-phpstan.neon",
+	) {
+		t.Errorf("the module's own config is not the one included:\n%s", got)
+	}
+	if got := PhpstanScript(module, "", "", 80300); !strings.Contains(
+		got, "printf 'includes: [upkeep-php-version.neon, %s]' phpstan.neon > upkeep-phpstan.neon",
+	) {
+		t.Errorf("the default config is not the one included:\n%s", got)
+	}
+}
+
+// Nothing known, nothing pinned: the script is exactly what it was.
+func TestPhpstanWithoutAPinnedVersionIsUnchanged(t *testing.T) {
+	module := QuoteShellArgument("/m")
+	for _, own := range []string{"phpstan.neon", ""} {
+		if script := PhpstanScript(module, own, "", 0); strings.Contains(script, "upkeep-") {
+			t.Errorf("a version was pinned with none known:\n%s", script)
+		}
+	}
+	if got := PhpstanScript(module, "phpstan.neon", "", 0); got != "phpstan analyze '/m' -c '/m'/phpstan.neon" {
+		t.Errorf("got %q", got)
 	}
 }

@@ -103,6 +103,16 @@ and was learned the hard way.
   lie. Silence when the module declares the core or declares nothing readable,
   because a warning that fires when there is no mismatch trains people to
   ignore it.
+  **PHPStan analyses for the PHP CI runs on** (#74): gitlab_templates'
+  `_TARGET_PHP` defaults to `CORE_PHP_MIN`, and PHPStan's default target is
+  the PHP it runs on, so an 8.4 environment missed phpstan-drupal's
+  below-8.4-only readonly rule — 22 CI errors, zero locally. `CorePHPMinimum`
+  reads the minimum from drupal/core's own `php` requirement in the lock (no
+  table of majors), and `PhpstanTarget` pins it through a wrapper config that
+  includes a one-line `phpVersion` file *before* the real config, so a module
+  setting `phpVersion` itself still wins, as in CI. The environment's own PHP
+  is not changed: that would move the base artifact build and its skew check
+  with it, and PHPUnit's exposure remains.
   (2) **CI's phpcs and phpstan jobs are `allow_failure: true` by default** —
   `_PHPCS_ALLOW_FAILURE` is blank and the fallback rule inherits the job-level
   default — so "CI is green" and "CI found nothing" differ. upkeep stays
@@ -120,6 +130,35 @@ and was learned the hard way.
   What was *checked and ruled out*: `--standard=<file>` versus CI's
   working-directory discovery makes no difference, tested with real phpcs on a
   ruleset carrying `<arg name="extensions">` — identical findings either way.
+- **CI's front-end jobs run too, against a scratch copy** (#74).
+  `internal/adapter/frontend.go`. eslint, stylelint and cspell failed CI on
+  liquid_voting while upkeep ran none of them (eslint and stylelint existed as
+  check types that called ddev-drupal-contrib's own commands, outside the
+  default suite — and those commands `cd` to a directory named after the ddev
+  site, which upkeep's project names never match). They now run CI's scripts
+  from gitlab_templates' main.yml, nearly verbatim, and **reproduced CI exactly
+  on the commit CI failed** (liquid_voting `bb2d08b`, pipeline 1061124: eslint
+  50 errors, stylelint 142, cspell 261 issues in 66 of 153 files — the same
+  numbers). **The copy is the design**: CI's jobs write into the project
+  (`*.min.js` appended to `.eslintignore`, core's `.prettierrc.json` linked,
+  `.prettierignore` written, `.cspell.json` rewritten by prepare-cspell.php),
+  harmless on a disposable checkout and fatal in a working copy upkeep commits
+  and pushes from. So each job copies the module to
+  `<project>/.upkeep-lint/<module>` — outside the docroot, so Drupal never
+  discovers a second copy — and runs there. These scripts **may `cd`**: unlike
+  phpcs and phpstan below, the node tools discover their config from the
+  working directory and the copy has no `vendor/` to break.
+  `$DDEV_COMPOSER_ROOT` joins the container-variable allowlist (verified in a
+  real container). The unquoted `./**/*.css` is deliberate: globs expand in the
+  inner shell after the `cd`, and without globstar that is CSS one directory
+  down — CI's behaviour exactly, quirk included (liquid_voting's
+  `components/*/x.css` are not linted, there or here). `_WEB_ROOT=../../web`
+  points prepare-cspell.php's core dictionaries back at the site from the copy.
+  CI's file rules (`**/*.js`/`**/*.yml` for eslint, `**/*.css` for stylelint)
+  give `no-tests`; `SKIP_*` gives unavailable; a failed `yarn install` is a
+  **failure** of each job, never unavailable, because CI would have run them.
+  Node modules are installed on first use, not by the base artifact build,
+  which would put hundreds of megabytes into every environment.
 - **phpstan and phpcs run from inside the module, as CI does.**
   `internal/adapter/ddev_checks.go`. Both discover their configuration from the *current
   working directory*, and upkeep ran them from the project root — where the
@@ -1083,14 +1122,20 @@ and was learned the hard way.
   it does not, because then the constraint is not the obvious suspect and
   repeating advice already taken buries what composer said. Nothing downstream
   takes the flag — `drupal/core-dev:^12` fails to resolve for exactly the same
-  reason, so `ensureCheckToolchain()` derives the stability from the artifact
-  meta's resolved `core_version` (`baseartifact.StabilityOf`, which reproduces
-  composer's own `VersionParser::parseStability`). Derived rather than asked
-  for again: a second flag could disagree with the tree it is installing into,
-  and this way 13 and everything after it need no change here. The suffix goes
-  on core's constraint only — `drupal/coder@alpha` carries no version
-  constraint at all and would admit an alpha of a package with nothing to do
-  with the seeded core.
+  reason, so `ensureCheckToolchain()` pins core-dev to **exactly** the
+  installed core (`CoreDevRequirement`, from the lock, else the artifact
+  meta's `core_version`), and an exact version carries its own stability.
+  Derived rather than asked for again: a second flag could disagree with the
+  tree it is installing into, and this way 13 and everything after it need no
+  change here. **Exact rather than `^N`, and coder never required directly,
+  because core-dev picks the standard** (#74): a bare `drupal/coder` was
+  written as `^9.0`, which only core-dev 11.5+ accepts, so under the
+  environment's pre-release stability composer moved core-dev to 11.5.0-beta1
+  beneath an 11.4.11 core — and phpcs ran coder 9 where CI ran 8.3, finding
+  none of CI's five errors. `ToolchainDrift` spots an environment provisioned
+  that way (core-dev and core disagree in the lock, or coder sits in
+  require-dev) and re-provisions it; positive evidence only, so a missing
+  lock never costs a resolve.
   **A pre-release tree records its own stability, and without that nothing
   installs into it.** `composer create-project drupal/recommended-project:^12@beta`
   applies the stability to that one install and never writes it into the

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -158,27 +159,7 @@ var StandardsPackages = []string{
 // at the project root, and a container round trip for something a JSON decode
 // answers would be paid on every run.
 func StandardsVersions(projectPath string) []string {
-	contents, err := os.ReadFile(filepath.Join(projectPath, "composer.lock"))
-	if err != nil {
-		return nil
-	}
-
-	var lock struct {
-		Packages    []lockedPackage `json:"packages"`
-		PackagesDev []lockedPackage `json:"packages-dev"`
-	}
-	if err := json.Unmarshal(contents, &lock); err != nil {
-		return nil
-	}
-
-	locked := map[string]string{}
-	// Dev after runtime, because the toolchain is a dev requirement and a
-	// package appearing in both should report the one actually installed.
-	for _, packages := range [][]lockedPackage{lock.Packages, lock.PackagesDev} {
-		for _, each := range packages {
-			locked[each.Name] = each.Version
-		}
-	}
+	locked := lockedVersions(projectPath)
 
 	versions := []string{}
 	for _, name := range StandardsPackages {
@@ -190,9 +171,72 @@ func StandardsVersions(projectPath string) []string {
 	return versions
 }
 
+// lockedVersions is every package the project's composer.lock pins, by name.
+// Empty when there is no lock or it does not decode.
+func lockedVersions(projectPath string) map[string]string {
+	versions := map[string]string{}
+	for name, each := range lockedPackages(projectPath) {
+		versions[name] = each.Version
+	}
+
+	return versions
+}
+
+// lockedPackages is every package entry in the project's composer.lock, by
+// name. Empty when there is no lock or it does not decode.
+func lockedPackages(projectPath string) map[string]lockedPackage {
+	locked := map[string]lockedPackage{}
+
+	contents, err := os.ReadFile(filepath.Join(projectPath, "composer.lock"))
+	if err != nil {
+		return locked
+	}
+
+	var lock struct {
+		Packages    []lockedPackage `json:"packages"`
+		PackagesDev []lockedPackage `json:"packages-dev"`
+	}
+	if err := json.Unmarshal(contents, &lock); err != nil {
+		return locked
+	}
+
+	// Dev after runtime, because the toolchain is a dev requirement and a
+	// package appearing in both should report the one actually installed.
+	for _, packages := range [][]lockedPackage{lock.Packages, lock.PackagesDev} {
+		for _, each := range packages {
+			locked[each.Name] = each
+		}
+	}
+
+	return locked
+}
+
 type lockedPackage struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name    string            `json:"name"`
+	Version string            `json:"version"`
+	Require map[string]string `json:"require"`
+}
+
+// minimumPHP is the lower bound of a ">=8.3.0"-style constraint.
+var minimumPHP = regexp.MustCompile(`^>=\s*(\d+)\.(\d+)`)
+
+// CorePHPMinimum is the minimum PHP the installed drupal/core supports, as
+// PHP_VERSION_ID (80300) and as "8.3", or 0 and "" when the lock does not say.
+//
+// This is the PHP drupal.org CI runs a module's jobs on: gitlab_templates'
+// _TARGET_PHP defaults to CORE_PHP_MIN, the minimum for the core under test.
+// Read from core's own php requirement rather than from a table of majors, so
+// a new core needs no change here.
+func CorePHPMinimum(projectPath string) (int, string) {
+	match := minimumPHP.FindStringSubmatch(lockedPackages(projectPath)["drupal/core"].Require["php"])
+	if match == nil {
+		return 0, ""
+	}
+
+	major, _ := strconv.Atoi(match[1])
+	minor, _ := strconv.Atoi(match[2])
+
+	return major*10000 + minor*100, match[1] + "." + match[2]
 }
 
 // StandardsPreview is the warning for a check run against a core the module

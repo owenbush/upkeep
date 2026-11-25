@@ -332,25 +332,27 @@ against a tree that no longer exists.
 base artifact set fine, provisioned an environment fine, and then failed at the
 first check — after all the expensive work.
 
-`DdevContribAdapter::ensureCheckToolchain()` therefore derives the stability
-from the artifact meta's resolved `core_version`, via composer's own
-`VersionParser::parseStability()` (`BaseArtifact\CoreConstraint::stabilityOf()`):
+The check toolchain therefore pins `drupal/core-dev` to **exactly** the core
+the environment has installed (read from its `composer.lock`, falling back to
+the artifact meta's resolved `core_version`):
 
-| seeded core     | toolchain constraint         |
-| --------------- | ---------------------------- |
-| `12.0.0-alpha1` | `drupal/core-dev:^12@alpha`  |
-| `13.0.0-beta2`  | `drupal/core-dev:^13@beta`   |
-| `11.4.6`        | `drupal/core-dev:^11`        |
+| installed core  | toolchain constraint           |
+| --------------- | ------------------------------ |
+| `12.0.0-alpha1` | `drupal/core-dev:12.0.0-alpha1` |
+| `12.x-dev`      | `drupal/core-dev:12.x-dev`     |
+| `11.4.11`       | `drupal/core-dev:11.4.11`      |
 
-**Derived, not asked for again.** A second flag could disagree with the tree it
-is installing into. And because the answer comes from composer's parser rather
-than a table of majors and suffixes, 13 and everything after it need no change
-here — that is the property that makes this maintenance-free.
+**An exact version carries its own stability**, so no `@alpha` flag is needed,
+and nothing here is a second flag that could disagree with the tree.
 
-The suffix goes on **core's constraint only**. `drupal/coder@alpha` carries no
-version constraint at all, so it would tell composer that an alpha of a package
-with nothing to do with the seeded core is acceptable. Only templates that
-interpolate the core major get the suffix; a test holds that.
+**Exact, not `^11`, because core-dev picks the coding standard.** core-dev is
+tagged in lockstep with core and each tag pins the coder CI installs: 11.4.x
+requires coder `^8.3.30`, 11.5.x coder `^9`. A caret let composer choose
+core-dev 11.5.0-beta1 under an 11.4.11 core, and phpcs ran coder 9 while CI ran
+coder 8 ([#74](https://github.com/owenbush/upkeep/issues/74)). For the same
+reason **coder is never required directly** — it comes from core-dev. An
+environment provisioned before this has the drift recorded in its lock and
+composer.json, and its next check re-provisions the toolchain.
 
 ## 5. Sharp edges
 
