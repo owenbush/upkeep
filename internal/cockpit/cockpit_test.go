@@ -72,6 +72,9 @@ func TestResolutionPrefersTheFlagThenTheEnvironment(t *testing.T) {
 
 func TestAnUnsetEnvironmentFallsBackToTheWorkingDirectory(t *testing.T) {
 	t.Setenv(EnvVar, "")
+	// A directory with no cockpit above it, so the parent walk finds nothing
+	// and the working directory itself stands.
+	t.Chdir(t.TempDir())
 
 	cockpit, err := Resolve(nil)
 	if err != nil {

@@ -292,6 +292,73 @@ func TestModulesListsTheRegistryAndNamesTheCommandThatFillsIt(t *testing.T) {
 	}
 }
 
+// Issue #77: run from inside a working copy under <cockpit>/projects, a
+// command finds the cockpit above it with no --cockpit and no environment.
+func TestACommandRunFromInsideTheCockpitFindsIt(t *testing.T) {
+	t.Setenv(cockpit.EnvVar, "")
+	root := filepath.Join(t.TempDir(), "cockpit")
+	if code, _, _ := invoke(t, "init", root); code != workflow.OK {
+		t.Fatalf("exit %d", code)
+	}
+	registry := "modules:\n  token:\n    project: project/token\n    core_versions: [\"11\"]\n"
+	if err := os.WriteFile(filepath.Join(root, cockpit.RegistryFilename), []byte(registry), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	workingCopy := filepath.Join(root, cockpit.ProjectsDir, "token-d11", "web", "modules", "contrib", "token")
+	if err := os.MkdirAll(workingCopy, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Chdir(workingCopy)
+
+	code, stdout, stderr := invoke(t, "modules")
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "project/token") {
+		t.Errorf("the cockpit above the working copy was not the one read:\n%s", stdout)
+	}
+}
+
+// With no cockpit anywhere above, the exit 2 says how to name one.
+func TestACommandRunOutsideAnyCockpitSaysHowToNameOne(t *testing.T) {
+	t.Setenv(cockpit.EnvVar, "")
+	t.Chdir(t.TempDir())
+
+	code, _, stderr := invoke(t, "modules")
+	if code != workflow.Infrastructure {
+		t.Errorf("exit %d", code)
+	}
+	for _, want := range []string{"any directory above", "--cockpit", cockpit.EnvVar} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the refusal does not say %q: %q", want, stderr)
+		}
+	}
+}
+
+// init creates a cockpit where it is told, and never walks up: run inside an
+// existing cockpit it scaffolds a new one in the working directory rather
+// than reporting the one above as already there.
+func TestInitDoesNotWalkUpToAnEnclosingCockpit(t *testing.T) {
+	t.Setenv(cockpit.EnvVar, "")
+	outer := filepath.Join(t.TempDir(), "cockpit")
+	if code, _, _ := invoke(t, "init", outer); code != workflow.OK {
+		t.Fatalf("exit %d", code)
+	}
+	inner := filepath.Join(outer, "nested")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Chdir(inner)
+
+	code, _, stderr := invoke(t, "init")
+	if code != workflow.OK {
+		t.Fatalf("exit %d (%s)", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(inner, cockpit.RegistryFilename)); err != nil {
+		t.Errorf("init did not scaffold in the working directory: %v", err)
+	}
+}
+
 // A malformed registry is reported once, by the command that needed it.
 func TestAMalformedRegistryIsAnInfrastructureFailure(t *testing.T) {
 	root := t.TempDir()

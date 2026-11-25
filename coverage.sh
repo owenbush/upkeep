@@ -27,7 +27,7 @@ internal/baseartifact         96.4
 internal/check               100.0
 internal/cli                  99.7
 internal/cli/command          98.1
-internal/cockpit              94.9
+internal/cockpit              95.0
 internal/config              100.0
 internal/dashboard            97.0
 internal/drupal               79.2
