@@ -278,28 +278,6 @@ func (d *DdevContrib) runSmokeCheck(environment Environment) check.Result {
 	}
 }
 
-// runDeprecationCheck runs the upgrade-status report, but only when the pinned
-// engine provides a command for it.
-//
-// Otherwise an explicit unavailable result — never a silent omission.
-// ddev-drupal-contrib 1.1.5 ships no such command.
-func (d *DdevContrib) runDeprecationCheck(environment Environment) check.Result {
-	commandPath := filepath.Join(environment.ProjectPath, ".ddev", "commands", "web", "upgrade-status")
-	if !isRegularFile(commandPath) {
-		return check.NotAvailable(check.Deprecation, fmt.Sprintf(
-			"The pinned engine add-on (%s %s) provides no deprecation/upgrade-status command for Drupal %s.",
-			EngineAddOnName, EngineAddOnVersion, environment.CoreMajor,
-		))
-	}
-
-	process := d.runner.Capture([]string{"ddev", "upgrade-status"}, environment.ProjectPath, checkTimeout)
-	if process.TimedOut {
-		return check.TimedOut(check.Deprecation, process.Output, process.Duration, checkTimeout)
-	}
-
-	return check.FromProcess(check.Deprecation, process.ExitCode, process.Output, process.Duration)
-}
-
 // ensureCheckToolchain makes sure the check toolchain is present, probing for
 // the binaries in vendor/bin, and that it is the toolchain CI would install
 // for the core in the environment.

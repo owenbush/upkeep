@@ -159,6 +159,24 @@ and was learned the hard way.
   **failure** of each job, never unavailable, because CI would have run them.
   Node modules are installed on first use, not by the base artifact build,
   which would put hundreds of megabytes into every environment.
+- **The deprecation check runs upgrade_status itself** (#75).
+  `internal/adapter/deprecation.go`. ddev-drupal-contrib 1.1.5 ships no
+  upgrade-status command, so the check was `unavailable` on every environment.
+  It now `composer require --dev drupal/upgrade_status` on first use (skipped
+  when the lock has it), enables it and the module, and runs
+  `drush upgrade-status:analyze <module>`; the exit code is the verdict (3 for
+  next-major messages or a failed analysis, 0 otherwise, "after next major"
+  notes do not count). The engine's own command still wins if a future add-on
+  ships one. Unconstrained on purpose: composer picks 5.x for core 10.4+, 4.x
+  before, and `UpgradeStatusAnalyzeCommand` uses the 4.x name for 4.x.
+  An install or enable failure is `unavailable` (upgrade_status's gap, not the
+  module's); the module failing to enable is only a warning, because that is
+  module_install's to report and the analysis says what it could not check.
+  Verified on real ddev, core 11.4.11, upgrade_status 5.0.0, liquid_voting
+  `9deaee9`: exit 0 with one "after Drupal 12" note; with the module not
+  enabled, exit 3 on the "cannot check deprecated library use" message.
+  It is static analysis: the runtime D12 removals reported in #75 come from
+  PHPUnit output and this check will not see them.
 - **phpstan and phpcs run from inside the module, as CI does.**
   `internal/adapter/ddev_checks.go`. Both discover their configuration from the *current
   working directory*, and upkeep ran them from the project root — where the
