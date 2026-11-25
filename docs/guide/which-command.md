@@ -198,7 +198,7 @@ Four appear nearly everywhere:
 | Flag | What it does |
 | --- | --- |
 | `--version=N` | the target **Drupal core major**, never an upkeep version. Defaults to the first core the module tracks |
-| `--cockpit=<path>` | which cockpit to use, if not `$UPKEEP_COCKPIT` or the current directory |
+| `--cockpit=<path>` | which cockpit to use, if not `$UPKEEP_COCKPIT` or the nearest directory at or above the current one holding a `registry.yml` |
 | `-v` | every line of the engine's own output, rather than the latest. The way to see a truncated check report in full |
 | `--fixture=<name>` | on the three commands above |
 | `--json` | one JSON document on stdout instead of a table, on the nine commands a program reads |

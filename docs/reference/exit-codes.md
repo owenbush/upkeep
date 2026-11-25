@@ -45,7 +45,8 @@ same way whichever command you hit it from. An unregistered module lists the
 modules that *are* registered; an untracked core version names the ones the
 entry does track and tells you to add it to `core_versions` in `registry.yml`;
 a missing cockpit always says to run `upkeep init` or point `--cockpit` /
-`UPKEEP_COCKPIT` at an existing one.
+`UPKEEP_COCKPIT` at an existing one — and when neither was given, it also says
+that the current directory and every directory above it were searched.
 
 One caveat: a command line the Symfony console cannot even parse — an unknown
 command, an unknown option, a missing required argument — is rejected by the

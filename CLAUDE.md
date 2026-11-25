@@ -1439,8 +1439,19 @@ mentioning ddev is fine and a string literal is not. Growing
 
 ## Conventions
 
-- Commands resolve the cockpit as `--cockpit` > `UPKEEP_COCKPIT` > cwd, and
-  the projects root as `--projects-root` > `UPKEEP_PROJECTS_ROOT` >
+- Commands resolve the cockpit as `--cockpit` > `UPKEEP_COCKPIT` > the
+  nearest directory at or above cwd holding a regular-file `registry.yml`
+  (`cockpit.Resolve`, walking to the filesystem root the way git finds
+  `.git`) — so a command run from inside a working copy under
+  `<cockpit>/projects` finds its cockpit (#77). The shell's spelling of cwd is
+  walked first, then the canonical one, so a symlinked projects directory
+  works either way; the found root is canonicalised by `cockpit.New` as a
+  named one is. Only the cwd fallback walks: a named cockpit is used as named,
+  and `init` takes its directory directly and never walks. A walk that finds
+  nothing **falls back to cwd rather than failing**, because the drupal.org
+  commands run without a registry when no cockpit was named; `LoadRegistry`
+  is where that reports, as an exit 2 naming `--cockpit` and `UPKEEP_COCKPIT`.
+  The projects root resolves as `--projects-root` > `UPKEEP_PROJECTS_ROOT` >
   `<cockpit>/projects` (when that directory exists) > `~/.upkeep/projects`.
 - The resolved projects root — and `base-artifacts:build --scratch-dir` — must
   canonicalise to a path under `$HOME`, or the command is refused with exit 2.

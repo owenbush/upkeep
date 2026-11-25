@@ -29,8 +29,14 @@ upkeep init ~/upkeep-cockpit
 
 That scaffolds `registry.yml` plus empty `base-artifacts/`, `fixtures/` and
 `projects/` directories. Every command finds the cockpit via `--cockpit`, else
-the `UPKEEP_COCKPIT` environment variable, else the current directory —
-exporting the variable once is the comfortable setup:
+the `UPKEEP_COCKPIT` environment variable, else the nearest directory at or
+above the current one that holds a `registry.yml` — the way git finds `.git`,
+so running a command from inside an environment under `projects/` finds the
+cockpit it lives in. If no directory up to the filesystem root holds one, the
+command exits 2 and says to pass `--cockpit` or set `UPKEEP_COCKPIT`. Only the
+current-directory fallback walks up: a cockpit you name with the flag or the
+variable is used exactly as named, and `upkeep init` always scaffolds where it
+is told. Exporting the variable once is the comfortable setup:
 
 ```bash
 export UPKEEP_COCKPIT=~/upkeep-cockpit

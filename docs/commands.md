@@ -153,7 +153,7 @@ Changes **the cockpit**. Careful: it replaces that core's existing artifact set,
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--drush=DRUSH` | Composer constraint for drush/drush, for a core whose dependencies no released version satisfies yet (e.g. "^14@dev"). Recorded in the artifact meta and reused by every environment seeded from this set |
 | `--force` | Deliberately rebuild over an existing artifact set |
 | `--scratch-dir=SCRATCH-DIR` | Directory for the throwaway site-install project (must be a path your container runtime mounts, e.g. under your home directory) Default: `~/.upkeep/scratch`. |
@@ -175,7 +175,7 @@ Changes **nothing**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 
 ## `upkeep check`
 
@@ -208,7 +208,7 @@ Changes **an environment**; `--json` for one JSON document on stdout. Careful: i
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--fixture=FIXTURE` | Load this named fixture into the database before running checks |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
@@ -243,7 +243,7 @@ Changes **your working copy**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
@@ -277,7 +277,7 @@ Changes **the cockpit**; `--json` for one JSON document on stdout.
 | Option | What it does |
 | --- | --- |
 | `--all` | Every row of every module, rather than the per-module overview |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--no-patches` | Omit patch rows: only merge requests, as the dashboard showed before patch contributions were included |
 | `--refresh=REFRESH` | Re-fetch remote data: --refresh for all modules, --refresh=<module> for one |
@@ -299,7 +299,7 @@ Changes **an environment**.
 | Option | What it does |
 | --- | --- |
 | `--branch=BRANCH` | Branch to check out in the module working copy |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
@@ -320,7 +320,7 @@ Changes **nothing**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
 
@@ -342,7 +342,7 @@ Changes **an environment**. Careful: it can do anything the command you hand it 
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
 
@@ -382,7 +382,7 @@ Changes **nothing**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--no-open` | Do not open the drupal.org issue in the browser |
 
 ## `upkeep issue:assign`
@@ -401,7 +401,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:fork`
@@ -420,7 +420,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:fork-checkout`
@@ -439,7 +439,7 @@ Changes **your working copy**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
 
@@ -459,7 +459,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:label`
@@ -478,7 +478,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:reassign`
@@ -497,7 +497,7 @@ Changes **drupal.org**; needs a GitLab token. Careful: it replaces the issue's c
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:relabel`
@@ -516,7 +516,7 @@ Changes **drupal.org**; needs a GitLab token. Careful: it replaces the issue's c
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:setup-remote`
@@ -535,7 +535,7 @@ Changes **your working copy**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--version=VERSION` | Target core major version; must be one the module tracks. Defaults to the first core version listed for it. |
 
@@ -555,7 +555,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issue:unlabel`
@@ -574,7 +574,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--yes` / `-y` | Go ahead without a terminal to confirm at — posting this under your name is deliberate |
 
 ## `upkeep issues`
@@ -601,7 +601,7 @@ Changes **nothing**; `--json` for one JSON document on stdout.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--status=STATUS` | Only this status: active, review, needs-work, rtbc, postponed (default: every open status) |
 | `--unclaimed` | Only issues nobody has contributed to yet — the work that has not started |
@@ -627,7 +627,7 @@ Changes **drupal.org**; needs a GitLab token. Careful: it merges the merge reque
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--fast-lane` | Required: run the fast-lane loop (the only mode; named explicitly because it performs merges) |
 
 ## `upkeep modules`
@@ -644,7 +644,7 @@ Changes **nothing**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 
 ## `upkeep modules:add`
 
@@ -667,7 +667,7 @@ Changes **the cockpit**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--core-versions=CORE-VERSIONS` | Comma-separated core majors the new entries track (e.g. "10,11") Default: `11`. |
 
 ## `upkeep modules:track`
@@ -698,7 +698,7 @@ Changes **the cockpit**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--remove=REMOVE` | Comma-separated core majors to stop tracking (e.g. "10") |
 | `--set=SET` | Comma-separated core majors to track, replacing the list; the first is the default (e.g. "12,11") |
 
@@ -726,7 +726,7 @@ Changes **the cockpit**. Careful: it removes the module's entry, and its core li
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 
 ## `upkeep mr:logs`
 
@@ -748,7 +748,7 @@ Changes **nothing**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 
 ## `upkeep needs-work`
 
@@ -771,7 +771,7 @@ Changes **drupal.org**; needs a GitLab token.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--dry-run` | Print the comment without posting it |
 | `--no-open` | Do not open the drupal.org issue in the browser |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
@@ -801,7 +801,7 @@ Changes **nothing**.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 
 ## `upkeep patch:apply`
 
@@ -822,7 +822,7 @@ Changes **an environment**. Careful: it force-updates the managed patch-<nid> br
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--file=FILE` | Apply this exact attachment by filename instead of choosing (e.g. 3597808-9-d11.patch) |
 | `--latest` | Take the newest patch without asking, even when the issue carries several |
 | `--no-update` | Do not fetch the base branch first; check against the working copy's base as it stands |
@@ -857,7 +857,7 @@ Changes **an environment**; `--json` for one JSON document on stdout. Careful: i
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--file=FILE` | Apply this exact attachment by filename instead of choosing (e.g. 3597808-9-d11.patch) |
 | `--fixture=FIXTURE` | Load this named fixture into the database before running checks |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
@@ -905,7 +905,7 @@ Changes **your working copy**; `--json` for one JSON document on stdout.
 | Option | What it does |
 | --- | --- |
 | `--branch=BRANCH` | Work branch to promote onto (default: the drupal.org <nid>-<slug> convention) |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--file=FILE` | Apply this exact attachment by filename instead of choosing (e.g. 3597808-9-d11.patch) |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--latest` | Take the newest patch without asking, even when the issue carries several |
@@ -939,7 +939,7 @@ Changes **nothing**; `--json` for one JSON document on stdout.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--module=MODULE` | Only scan this module (default: all registered modules) |
 | `--without-mr` | Only issues no merge request carries — omit those where a patch sits alongside a real MR |
@@ -971,7 +971,7 @@ Changes **the cockpit**. Careful: it deletes environments, cached results and fi
 | Option | What it does |
 | --- | --- |
 | `--all` | Prune everything disposable: trees, volumes, and snapshots |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--keep-latest=KEEP-LATEST` | Snapshots: keep this many newest snapshots per project regardless of age Default: `0`. |
 | `--older-than=OLDER-THAN` | Only prune items unused for at least this long (e.g. 30d, 12h); items of unknown age are then excluded |
 | `--projects` | Prune whole engine projects: trees plus their named volumes, via the adapter teardown |
@@ -1006,7 +1006,7 @@ Changes **drupal.org**; needs a GitLab token; `--json` for one JSON document on 
 | Option | What it does |
 | --- | --- |
 | `--branch=BRANCH` | Publish this branch instead of deriving it |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--description=DESCRIPTION` | Merge request body, after the issue reference (default: a one-line note) |
 | `--description-file=DESCRIPTION-FILE` | Read the merge request body from this file instead |
 | `--draft` | Open it as a draft |
@@ -1035,7 +1035,7 @@ Changes **an environment**; `--json` for one JSON document on stdout. Careful: i
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--fixture=FIXTURE` | Load this named fixture into the database before serving the site |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
@@ -1067,7 +1067,7 @@ Changes **your working copy**.
 | --- | --- |
 | `--base=BASE` | Branch to start from (default: whatever the module working copy is currently on) |
 | `--branch=BRANCH` | Name the branch yourself instead of deriving it from the issue title |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--no-update` | Do not fetch the base branch first; check against the working copy's base as it stands |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |
 | `--verbose` / `-v` | Show every line of the engine's own output rather than the latest |
@@ -1089,7 +1089,7 @@ Changes **nothing**; `--json` for one JSON document on stdout.
 
 | Option | What it does |
 | --- | --- |
-| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the current directory) |
+| `--cockpit=COCKPIT` | Path to the cockpit directory (defaults to $UPKEEP_COCKPIT, then the nearest directory at or above the current one holding a registry) |
 | `--disk` | Itemize disk usage (project trees, materialized snapshots, engine volumes, base artifacts, fixture dumps) with totals |
 | `--json` | Emit the result as a single JSON document on stdout instead of a table |
 | `--projects-root=PROJECTS-ROOT` | Directory holding the engine environments (defaults to $UPKEEP_PROJECTS_ROOT, then <cockpit>/projects/ if it exists, then ~/.upkeep/projects) |

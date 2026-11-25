@@ -125,7 +125,7 @@ const (
 // AddCockpit adds --cockpit.
 func AddCockpit(cmd *cobra.Command) {
 	cmd.Flags().String(FlagCockpit, "", fmt.Sprintf(
-		"Path to the cockpit directory (defaults to $%s, then the current directory)",
+		"Path to the cockpit directory (defaults to $%s, then the nearest directory at or above the current one holding a registry)",
 		cockpit.EnvVar,
 	))
 }
@@ -225,7 +225,7 @@ func BaseRefresh(cmd *cobra.Command) adapter.BaseRefresh {
 }
 
 // Cockpit resolves the cockpit: --cockpit, then the environment, then the
-// working directory.
+// nearest directory at or above the working directory holding a registry.
 //
 // The flag's value is passed through even when empty, deliberately: `--cockpit=`
 // is a mistake worth naming, and the resolver names it.

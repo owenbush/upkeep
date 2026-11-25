@@ -219,8 +219,9 @@ upkeep check pathauto 12 --version=<TAB>   -> 11
 The module names come from your registry, so they are exactly the modules you
 can act on, and `--version=` offers only the cores that module tracks rather
 than every core any module uses. Completion reads the cockpit from
-`UPKEEP_COCKPIT` or the current directory — set the env var if you drive upkeep
-from outside the cockpit.
+`UPKEEP_COCKPIT`, else the nearest directory at or above the current one that
+holds a `registry.yml` — set the env var if you drive upkeep from outside the
+cockpit.
 
 Values nothing local can enumerate — an MR IID, an issue node id — are not
 completed, because guessing them would mean a network round trip on every press

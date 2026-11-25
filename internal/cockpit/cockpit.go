@@ -32,6 +32,12 @@ const (
 // the prune surface's protected-root check depends on.
 type Cockpit struct {
 	Root string
+
+	// searchedFrom is the working directory a parent walk started from when
+	// the cockpit fell back to cwd and no ancestor held a registry. Empty for
+	// a cockpit that was named or found, so only the walk's failure reports
+	// itself as one.
+	searchedFrom string
 }
 
 // New canonicalises root into a cockpit.
@@ -45,7 +51,15 @@ func New(root string) (*Cockpit, error) {
 }
 
 // Resolve picks the cockpit directory: an explicit --cockpit flag first, then
-// the UPKEEP_COCKPIT environment variable, then the current working directory.
+// the UPKEEP_COCKPIT environment variable, then the nearest directory at or
+// above the current working directory that holds a registry — the way git
+// finds .git, so a command run from inside a working copy under
+// <cockpit>/projects finds its cockpit without being told.
+//
+// A walk that finds nothing falls back to the working directory itself rather
+// than failing here, because one surface (the drupal.org commands) runs
+// without a registry when no cockpit was named; LoadRegistry is where the
+// missing registry is reported, and it says the parents were searched too.
 //
 // A nil option is "the flag was not given"; a pointer to the empty string is
 // "the flag was given empty", which is a mistake rather than a default.
@@ -73,7 +87,52 @@ func Resolve(option *string) (*Cockpit, error) {
 		)
 	}
 
-	return New(cwd)
+	root, found := discover(cwd)
+	where, err := New(root)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		where.searchedFrom = where.Root
+	}
+
+	return where, nil
+}
+
+// discover walks up from start to the filesystem root looking for a
+// directory holding the registry, and reports start itself when none does.
+//
+// The spelling the shell gave (which keeps a symlinked path such as a
+// projects directory linked in from another disk) is walked first, then the
+// canonical one when it differs, so a cockpit reachable either way is found.
+// New canonicalises whatever is returned, so the cockpit's identity is the
+// same as it would be had the directory been named.
+func discover(start string) (string, bool) {
+	spellings := []string{filepath.Clean(start)}
+	if canonical, err := filesystem.Canonicalize(start); err == nil && canonical != spellings[0] {
+		spellings = append(spellings, canonical)
+	}
+
+	for _, spelling := range spellings {
+		for dir := spelling; ; dir = filepath.Dir(dir) {
+			if holdsRegistry(dir) {
+				return dir, true
+			}
+			if filepath.Dir(dir) == dir {
+				break
+			}
+		}
+	}
+
+	return start, false
+}
+
+// holdsRegistry is whether dir has a registry as a regular file — a directory
+// named registry.yml is not a cockpit, the same test init applies.
+func holdsRegistry(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, RegistryFilename))
+
+	return err == nil && info.Mode().IsRegular()
 }
 
 // RegistryPath is where the watchlist lives.
@@ -101,4 +160,17 @@ func (c *Cockpit) DashboardCachePath() string { return filepath.Join(c.Root, Das
 func (c *Cockpit) PatchCachePath() string { return filepath.Join(c.Root, PatchCacheDir) }
 
 // LoadRegistry reads and validates the watchlist.
-func (c *Cockpit) LoadRegistry() (*Registry, error) { return RegistryFromFile(c.RegistryPath()) }
+//
+// A cockpit that came from an unsuccessful parent walk says so: "not found at
+// <cwd>/registry.yml" alone would hide that every directory above was tried.
+func (c *Cockpit) LoadRegistry() (*Registry, error) {
+	if _, err := os.Stat(c.RegistryPath()); c.searchedFrom != "" && os.IsNotExist(err) {
+		return nil, fmt.Errorf(
+			"no cockpit found: neither %q nor any directory above it holds %s. Pass --cockpit or set "+
+				"$%s to point at a cockpit, or run \"upkeep init\" to create one here",
+			c.searchedFrom, RegistryFilename, EnvVar,
+		)
+	}
+
+	return RegistryFromFile(c.RegistryPath())
+}
