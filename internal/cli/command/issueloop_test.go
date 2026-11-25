@@ -586,6 +586,59 @@ func TestPublishReportsTheOpenMergeRequestRatherThanDuplicatingIt(t *testing.T) 
 	}
 }
 
+// The merge request's head_sha is the commit just pushed, not the stale one
+// GitLab's API still returns straight after a push (#76). Both exits: the
+// update, where the listing lags, and the open, where the created merge
+// request answers with whatever GitLab had computed when it replied.
+func TestPublishReportsThePushedCommitAsTheMergeRequestHead(t *testing.T) {
+	root := anEnvironmentCockpit(t)
+	stale := "0000000000000000000000000000000000000000"
+
+	cases := map[string]func(*forkScene){
+		"updated": func(s *forkScene) {
+			s.openMR = `[{"iid":9,"state":"opened","source_project_id":2,"sha":"` + stale + `",` +
+				`"web_url":"https://git.drupalcode.org/project/pathauto/-/merge_requests/9"}]`
+		},
+		"created": func(s *forkScene) {
+			s.createdBody = `{"iid":77,"state":"opened","sha":"` + stale + `",` +
+				`"web_url":"https://git.drupalcode.org/project/pathauto/-/merge_requests/77"}`
+		},
+	}
+	for name, arrange := range cases {
+		t.Run(name, func(t *testing.T) {
+			scene := aForkScene(t)
+			arrange(scene)
+			engine := aWorkingEngine()
+
+			code, stdout, stderr := runIssueLoop(t, engine, someIssues(),
+				scriptedClients{client: scene.client()}, cli.NoBrowser{},
+				"publish", "--yes", "--json", "pathauto", "3223746", "--cockpit="+root)
+			if code != workflow.OK {
+				t.Fatalf("exit %d (%s)", code, stderr)
+			}
+
+			var document struct {
+				Data struct {
+					SHA          string `json:"sha"`
+					MergeRequest struct {
+						HeadSHA string `json:"head_sha"`
+					} `json:"merge_request"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+				t.Fatalf("stdout is not one JSON document: %v\n%s", err, stdout)
+			}
+			if document.Data.SHA != engine.pushSHA {
+				t.Errorf("sha %q, pushed %q", document.Data.SHA, engine.pushSHA)
+			}
+			if document.Data.MergeRequest.HeadSHA != engine.pushSHA {
+				t.Errorf("head_sha %q, pushed %q — the API's stale head was reported",
+					document.Data.MergeRequest.HeadSHA, engine.pushSHA)
+			}
+		})
+	}
+}
+
 // The target is the base the work was cut from, else the project default —
 // never a tracked core major, because no contrib project has a branch called
 // "11".

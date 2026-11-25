@@ -422,6 +422,14 @@ and was learned the hard way.
   access, then an SSH URL that is never assembled), asked before the push
   because discovering either afterwards leaves a branch on a remote the
   operator never chose.
+- **`publish --json` reports the pushed commit as the merge request's head.**
+  `publishPayload` takes `head_sha` from what `PushWork` returned, never from
+  the API: GitLab moves a merge request onto a push asynchronously, so the
+  listing read a moment later still carries the previous head, and the
+  document said `sha` X beside `head_sha` Y while `git ls-remote` showed X
+  (#76). The push is the authority — unforced and successful, so the branch
+  is at that commit. Polling the API until it agreed was rejected: a wait and
+  a timeout to report a value already in hand.
 - **The merge request description is a reference line upkeep owns and a body
   you own.** `publishDescription` composes `<reference>\n\n<body>`, which is
   the shape drupal.org's own merge requests take — measured on pathauto, three
