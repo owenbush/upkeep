@@ -59,25 +59,38 @@ var DefaultChecks = []check.Type{
 var ToolchainChecks = []check.Type{check.PhpUnit, check.PhpStan, check.PhpCs}
 
 // ToolchainPackages is what check provisioning installs container-side, with
-// --dev: the same toolchain drupal.org's GitLab CI uses.
+// --dev, alongside drupal/core-dev pinned to the installed core
+// (CoreDevRequirement): the same toolchain drupal.org's GitLab CI uses.
 //
-// core-dev pins phpunit and friends to the seeded core; coder ships phpcs and
-// the Drupal standards; phpstan-drupal, extension-installer and
-// deprecation-rules make the gitlab_templates phpstan.neon work as it does in
-// CI.
+// phpstan-drupal, extension-installer and deprecation-rules make the
+// gitlab_templates phpstan.neon work as it does in CI.
 //
-// drupal/core-dev:^%s carries whatever stability the seeded core has: ^12
-// resolves to nothing while 12 is in alpha, so an environment built with
-// --stability=alpha would have failed at its first check. Derived from the
-// artifact meta rather than asked for again — a second flag could disagree
-// with the tree it is installing into, and this way 13 and everything after it
-// need no change here.
+// **drupal/coder is deliberately not here.** core-dev requires it, and the
+// version core-dev asks for is the version CI runs. Required bare, composer
+// writes the newest coder's own constraint (^9.0), and since only core-dev
+// 11.5+ accepts coder 9, a resolve with --with-all-dependencies and the
+// environment's pre-release stability moved core-dev to 11.5.0-beta1 under a
+// stable 11.4.11 core. phpcs then ran coder 9 while CI ran coder 8.3 —
+// reported from liquid_voting, where CI's five ArrayIndentation errors came
+// back as zero locally (#74).
 var ToolchainPackages = []string{
-	"drupal/core-dev:^%s",
-	"drupal/coder",
 	"mglaman/phpstan-drupal",
 	"phpstan/extension-installer",
 	"phpstan/phpstan-deprecation-rules",
+}
+
+// CoreDevRequirement is drupal/core-dev pinned to exactly the installed core
+// version.
+//
+// core-dev is tagged in lockstep with core, and each tag pins the standards CI
+// installs for that release: 11.4.x requires coder ^8.3.30, 11.5.x coder ^9.
+// A caret constraint lets composer pick a core-dev for a different minor — or
+// a pre-release, in an environment that accepts them — and with it a different
+// coding standard. An exact version carries its own stability, so a
+// pre-release core (12.0.0-alpha1) needs no @alpha flag, and a dev branch
+// (12.x-dev) is pinned the same way.
+func CoreDevRequirement(coreVersion string) string {
+	return "drupal/core-dev:" + coreVersion
 }
 
 // Log receives an operator-facing progress line.

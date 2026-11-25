@@ -150,14 +150,11 @@ func TestTheToolchainIsProvisionedOnlyForTheChecksThatNeedIt(t *testing.T) {
 	}
 }
 
-// The stability comes from the tree being installed into, not from a second
-// flag that could disagree with it: drupal/core-dev:^12 resolves to nothing
-// while 12 is in alpha, which is exactly when compatibility work happens.
-func TestTheToolchainFollowsTheSeededCoresStability(t *testing.T) {
-	for coreVersion, want := range map[string]string{
-		"12.0.0-alpha1": "drupal/core-dev:^12@alpha",
-		"12.0.0":        "drupal/core-dev:^12",
-	} {
+// core-dev is pinned to exactly the seeded core, because each core-dev tag
+// pins the standards CI runs for that release. An exact version carries its
+// own stability, so a pre-release core needs no @alpha flag either.
+func TestTheToolchainPinsCoreDevToTheSeededCore(t *testing.T) {
+	for _, coreVersion := range []string{"12.0.0-alpha1", "12.0.0", "12.x-dev"} {
 		runner := newRunner()
 		environment := anEnvironment(t)
 		environment.CoreMajor = "12"
@@ -167,15 +164,108 @@ func TestTheToolchainFollowsTheSeededCoresStability(t *testing.T) {
 			t.Fatalf("run: %v", err)
 		}
 
-		if !runner.didRun("composer require --dev", want) {
-			t.Errorf("core %s did not ask for %q:\n%s", coreVersion, want, runner.transcript())
-		}
-		// The stability belongs to core's constraint alone — coder@alpha would
-		// admit an alpha of a package with nothing to do with the seeded core.
-		if runner.didRun("drupal/coder@") {
-			t.Errorf("a stability flag leaked onto an unrelated package:\n%s", runner.transcript())
+		if !runner.didRun("composer require --dev", "drupal/core-dev:"+coreVersion+" ") {
+			t.Errorf("core %s did not pin core-dev to it:\n%s", coreVersion, runner.transcript())
 		}
 	}
+}
+
+// coder comes through core-dev and nowhere else. Required bare, composer wrote
+// ^9.0 and moved core-dev to 11.5.0-beta1 under an 11.4.11 core to satisfy it,
+// so phpcs ran coder 9 against CI's coder 8.3 (#74).
+func TestTheToolchainNeverRequiresCoderDirectly(t *testing.T) {
+	runner := newRunner()
+	engine := NewDdevContrib(artifactsFor(t, "11", "11.4.11"), "/projects", runner, nil)
+	if _, err := engine.RunChecks(anEnvironment(t), []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if runner.didRun("composer require", "drupal/coder") {
+		t.Errorf("coder was required directly:\n%s", runner.transcript())
+	}
+	if !runner.didRun("composer require --dev", "drupal/core-dev:11.4.11") {
+		t.Errorf("core-dev was not pinned to the seeded core:\n%s", runner.transcript())
+	}
+}
+
+// The core the checks run against is the one in the lock, which can have moved
+// on from the version the environment was seeded with.
+func TestTheToolchainFollowsTheLockedCoreOverTheSeededOne(t *testing.T) {
+	environment := withProjectFile(t, anEnvironment(t), "composer.lock",
+		`{"packages":[{"name":"drupal/core","version":"11.4.12"}]}`)
+
+	runner := newRunner()
+	engine := NewDdevContrib(artifactsFor(t, "11", "11.4.11"), "/projects", runner, nil)
+	if _, err := engine.RunChecks(environment, []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if !runner.didRun("composer require --dev", "drupal/core-dev:11.4.12") {
+		t.Errorf("core-dev did not follow the locked core:\n%s", runner.transcript())
+	}
+}
+
+// An environment provisioned before #74 has the binaries, so the presence
+// probe alone would keep coder 9 forever. Drift re-provisions it, dropping the
+// explicit coder requirement first so the resolve can follow core-dev down.
+func TestADriftedToolchainIsReprovisioned(t *testing.T) {
+	environment := withToolchain(t, anEnvironment(t))
+	environment = withProjectFile(t, environment, "composer.lock", `{
+		"packages":[{"name":"drupal/core","version":"11.4.11"}],
+		"packages-dev":[{"name":"drupal/core-dev","version":"11.5.0-beta1"},
+			{"name":"drupal/coder","version":"9.0.1"}]}`)
+	environment = withProjectFile(t, environment, "composer.json",
+		`{"require-dev":{"drupal/coder":"^9.0","drupal/core-dev":"^11"}}`)
+
+	runner := newRunner()
+	engine, said := logging(artifactsFor(t, "11", "11.4.11"), runner)
+	if _, err := engine.RunChecks(environment, []check.Type{check.PhpCs}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	remove := runner.indexOfCommand("composer remove --dev --no-update", "drupal/coder")
+	require := runner.indexOfCommand("composer require --dev", "drupal/core-dev:11.4.11")
+	if remove < 0 || require < 0 || remove > require {
+		t.Errorf("the drifted toolchain was not replaced in order:\n%s", runner.transcript())
+	}
+	if !strings.Contains(strings.Join(*said, "\n"), "drupal/core-dev 11.5.0-beta1 on drupal/core 11.4.11") {
+		t.Errorf("the re-provisioning did not say why: %v", *said)
+	}
+}
+
+func TestToolchainDriftNeedsPositiveEvidence(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"nothing on disk":    {},
+		"unreadable lock":    {"composer.lock": "{", "composer.json": "{"},
+		"core-dev missing":   {"composer.lock": `{"packages":[{"name":"drupal/core","version":"11.4.11"}]}`},
+		"matching versions":  {"composer.lock": `{"packages":[{"name":"drupal/core","version":"11.4.11"}],"packages-dev":[{"name":"drupal/core-dev","version":"11.4.11"}]}`},
+		"coder via core-dev": {"composer.json": `{"require-dev":{"drupal/core-dev":"11.4.11"}}`},
+	} {
+		environment := anEnvironment(t)
+		for file, contents := range files {
+			environment = withProjectFile(t, environment, file, contents)
+		}
+		if drift := ToolchainDrift(environment.ProjectPath); drift != "" {
+			t.Errorf("%s: reported drift %q", name, drift)
+		}
+	}
+
+	environment := withProjectFile(t, anEnvironment(t), "composer.json",
+		`{"require-dev":{"drupal/coder":"^9.0"}}`)
+	if drift := ToolchainDrift(environment.ProjectPath); !strings.Contains(drift, "drupal/coder") {
+		t.Errorf("a direct coder requirement was not drift: %q", drift)
+	}
+}
+
+// withProjectFile writes a file at the project root.
+func withProjectFile(t *testing.T, environment Environment, name, contents string) Environment {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(environment.ProjectPath, name), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	return environment
 }
 
 // With no artifact for the core there is nothing to derive a toolchain from,
@@ -1064,5 +1154,25 @@ func TestDevRequirementsWarnWhenStabilityCannotBeSet(t *testing.T) {
 	}
 	if runner.didRun("composer require --dev", "phpcompatibility/php-compatibility") {
 		t.Errorf("a dev require ran after the setting failed:\n%s", runner.transcript())
+	}
+}
+
+// The PHPStan check analyses for core's minimum PHP — CI's _TARGET_PHP — and
+// says so, whatever PHP the environment itself runs.
+func TestPhpstanAnalysesForCoresMinimumPHP(t *testing.T) {
+	environment := withProjectFile(t, withToolchain(t, anEnvironment(t)), "composer.lock",
+		`{"packages":[{"name":"drupal/core","version":"11.4.11","require":{"php":">=8.3.0"}}]}`)
+
+	runner := newRunner()
+	engine, said := logging(artifactsFor(t, "11", "11.4.11"), runner)
+	if _, err := engine.RunChecks(environment, []check.Type{check.PhpStan}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if !runner.didRun("phpVersion: 80300", "phpstan analyze", "-c upkeep-phpstan.neon") {
+		t.Errorf("PHPStan was not pinned to core's minimum PHP:\n%s", runner.transcript())
+	}
+	if !strings.Contains(strings.Join(*said, "\n"), "Analysing for PHP 8.3") {
+		t.Errorf("the pinned version was not reported: %v", *said)
 	}
 }

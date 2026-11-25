@@ -54,28 +54,6 @@ func TestTheStabilityIsDerivedFromTheResolvedVersion(t *testing.T) {
 	}
 }
 
-// drupal/core-dev:^12 resolves to nothing while 12 is in alpha, and would have
-// failed the first check on an environment built with --stability=alpha.
-func TestAToolchainPackageInheritsTheSeededCoresStability(t *testing.T) {
-	if got := PackageFor("drupal/core-dev:^%s", "12", "12.0.0-alpha1"); got != "drupal/core-dev:^12@alpha" {
-		t.Errorf("got %q", got)
-	}
-	if got := PackageFor("drupal/core-dev:^%s", "11", "11.4.6"); got != "drupal/core-dev:^11" {
-		t.Errorf("got %q", got)
-	}
-}
-
-// drupal/coder@alpha carries no version constraint at all, and would tell
-// composer that any alpha of a package unrelated to the seeded core is
-// acceptable.
-func TestAPackageWithNoVersionConstraintNeverGetsAStability(t *testing.T) {
-	for _, pkg := range []string{"drupal/coder", "phpstan/phpstan", "drupal/upgrade_status"} {
-		if got := PackageFor(pkg, "12", "12.0.0-alpha1"); got != pkg {
-			t.Errorf("got %q, want %q untouched", got, pkg)
-		}
-	}
-}
-
 // Falling back to a pre-release when a stable constraint finds nothing would
 // quietly build something different from what was asked for — so the hint is
 // advice, and the build still fails.

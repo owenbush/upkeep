@@ -78,6 +78,20 @@ tests.
 
 ## When a check disagrees with CI
 
+Two differences from CI are closed for you rather than reported. **The
+toolchain is the one CI installs for your core**: `drupal/core-dev` is pinned
+to exactly the installed core, and coder comes from it, so an 11.4 environment runs coder 8.3
+as CI does. **PHPStan analyses for the PHP CI runs on**, which is the minimum
+PHP the core supports (8.3 for Drupal 11), whatever PHP the environment runs.
+Each run says which:
+
+```
+Analysing for PHP 8.3, the minimum drupal/core supports and the PHP drupal.org CI runs on.
+```
+
+A module that sets `phpVersion` in its own PHPStan config keeps it. PHPUnit
+still runs on the environment's PHP.
+
 Three things make upkeep's phpcs or phpstan report something CI does not, or
 the reverse. The first is the usual one.
 
