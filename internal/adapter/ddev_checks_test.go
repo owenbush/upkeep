@@ -465,10 +465,96 @@ func TestASmokeRequestThatFailsIsSaidRatherThanScored(t *testing.T) {
 	}
 }
 
-// The pinned engine add-on ships no upgrade-status command, and that is
-// recorded explicitly rather than silently omitted.
-func TestAnUnavailableCheckIsRecordedNotOmitted(t *testing.T) {
+// The pinned engine add-on ships no upgrade-status command, so upkeep installs
+// upgrade_status itself, enables it and the module, and runs its analysis of
+// the module under maintenance.
+func TestTheDeprecationCheckRunsUpgradeStatusWhenTheEngineHasNoCommand(t *testing.T) {
+	runner := newRunner().answer("upgrade-status:analyze", "No problems found.\n")
+
+	result, err := engineWith(runner).RunChecks(anEnvironment(t), []check.Type{check.Deprecation})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if result.Results[0].Status != check.Passed {
+		t.Errorf("status %q:\n%s", result.Results[0].Status, result.Results[0].Output)
+	}
+	steps := [][]string{
+		{"ddev composer require --dev --no-interaction drupal/upgrade_status"},
+		{"ddev drush pm:install -y upgrade_status"},
+		{"ddev drush pm:install -y pathauto"},
+		{"ddev drush upgrade-status:analyze pathauto"},
+	}
+	last := -1
+	for _, step := range steps {
+		at := runner.indexOfCommand(step...)
+		if at <= last {
+			t.Fatalf("%q did not run in order:\n%s", step, runner.transcript())
+		}
+		last = at
+	}
+}
+
+// Installed once: a lock that already has it skips the composer round trip.
+func TestUpgradeStatusIsInstalledOnlyOnce(t *testing.T) {
+	environment := withProjectFile(t, anEnvironment(t), "composer.lock",
+		`{"packages":[],"packages-dev":[{"name":"drupal/upgrade_status","version":"5.0.0"}]}`)
 	runner := newRunner()
+
+	if _, err := engineWith(runner).RunChecks(environment, []check.Type{check.Deprecation}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if runner.didRun("composer require") {
+		t.Errorf("it required upgrade_status again:\n%s", runner.transcript())
+	}
+	if !runner.didRun("upgrade-status:analyze pathauto") {
+		t.Errorf("it did not analyse:\n%s", runner.transcript())
+	}
+}
+
+// 4.x has only the old command name; 5.x deprecates it.
+func TestTheAnalyseCommandFollowsTheInstalledUpgradeStatus(t *testing.T) {
+	for version, want := range map[string]string{
+		"4.3.11":   "upgrade_status:analyze",
+		"dev-4.x":  "upgrade_status:analyze",
+		"4.x-dev":  "upgrade_status:analyze",
+		"5.0.0":    "upgrade-status:analyze",
+		"v6.1.0":   "upgrade-status:analyze",
+		"5.x-dev":  "upgrade-status:analyze",
+		"dev-main": "upgrade-status:analyze",
+		"":         "upgrade-status:analyze",
+	} {
+		if got := UpgradeStatusAnalyzeCommand(version); got != want {
+			t.Errorf("%q: got %q, want %q", version, got, want)
+		}
+	}
+}
+
+// Findings for the next major are a failure, carrying the report.
+func TestDeprecationFindingsFailTheCheck(t *testing.T) {
+	runner := newRunner().
+		answer("upgrade-status:analyze", "Line 12: Call to deprecated function.\n").
+		fails("upgrade-status:analyze")
+
+	result, err := engineWith(runner).RunChecks(anEnvironment(t), []check.Type{check.Deprecation})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Results[0].Status != check.Failed {
+		t.Errorf("status %q", result.Results[0].Status)
+	}
+	if !strings.Contains(result.Results[0].Output, "deprecated function") {
+		t.Errorf("the report is not in the result: %q", result.Results[0].Output)
+	}
+}
+
+// When upgrade_status cannot be had — no release for this core yet — that is
+// recorded explicitly as unavailable, with composer's reason, rather than
+// silently omitted or blamed on the module.
+func TestAnUnavailableCheckIsRecordedNotOmitted(t *testing.T) {
+	runner := newRunner().
+		answer("composer require", "Could not find a version of package drupal/upgrade_status.\n").
+		fails("composer require")
 
 	result, err := engineWith(runner).RunChecks(anEnvironment(t), []check.Type{check.Deprecation})
 	if err != nil {
@@ -485,11 +571,53 @@ func TestAnUnavailableCheckIsRecordedNotOmitted(t *testing.T) {
 	if !result.AllPassed() {
 		t.Error("an unavailable check blocked a green verdict")
 	}
-	if !strings.Contains(result.Results[0].Output, EngineAddOnVersion) {
-		t.Errorf("the reason does not name the pinned add-on: %q", result.Results[0].Output)
+	for _, want := range []string{"drupal/upgrade_status", "Could not find a version"} {
+		if !strings.Contains(result.Results[0].Output, want) {
+			t.Errorf("the reason does not say %q: %q", want, result.Results[0].Output)
+		}
 	}
-	if runner.didRun("upgrade-status") {
-		t.Errorf("it ran a command that is not there:\n%s", runner.transcript())
+	if runner.didRun("analyze") {
+		t.Errorf("it analysed without the analyser:\n%s", runner.transcript())
+	}
+}
+
+// upgrade_status installed but refusing to enable is unavailable too.
+func TestAnUpgradeStatusThatWillNotEnableIsUnavailable(t *testing.T) {
+	runner := newRunner().
+		answer("pm:install -y upgrade_status", "Unable to install modules.\n").
+		fails("pm:install -y upgrade_status")
+
+	result, err := engineWith(runner).RunChecks(anEnvironment(t), []check.Type{check.Deprecation})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Results[0].Status != check.Unavailable {
+		t.Errorf("status %q, want unavailable", result.Results[0].Status)
+	}
+	if !strings.Contains(result.Results[0].Output, "Unable to install modules") {
+		t.Errorf("the reason is missing: %q", result.Results[0].Output)
+	}
+	if runner.didRun("analyze") {
+		t.Errorf("it analysed without the analyser:\n%s", runner.transcript())
+	}
+}
+
+// A module that will not enable is module_install's failure; the analysis
+// still runs and says what it could not check.
+func TestAModuleThatWillNotEnableIsStillAnalysed(t *testing.T) {
+	runner := newRunner().fails("pm:install -y pathauto")
+	var logged []string
+	engine := NewDdevContrib(nil, "/projects", runner, func(line string) { logged = append(logged, line) })
+
+	result, err := engine.RunChecks(anEnvironment(t), []check.Type{check.Deprecation})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Results[0].Status != check.Passed {
+		t.Errorf("status %q", result.Results[0].Status)
+	}
+	if !strings.Contains(strings.Join(logged, "\n"), "pathauto could not be enabled") {
+		t.Errorf("nothing said the module was not enabled: %q", logged)
 	}
 }
 

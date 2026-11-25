@@ -101,6 +101,27 @@ the branch you publish. Findings name paths inside that copy.
 The first front-end check in an environment runs `yarn install` in core, which
 takes a minute or two and needs the network; after that it is a file check.
 
+## The deprecation check runs upgrade_status
+
+`deprecation` reports what your module must change before the next major
+core. The engine add-on has no command for it, so upkeep installs
+[upgrade_status](https://www.drupal.org/project/upgrade_status) in the
+environment the first time the check runs (`composer require --dev`), enables
+it and your module, and runs `drush upgrade-status:analyze <module>`.
+
+It fails when upgrade_status finds anything for the next major. Notes that
+only matter for a later major, listed under "After Drupal 12" on a Drupal 11
+environment, are shown but do not fail it. drupal.org CI has no deprecation
+job, so this check can be red while CI is green: you can fix the findings now,
+or wait until you add the next major to `core_version_requirement`.
+
+If no upgrade_status release supports the environment's core yet, the check
+reports `unavailable` with composer's reason and does not block the run.
+
+upgrade_status reads your code; it does not run it. An API that is removed
+only at runtime, which PHPUnit reports as a deprecation, will not show up
+here, so look at the PHPUnit output too.
+
 ## When a check disagrees with CI
 
 Two differences from CI are closed for you rather than reported. **The
